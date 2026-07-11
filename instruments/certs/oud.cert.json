@@ -1,0 +1,54 @@
+{
+ "name": "oud",
+ "kind": "voice",
+ "dsp_sha": "2a16602ee06c7128",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -13.48,
+ "clipped_samples": 0,
+ "attack_ms": 20.0,
+ "sustain_rms_db": -42.56,
+ "sustain_centroid_hz": 47,
+ "harmonics_top": [
+  [
+   256.5,
+   -7.0
+  ],
+  [
+   257.1,
+   0.0
+  ],
+  [
+   257.6,
+   -2.0
+  ],
+  [
+   258.2,
+   -12.4
+  ],
+  [
+   513.5,
+   -16.5
+  ],
+  [
+   514.1,
+   -11.9
+  ],
+  [
+   514.7,
+   -11.0
+  ],
+  [
+   515.3,
+   -14.3
+  ]
+ ],
+ "decay_to_m60_s": 3.13,
+ "noise_tail_dbfs": -131.69,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

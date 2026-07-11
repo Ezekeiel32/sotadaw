@@ -1,0 +1,54 @@
+{
+ "name": "supersaw_fat",
+ "kind": "voice",
+ "dsp_sha": "f0c2869c842bf970",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -5.03,
+ "clipped_samples": 0,
+ "attack_ms": 310.0,
+ "sustain_rms_db": -19.09,
+ "sustain_centroid_hz": 3051,
+ "harmonics_top": [
+  [
+   130.6,
+   -5.7
+  ],
+  [
+   256.5,
+   -5.3
+  ],
+  [
+   258.2,
+   -6.7
+  ],
+  [
+   261.2,
+   -3.1
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   266.5,
+   -7.0
+  ],
+  [
+   267.1,
+   -6.5
+  ],
+  [
+   523.5,
+   -7.1
+  ]
+ ],
+ "decay_to_m60_s": 0.76,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

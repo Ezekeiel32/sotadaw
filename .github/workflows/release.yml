@@ -1,0 +1,121 @@
+# SOTA DAW release pipeline — PORT_SPEC.md phase gates. The runners ARE the
+# port's verification machines: every OS renders real audio (P2), boots the real
+# UI offscreen (P3, soft while proving), installs through the real installer and
+# renders from the INSTALLED bits (P4), and boots the agent sidecar (P5).
+name: release
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  TRACKTION_SHA: 2877b621f2fbee564d0696a616b86bf8ba8c8ab0
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, name: linux }
+          - { os: windows-latest, name: windows }
+          - { os: macos-14, name: macos }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: linux engine deps
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfreetype-dev libfontconfig1-dev \
+            libcurl4-openssl-dev libx11-dev libxext-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxcomposite-dev libxrender-dev xvfb
+
+      - name: vendored tracktion (pinned to the dev box's clone)
+        shell: bash
+        run: |
+          git clone https://github.com/Tracktion/tracktion_engine app/tracktion_engine
+          cd app/tracktion_engine
+          git checkout $TRACKTION_SHA
+          git config --file=.gitmodules submodule.modules/juce.url https://github.com/juce-framework/JUCE.git
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
+      - name: configure + build (P1)
+        shell: bash
+        run: |
+          cmake -B app/build -S app -DCMAKE_BUILD_TYPE=Release -DSOTADAW_ENABLE_JIT=OFF
+          cmake --build app/build --config Release -j 3
+
+      - name: locate artefacts
+        shell: bash
+        run: |
+          M1=$(find app/build/m1_artefacts -type f \( -name 'm1' -o -name 'M1.exe' -o -name 'm1.exe' -o -name 'M1' \) | head -1)
+          echo "M1=$M1" >> "$GITHUB_ENV"
+          find app/build/sotadaw_artefacts -maxdepth 3 -name 'SOTA DAW*' | head -5
+
+      - name: P2 engine truth — render real audio on this OS
+        shell: bash
+        run: |
+          "$M1" render songs/demo_track.json out_${{ matrix.name }}.wav
+          python3 tools/ci_wav_gate.py out_${{ matrix.name }}.wav || python tools/ci_wav_gate.py out_${{ matrix.name }}.wav
+
+      - name: P3 UI boot — offscreen snapshot (soft while proving)
+        continue-on-error: true
+        shell: bash
+        run: |
+          APP=$(find app/build/sotadaw_artefacts -type f \( -name 'SOTA DAW' -o -name 'SOTA DAW.exe' \) | head -1)
+          if [ "${{ matrix.name }}" = "linux" ]; then
+            xvfb-run -a "$APP" --snapshot snap || true
+          else
+            "$APP" --snapshot snap || true
+          fi
+          ls -la snap/ || echo "no snapshots on ${{ matrix.name }} (P3 soft)"
+
+      - name: P5 agent lane — sidecar boots (mock, zero tokens)
+        shell: bash
+        run: python3 tools/ci_sidecar_gate.py || python tools/ci_sidecar_gate.py
+
+      # ---------------- P4: platform packages + installed-bits truth ----------------
+      - name: P4 windows — payload + Inno wizard + SILENT INSTALL + installed render
+        if: matrix.name == 'windows'
+        shell: bash
+        run: |
+          tools/stage_payload.sh installer/windows/payload
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          [ -f "$ISCC" ] || choco install innosetup -y --no-progress
+          "$ISCC" installer/windows/sotadaw.iss
+          ls -la installer/windows/Output/
+      - name: P4 windows — install + run the installed engine
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem installer/windows/Output/*.exe | Select-Object -First 1
+          Start-Process -Wait -FilePath $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$env:TEMP\sotadaw_inst"
+          & "$env:TEMP\sotadaw_inst\bin\m1.exe" render "$env:TEMP\sotadaw_inst\payload\songs\demo_track.json" "$env:TEMP\installed.wav"
+          python tools/ci_wav_gate.py "$env:TEMP\installed.wav"
+
+      - name: P4 macos — dmg + attach + run the bundled engine
+        if: matrix.name == 'macos'
+        shell: bash
+        run: |
+          installer/macos/make_dmg.sh
+          hdiutil attach dist/SOTA_DAW-macOS.dmg -nobrowse -mountpoint /tmp/sd_dmg
+          ls /tmp/sd_dmg
+          "/tmp/sd_dmg/SOTA DAW.app/Contents/MacOS/m1" render songs/demo_track.json /tmp/installed.wav
+          python3 tools/ci_wav_gate.py /tmp/installed.wav
+          hdiutil detach /tmp/sd_dmg
+
+      - name: collect artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotadaw-${{ matrix.name }}
+          if-no-files-found: ignore
+          path: |
+            out_*.wav
+            snap/
+            installer/windows/Output/*.exe
+            dist/*.dmg
+            dist/*.sha256

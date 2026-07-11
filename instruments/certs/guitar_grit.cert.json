@@ -1,0 +1,54 @@
+{
+ "name": "guitar_grit",
+ "kind": "voice",
+ "dsp_sha": "0deb11c5187a9a49",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -0.8,
+ "clipped_samples": 0,
+ "attack_ms": 10.0,
+ "sustain_rms_db": -26.99,
+ "sustain_centroid_hz": 497,
+ "harmonics_top": [
+  [
+   261.2,
+   -5.5
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -5.7
+  ],
+  [
+   522.9,
+   -9.4
+  ],
+  [
+   523.5,
+   -4.5
+  ],
+  [
+   524.1,
+   -10.2
+  ],
+  [
+   784.7,
+   -17.4
+  ],
+  [
+   785.3,
+   -13.7
+  ]
+ ],
+ "decay_to_m60_s": 2.17,
+ "noise_tail_dbfs": -138.47,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

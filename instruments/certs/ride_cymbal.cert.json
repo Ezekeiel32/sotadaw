@@ -1,0 +1,54 @@
+{
+ "name": "ride_cymbal",
+ "kind": "voice",
+ "dsp_sha": "13bf4cc2e8a40652",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -5.1,
+ "clipped_samples": 0,
+ "attack_ms": 50.0,
+ "sustain_rms_db": -24.23,
+ "sustain_centroid_hz": 10929,
+ "harmonics_top": [
+  [
+   1896.5,
+   -1.6
+  ],
+  [
+   1897.1,
+   0.0
+  ],
+  [
+   3368.8,
+   -1.7
+  ],
+  [
+   3980.6,
+   -2.0
+  ],
+  [
+   3981.2,
+   -1.3
+  ],
+  [
+   4862.9,
+   -1.0
+  ],
+  [
+   5691.2,
+   -0.7
+  ],
+  [
+   9599.4,
+   -1.8
+  ]
+ ],
+ "decay_to_m60_s": 2.17,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

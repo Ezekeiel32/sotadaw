@@ -1,0 +1,54 @@
+{
+ "name": "pad_motion",
+ "kind": "voice",
+ "dsp_sha": "f4720ea4015b4f0e",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -3.21,
+ "clipped_samples": 0,
+ "attack_ms": 580.0,
+ "sustain_rms_db": -15.89,
+ "sustain_centroid_hz": 1034,
+ "harmonics_top": [
+  [
+   259.4,
+   -2.4
+  ],
+  [
+   260.0,
+   -0.7
+  ],
+  [
+   261.2,
+   -3.6
+  ],
+  [
+   261.8,
+   -0.2
+  ],
+  [
+   262.9,
+   -4.8
+  ],
+  [
+   263.5,
+   0.0
+  ],
+  [
+   524.7,
+   -2.4
+  ],
+  [
+   525.3,
+   -0.7
+  ]
+ ],
+ "decay_to_m60_s": 2.53,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

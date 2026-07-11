@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<KNOWNPLUGINS>
+  <PLUGIN name="Airwindows Consolidated" format="VST3" category="Fx" manufacturer="Airwindows"
+          version="1.2026.179" file="/home/chezy/.vst3/Airwindows Consolidated.vst3"
+          uniqueId="f9ecfdb0" isInstrument="0" fileTime="19f295c59d0" infoUpdateTime="19f295c7e56"
+          numInputs="0" numOutputs="0" isShell="0" hasARAExtension="0"
+          uid="e8c64eed"/>
+  <PLUGIN name="Dragonfly Plate Reverb" format="VST3" category="Fx|Reverb|Stereo"
+          manufacturer="Michael Willis" version="3.2.10" file="/home/chezy/.vst3/DragonflyPlateReverb.vst3"
+          uniqueId="31cadefb" isInstrument="0" fileTime="19f2912f0d8" infoUpdateTime="19f2912f829"
+          numInputs="2" numOutputs="2" isShell="0" hasARAExtension="0"
+          uid="83648b7a"/>
+  <PLUGIN name="Dragonfly Room Reverb" format="VST3" category="Fx|Reverb|Stereo"
+          manufacturer="Michael Willis" version="3.2.10" file="/home/chezy/.vst3/DragonflyRoomReverb.vst3"
+          uniqueId="1308defb" isInstrument="0" fileTime="19f2912f0d8" infoUpdateTime="19f2912f81d"
+          numInputs="2" numOutputs="2" isShell="0" hasARAExtension="0"
+          uid="854fd51d"/>
+  <PLUGIN name="TAL-NoiseMaker" format="VST3" category="Instrument|Synth"
+          manufacturer="TAL-Togu Audio Line" version="5.0.6" file="/home/chezy/.vst3/TAL-NoiseMaker.vst3"
+          uniqueId="629b47fd" isInstrument="1" fileTime="19f2912f0d8" infoUpdateTime="19f2912f812"
+          numInputs="2" numOutputs="2" isShell="0" hasARAExtension="0"
+          uid="69385f01"/>
+  <PLUGIN name="Dragonfly Early Reflections" format="VST3" category="Fx|Reverb|Stereo"
+          manufacturer="Michael Willis" version="3.2.10" file="/home/chezy/.vst3/DragonflyEarlyReflections.vst3"
+          uniqueId="d175defb" isInstrument="0" fileTime="19f2912f0d8" infoUpdateTime="19f2912f5cd"
+          numInputs="2" numOutputs="2" isShell="0" hasARAExtension="0"
+          uid="cdea0a90"/>
+  <PLUGIN name="Odin2" format="VST3" category="Instrument|Synth" manufacturer="TheWaveWarden"
+          version="2.4.1" file="/home/chezy/.vst3/Odin2.vst3" uniqueId="2e95ebb7"
+          isInstrument="1" fileTime="19f2912f0d8" infoUpdateTime="19f2912f5ba"
+          numInputs="0" numOutputs="2" isShell="0" hasARAExtension="0"
+          uid="f4e12ec4"/>
+  <PLUGIN name="Dragonfly Hall Reverb" format="VST3" category="Fx|Reverb|Stereo"
+          manufacturer="Michael Willis and Rob vd Berg" version="3.2.10"
+          file="/home/chezy/.vst3/DragonflyHallReverb.vst3" uniqueId="f408defb"
+          isInstrument="0" fileTime="19f2912f0d8" infoUpdateTime="19f2912f485"
+          numInputs="2" numOutputs="2" isShell="0" hasARAExtension="0"
+          uid="1d6ea83e"/>
+  <PLUGIN name="Surge XT Effects" format="VST3" category="Fx" manufacturer="Surge Synth Team"
+          version="1.3.4" file="/home/chezy/.vst3/Surge XT Effects.vst3"
+          uniqueId="18ed4fbd" isInstrument="0" fileTime="19f23416c70" infoUpdateTime="19f23450e9e"
+          numInputs="4" numOutputs="2" isShell="0" hasARAExtension="0"
+          uid="b7595abb"/>
+  <PLUGIN name="Surge XT" format="VST3" category="Instrument|Synth" manufacturer="Surge Synth Team"
+          version="1.3.4" file="/home/chezy/.vst3/Surge XT.vst3" uniqueId="190e4fbd"
+          isInstrument="1" fileTime="19f23416c70" infoUpdateTime="19f23450e76"
+          numInputs="2" numOutputs="2" isShell="0" hasARAExtension="0"
+          uid="b759d69c"/>
+  <PLUGIN name="Dexed" format="VST3" category="Instrument|Synth" manufacturer="Digital Suburban"
+          version="1.0.1" file="/home/chezy/.vst3/Dexed.vst3" uniqueId="d7709eec"
+          isInstrument="1" fileTime="19f1f8bbf40" infoUpdateTime="19f1fc2bc22"
+          numInputs="0" numOutputs="0" isShell="0" hasARAExtension="0"
+          uid="75c67455"/>
+</KNOWNPLUGINS>

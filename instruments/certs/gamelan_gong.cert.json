@@ -1,0 +1,54 @@
+{
+ "name": "gamelan_gong",
+ "kind": "voice",
+ "dsp_sha": "37db6ff45aed8cef",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -0.8,
+ "clipped_samples": 0,
+ "attack_ms": 30.0,
+ "sustain_rms_db": -12.37,
+ "sustain_centroid_hz": 371,
+ "harmonics_top": [
+  [
+   261.2,
+   -5.7
+  ],
+  [
+   261.8,
+   -0.1
+  ],
+  [
+   262.4,
+   0.0
+  ],
+  [
+   262.9,
+   -5.1
+  ],
+  [
+   621.8,
+   -23.0
+  ],
+  [
+   622.4,
+   -10.3
+  ],
+  [
+   622.9,
+   -9.8
+  ],
+  [
+   623.5,
+   -21.5
+  ]
+ ],
+ "decay_to_m60_s": 2.95,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

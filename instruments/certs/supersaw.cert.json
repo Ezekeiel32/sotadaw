@@ -1,0 +1,54 @@
+{
+ "name": "supersaw",
+ "kind": "voice",
+ "dsp_sha": "dbd6b4bb128927b5",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -0.8,
+ "clipped_samples": 0,
+ "attack_ms": 110.0,
+ "sustain_rms_db": -16.64,
+ "sustain_centroid_hz": 2117,
+ "harmonics_top": [
+  [
+   245.9,
+   -0.0
+  ],
+  [
+   251.2,
+   0.0
+  ],
+  [
+   256.5,
+   -0.1
+  ],
+  [
+   261.8,
+   -0.3
+  ],
+  [
+   267.1,
+   -0.7
+  ],
+  [
+   272.4,
+   -1.1
+  ],
+  [
+   277.1,
+   -1.1
+  ],
+  [
+   277.6,
+   -1.7
+  ]
+ ],
+ "decay_to_m60_s": 2.2,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

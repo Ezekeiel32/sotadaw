@@ -1,0 +1,255 @@
+{
+ "TAL-NoiseMaker": {
+  "intents": {
+   "darker": [
+    [
+     "cutoff",
+     "-",
+     "log taper; the money move"
+    ],
+    [
+     "reverbhighcut",
+     "-",
+     "tame verb sizzle"
+    ]
+   ],
+   "brighter": [
+    [
+     "cutoff",
+     "+",
+     "log"
+    ],
+    [
+     "resonance",
+     "+",
+     "small; >0.6 whistles"
+    ]
+   ],
+   "punchier": [
+    [
+     "ampattack",
+     "-",
+     "to ~0"
+    ],
+    [
+     "filterattack",
+     "-",
+     ""
+    ],
+    [
+     "filterdecay",
+     "-",
+     "slightly"
+    ]
+   ],
+   "softer": [
+    [
+     "ampattack",
+     "+",
+     ""
+    ],
+    [
+     "cutoff",
+     "-",
+     "small"
+    ]
+   ],
+   "wider": [
+    [
+     "chorus1enable",
+     "=1",
+     ""
+    ],
+    [
+     "detune",
+     "+",
+     "small"
+    ]
+   ],
+   "warmer": [
+    [
+     "cutoff",
+     "-",
+     "small"
+    ],
+    [
+     "reverbhighcut",
+     "-",
+     ""
+    ],
+    [
+     "osc1volume",
+     "+",
+     "small"
+    ]
+   ],
+   "pluckier": [
+    [
+     "ampdecay",
+     "-",
+     ""
+    ],
+    [
+     "filterdecay",
+     "-",
+     ""
+    ],
+    [
+     "portamento",
+     "-",
+     "to 0"
+    ]
+   ]
+  },
+  "gotchas": [
+   "set via set_track_param NATURAL display names, never 0..1",
+   "chorus2enable stacks a second slower chorus \u2014 both on = seasick"
+  ]
+ },
+ "Odin2": {
+  "intents": {
+   "darker": [
+    [
+     "Filter1 Frequency",
+     "-",
+     "log; primary path"
+    ],
+    [
+     "Filter2 Frequency",
+     "-",
+     "if serial"
+    ]
+   ],
+   "brighter": [
+    [
+     "Filter1 Frequency",
+     "+",
+     ""
+    ],
+    [
+     "Filter1 Resonance",
+     "+",
+     "small"
+    ]
+   ],
+   "punchier": [
+    [
+     "AmpEnv Attack",
+     "-",
+     "to ~0"
+    ],
+    [
+     "FilterEnv Attack",
+     "-",
+     ""
+    ],
+    [
+     "FilterEnv Decay",
+     "-",
+     "small"
+    ]
+   ],
+   "pluckier": [
+    [
+     "AmpEnv Decay",
+     "-",
+     ""
+    ],
+    [
+     "FilterEnv Decay",
+     "-",
+     ""
+    ],
+    [
+     "Glide",
+     "-",
+     "to 0"
+    ]
+   ],
+   "wider": [
+    [
+     "Chorus On",
+     "=1",
+     ""
+    ],
+    [
+     "Chorus Amount",
+     "+",
+     ""
+    ],
+    [
+     "Chorus DryWet",
+     "+",
+     "to ~0.5"
+    ]
+   ],
+   "movement": [
+    [
+     "LFO1 Frequency",
+     "~",
+     "bind via matrix; audition"
+    ],
+    [
+     "Chorus Rate",
+     "+",
+     "subtle"
+    ]
+   ]
+  },
+  "gotchas": [
+   "251 params, THREE filters \u2014 Filter1 is the default money path",
+   "'Amplifier Gain -5' through the 0..1 layer was the historic silencer: NATURAL units only"
+  ]
+ },
+ "Surge XT": {
+  "intents": {
+   "darker": [
+    [
+     "Filter 1 Cutoff",
+     "-",
+     "VERIFY name via list_plugin_params first"
+    ]
+   ],
+   "brighter": [
+    [
+     "Filter 1 Cutoff",
+     "+",
+     "verify"
+    ],
+    [
+     "Filter 1 Resonance",
+     "+",
+     "small, verify"
+    ]
+   ],
+   "punchier": [
+    [
+     "Amp EG Attack",
+     "-",
+     "verify"
+    ],
+    [
+     "Filter EG Attack",
+     "-",
+     "verify"
+    ]
+   ],
+   "wider": [
+    [
+     "Scene Width",
+     "+",
+     "verify"
+    ],
+    [
+     "Osc 1 Unison Detune",
+     "+",
+     "verify"
+    ]
+   ]
+  },
+  "gotchas": [
+   "state-blob rail: params vary per patch \u2014 ALWAYS list_plugin_params before setting",
+   "prefer loading a closer factory preset over deep param surgery"
+  ]
+ }
+}

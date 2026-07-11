@@ -1,0 +1,54 @@
+{
+ "name": "log_drum",
+ "kind": "voice",
+ "dsp_sha": "254f25f7e72802d9",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -0.8,
+ "clipped_samples": 0,
+ "attack_ms": 20.0,
+ "sustain_rms_db": -56.06,
+ "sustain_centroid_hz": 281,
+ "harmonics_top": [
+  [
+   259.4,
+   -0.0
+  ],
+  [
+   260.0,
+   -0.0
+  ],
+  [
+   260.6,
+   -0.0
+  ],
+  [
+   261.2,
+   -0.0
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -0.0
+  ],
+  [
+   262.9,
+   -0.0
+  ],
+  [
+   263.5,
+   -0.0
+  ]
+ ],
+ "decay_to_m60_s": 0.33,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

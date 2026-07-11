@@ -1,0 +1,54 @@
+{
+ "name": "fuzz_guitar",
+ "kind": "voice",
+ "dsp_sha": "e3797c94543fd6fc",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -7.67,
+ "clipped_samples": 0,
+ "attack_ms": 40.0,
+ "sustain_rms_db": -14.54,
+ "sustain_centroid_hz": 2366,
+ "harmonics_top": [
+  [
+   261.2,
+   -3.4
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -9.0
+  ],
+  [
+   784.7,
+   -14.2
+  ],
+  [
+   785.3,
+   -15.8
+  ],
+  [
+   1308.2,
+   -15.4
+  ],
+  [
+   1570.0,
+   -19.6
+  ],
+  [
+   2092.9,
+   -19.9
+  ]
+ ],
+ "decay_to_m60_s": 2.78,
+ "noise_tail_dbfs": -121.84,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

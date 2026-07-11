@@ -1,0 +1,17 @@
+# SOTA DAW python deps — the portable set (requirements-lock.txt is the exact freeze).
+# torch: install the right build for the target machine FIRST if you want GPU stems:
+#   pip install torch torchaudio  (CPU works; CUDA builds from pytorch.org for GPU demucs)
+numpy>=1.26,<2
+scipy>=1.11
+soundfile>=0.12
+pyloudnorm>=0.1
+PyYAML>=6
+cmudict>=1.0
+falkordb>=1.0
+demucs>=4.0
+basic-pitch>=0.4
+onnxruntime>=1.17
+pyflp>=2.2
+torch>=2.1
+torchaudio>=2.1
+beat_this>=1.1

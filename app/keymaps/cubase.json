@@ -1,0 +1,7 @@
+{
+  "_note": "Cubase hands: G/H zoom out/in (the famous pair), J = snap toggle, / = cycle.",
+  "view.zoomOut": "g",
+  "view.zoomIn": "h",
+  "grid.flip": "j",
+  "transport.loop": "/"
+}

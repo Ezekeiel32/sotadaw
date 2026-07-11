@@ -1,0 +1,54 @@
+{
+ "name": "zurna",
+ "kind": "voice",
+ "dsp_sha": "482841c6f6d21f80",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -4.75,
+ "clipped_samples": 0,
+ "attack_ms": 30.0,
+ "sustain_rms_db": -16.41,
+ "sustain_centroid_hz": 2765,
+ "harmonics_top": [
+  [
+   261.2,
+   -3.1
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -9.3
+  ],
+  [
+   522.9,
+   -9.0
+  ],
+  [
+   523.5,
+   -8.7
+  ],
+  [
+   784.7,
+   -9.8
+  ],
+  [
+   1564.1,
+   -9.6
+  ],
+  [
+   1575.3,
+   -9.3
+  ]
+ ],
+ "decay_to_m60_s": 2.1,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

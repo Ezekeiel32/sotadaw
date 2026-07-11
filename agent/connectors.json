@@ -1,0 +1,103 @@
+{
+  "_doc": "THE SECOND WEDGE (SPEC v2.1 V19b): mount external DAW MCP servers into the agent. Flip 'enabled' to true and restart the app (or sidecar). SECURITY (OWASP MCP Top 10): connectors are opt-in, run unprivileged, and get ONLY the tools in 'allow' (['*'] = whole server \u2014 use for trusted/first-party only). The agent then drives your RUNNING DAW from this cockpit.",
+  "connectors": [
+    {
+      "name": "ableton",
+      "enabled": false,
+      "command": "uvx",
+      "args": [
+        "ableton-mcp"
+      ],
+      "allow": [
+        "*"
+      ],
+      "note": "ahujasid/ableton-mcp (~2.4k stars, 16 tools). Needs the AbletonMCP remote script installed in Live (port 9877) and Live running."
+    },
+    {
+      "name": "reaper",
+      "enabled": false,
+      "command": "python3",
+      "args": [
+        "agent/connector_reaper.py"
+      ],
+      "allow": [
+        "reaper_status",
+        "reaper_transport",
+        "reaper_track",
+        "reaper_action"
+      ],
+      "note": "FIRST-PARTY Bridge Mode alpha, ZERO-INSTALL: speaks REAPER's built-in web-RC (Options > Preferences > Control/OSC/web > add 'Web browser interface', port 8080). Set env REAPER_RC if not http://127.0.0.1:8080. Protocol mock-verified 2026-07-04.",
+      "env": {
+        "REAPER_RC": "http://127.0.0.1:8080"
+      }
+    },
+    {
+      "name": "stub",
+      "enabled": false,
+      "command": "python3",
+      "args": [
+        "agent/connector_stub.py"
+      ],
+      "allow": [
+        "external_status",
+        "external_echo"
+      ],
+      "note": "reference connector + smoke fixture (also documents the per-tool allowlist form)."
+    },
+    {
+      "name": "soundcloud",
+      "enabled": false,
+      "command": "python3",
+      "args": [
+        "agent/connector_soundcloud.py"
+      ],
+      "allow": [
+        "sc_setup_status",
+        "sc_connect",
+        "sc_upload",
+        "sc_my_tracks"
+      ],
+      "note": "publish-from-DAW (OAuth 2.1+PKCE; SoundCloud opened self-serve app registration 2026-05, needs Artist Pro). Setup: register app at developers.soundcloud.com with redirect URI http://127.0.0.1:8899/callback, put client creds in agent/.soundcloud.json. Uploads default PRIVATE; sharing=public only on an explicit user ask."
+    },
+    {
+      "name": "protools",
+      "enabled": false,
+      "command": "uvx",
+      "args": [
+        "protools-mcp-server"
+      ],
+      "allow": [],
+      "note": "skrul/protools-mcp-server via the OFFICIAL PTSL gRPC API (sanctioned surface \u2014 the pro-studio wedge). CANDIDATE (CONNECTIVITY_MAP 2026-07-04): allow[] is EMPTY by design \u2014 even if enabled, nothing mounts. At first live test: run the server, read tools/list, populate allow[] with the minimal set, THEN enable. Never flip with '*'."
+    },
+    {
+      "name": "logic",
+      "enabled": false,
+      "command": "uvx",
+      "args": [
+        "logic-pro-mcp"
+      ],
+      "allow": [],
+      "note": "koltyj/logic-pro-mcp (five control channels; macOS target only). CANDIDATE (CONNECTIVITY_MAP 2026-07-04): allow[] is EMPTY by design \u2014 even if enabled, nothing mounts. At first live test: run the server, read tools/list, populate allow[] with the minimal set, THEN enable. Never flip with '*'."
+    },
+    {
+      "name": "bitwig",
+      "enabled": false,
+      "command": "uvx",
+      "args": [
+        "daw-mcp"
+      ],
+      "allow": [],
+      "note": "ptaczek/daw-mcp (Bitwig + Live: transport/mixer/device params); WigAI is the alternative. CANDIDATE (CONNECTIVITY_MAP 2026-07-04): allow[] is EMPTY by design \u2014 even if enabled, nothing mounts. At first live test: run the server, read tools/list, populate allow[] with the minimal set, THEN enable. Never flip with '*'."
+    },
+    {
+      "name": "flstudio",
+      "enabled": false,
+      "command": "uvx",
+      "args": [
+        "flstudio-mcp"
+      ],
+      "allow": [],
+      "note": "FL Studio piano-roll MCP (chords/melodies/note editing) \u2014 the homeland; pairs with the V17 flp lane. CANDIDATE (CONNECTIVITY_MAP 2026-07-04): allow[] is EMPTY by design \u2014 even if enabled, nothing mounts. At first live test: run the server, read tools/list, populate allow[] with the minimal set, THEN enable. Never flip with '*'."
+    }
+  ]
+}

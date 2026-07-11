@@ -1,0 +1,68 @@
+{
+ "kind": "melodic",
+ "samples": [
+  {
+   "file": "p24.wav",
+   "keyNote": 24,
+   "minNote": 0,
+   "maxNote": 25,
+   "gainDb": 0.0
+  },
+  {
+   "file": "p28.wav",
+   "keyNote": 28,
+   "minNote": 26,
+   "maxNote": 29,
+   "gainDb": 0.0
+  },
+  {
+   "file": "p32.wav",
+   "keyNote": 32,
+   "minNote": 30,
+   "maxNote": 33,
+   "gainDb": 0.0
+  },
+  {
+   "file": "p36.wav",
+   "keyNote": 36,
+   "minNote": 34,
+   "maxNote": 37,
+   "gainDb": 0.0
+  },
+  {
+   "file": "p40.wav",
+   "keyNote": 40,
+   "minNote": 38,
+   "maxNote": 41,
+   "gainDb": 0.0
+  },
+  {
+   "file": "p44.wav",
+   "keyNote": 44,
+   "minNote": 42,
+   "maxNote": 45,
+   "gainDb": 0.0
+  },
+  {
+   "file": "p48.wav",
+   "keyNote": 48,
+   "minNote": 46,
+   "maxNote": 49,
+   "gainDb": 0.0
+  },
+  {
+   "file": "p52.wav",
+   "keyNote": 52,
+   "minNote": 50,
+   "maxNote": 53,
+   "gainDb": 0.0
+  },
+  {
+   "file": "p56.wav",
+   "keyNote": 56,
+   "minNote": 54,
+   "maxNote": 127,
+   "gainDb": 0.0
+  }
+ ]
+}

@@ -1,0 +1,54 @@
+{
+ "name": "tanpura_drone",
+ "kind": "voice",
+ "dsp_sha": "d02630d02077ca60",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -4.58,
+ "clipped_samples": 0,
+ "attack_ms": 20.0,
+ "sustain_rms_db": -23.2,
+ "sustain_centroid_hz": 1007,
+ "harmonics_top": [
+  [
+   260.0,
+   -1.4
+  ],
+  [
+   260.6,
+   0.0
+  ],
+  [
+   261.2,
+   -12.0
+  ],
+  [
+   780.6,
+   -9.2
+  ],
+  [
+   781.2,
+   -5.8
+  ],
+  [
+   781.8,
+   -15.0
+  ],
+  [
+   1041.2,
+   -11.1
+  ],
+  [
+   1041.8,
+   -12.8
+  ]
+ ],
+ "decay_to_m60_s": ">end",
+ "noise_tail_dbfs": -46.95,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

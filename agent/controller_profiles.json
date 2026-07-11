@@ -1,0 +1,198 @@
+{
+ "version": 1,
+ "actions_vocabulary": [
+  "transport.play",
+  "transport.stop",
+  "transport.record",
+  "transport.loop",
+  "pad.grid",
+  "fader.master",
+  "fader.track.1",
+  "fader.track.2",
+  "fader.track.3",
+  "fader.track.4",
+  "fader.track.5",
+  "fader.track.6",
+  "fader.track.7",
+  "fader.track.8",
+  "knob.djfilter",
+  "knob.macro.1",
+  "knob.macro.2",
+  "knob.macro.3",
+  "knob.macro.4",
+  "select.track.next",
+  "select.track.prev",
+  "scene.next",
+  "scene.prev",
+  "jam.toggle",
+  "jam.vibe.next"
+ ],
+ "profiles": [
+  {
+   "id": "launchpad_x_programmer",
+   "match": "(?i)launchpad x",
+   "provenance": "Novation Launchpad X programmer-mode fixed layout (notes 11-88 row-major 10s grid; documented mode) - f152",
+   "controls": [
+    {
+     "type": "note",
+     "ch": 1,
+     "num": 11,
+     "num_hi": 88,
+     "name": "8x8 grid",
+     "action": "pad.grid",
+     "layout": "row-major from bottom-left, row stride 10 (11-18, 21-28, ... 81-88)"
+    },
+    {
+     "type": "cc",
+     "ch": 1,
+     "num": 91,
+     "name": "up arrow",
+     "action": "scene.prev"
+    },
+    {
+     "type": "cc",
+     "ch": 1,
+     "num": 92,
+     "name": "down arrow",
+     "action": "scene.next"
+    },
+    {
+     "type": "cc",
+     "ch": 1,
+     "num": 19,
+     "name": "stop/solo/mute",
+     "action": "transport.stop"
+    }
+   ]
+  },
+  {
+   "id": "maschine_mk3_sotadaw_template",
+   "match": "(?i)maschine mk3",
+   "provenance": "TEMPLATE-DEFINED (NI MIDI mode is Controller-Editor-configurable, no universal factory map - W16a + f152 research). This profile IS the sotadaw template: load the matching .ncmm3 in Controller Editor.",
+   "template_note": "pads notes 36-51 ch1; knobs 1-8 = CC 70-77 ch16; transport play/rec/stop = CC 108/109/110 ch16",
+   "controls": [
+    {
+     "type": "note",
+     "ch": 1,
+     "num": 36,
+     "num_hi": 51,
+     "name": "16 pads",
+     "action": "pad.grid",
+     "layout": "row-major from bottom-left, 4x4"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 70,
+     "name": "knob 1",
+     "action": "knob.djfilter"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 71,
+     "name": "knob 2",
+     "action": "knob.macro.1"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 72,
+     "name": "knob 3",
+     "action": "knob.macro.2"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 73,
+     "name": "knob 4",
+     "action": "knob.macro.3"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 74,
+     "name": "knob 5",
+     "action": "fader.track.1"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 75,
+     "name": "knob 6",
+     "action": "fader.track.2"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 76,
+     "name": "knob 7",
+     "action": "fader.track.3"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 77,
+     "name": "knob 8",
+     "action": "fader.master"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 108,
+     "name": "play",
+     "action": "transport.play"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 109,
+     "name": "rec",
+     "action": "transport.record"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 110,
+     "name": "stop",
+     "action": "transport.stop"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 111,
+     "name": "restart btn -> JAM",
+     "action": "jam.toggle"
+    },
+    {
+     "type": "cc",
+     "ch": 16,
+     "num": 112,
+     "name": "events btn -> vibe cycle",
+     "action": "jam.vibe.next"
+    }
+   ]
+  },
+  {
+   "id": "generic_midi_keyboard",
+   "match": ".*",
+   "provenance": "MIDI spec commons: CC1 mod, CC7 volume, CC10 pan, CC64 sustain - f152",
+   "controls": [
+    {
+     "type": "cc",
+     "ch": 0,
+     "num": 7,
+     "name": "volume",
+     "action": "fader.master"
+    },
+    {
+     "type": "cc",
+     "ch": 0,
+     "num": 1,
+     "name": "mod wheel",
+     "action": "knob.macro.1"
+    }
+   ]
+  }
+ ]
+}

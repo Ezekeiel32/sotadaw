@@ -1,0 +1,167 @@
+{
+ "kind": "chops",
+ "source": "songs/_lg_house.wav",
+ "fromSec": 0.0,
+ "samples": [
+  {
+   "file": "pad_01.wav",
+   "keyNote": 36,
+   "minNote": 36,
+   "maxNote": 36,
+   "gainDb": 0.0,
+   "sliceSec": 0.2206,
+   "lenSec": 0.4876,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_02.wav",
+   "keyNote": 37,
+   "minNote": 37,
+   "maxNote": 37,
+   "gainDb": 0.0,
+   "sliceSec": 0.7082,
+   "lenSec": 0.4876,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_03.wav",
+   "keyNote": 38,
+   "minNote": 38,
+   "maxNote": 38,
+   "gainDb": 0.0,
+   "sliceSec": 1.1958,
+   "lenSec": 0.2438,
+   "vel": 0.88
+  },
+  {
+   "file": "pad_04.wav",
+   "keyNote": 39,
+   "minNote": 39,
+   "maxNote": 39,
+   "gainDb": 0.0,
+   "sliceSec": 1.4396,
+   "lenSec": 0.7198,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_05.wav",
+   "keyNote": 40,
+   "minNote": 40,
+   "maxNote": 40,
+   "gainDb": 0.0,
+   "sliceSec": 2.1595,
+   "lenSec": 0.4876,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_06.wav",
+   "keyNote": 41,
+   "minNote": 41,
+   "maxNote": 41,
+   "gainDb": 0.0,
+   "sliceSec": 2.6471,
+   "lenSec": 0.2438,
+   "vel": 0.88
+  },
+  {
+   "file": "pad_07.wav",
+   "keyNote": 42,
+   "minNote": 42,
+   "maxNote": 42,
+   "gainDb": 0.0,
+   "sliceSec": 2.8909,
+   "lenSec": 0.2322,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_08.wav",
+   "keyNote": 43,
+   "minNote": 43,
+   "maxNote": 43,
+   "gainDb": 0.0,
+   "sliceSec": 3.1231,
+   "lenSec": 0.4876,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_09.wav",
+   "keyNote": 44,
+   "minNote": 44,
+   "maxNote": 44,
+   "gainDb": 0.0,
+   "sliceSec": 3.6107,
+   "lenSec": 0.4876,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_10.wav",
+   "keyNote": 45,
+   "minNote": 45,
+   "maxNote": 45,
+   "gainDb": 0.0,
+   "sliceSec": 4.0983,
+   "lenSec": 0.2438,
+   "vel": 0.89
+  },
+  {
+   "file": "pad_11.wav",
+   "keyNote": 46,
+   "minNote": 46,
+   "maxNote": 46,
+   "gainDb": 0.0,
+   "sliceSec": 4.3421,
+   "lenSec": 0.2322,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_12.wav",
+   "keyNote": 47,
+   "minNote": 47,
+   "maxNote": 47,
+   "gainDb": 0.0,
+   "sliceSec": 4.5743,
+   "lenSec": 0.4876,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_13.wav",
+   "keyNote": 48,
+   "minNote": 48,
+   "maxNote": 48,
+   "gainDb": 0.0,
+   "sliceSec": 5.062,
+   "lenSec": 0.9636,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_14.wav",
+   "keyNote": 49,
+   "minNote": 49,
+   "maxNote": 49,
+   "gainDb": 0.0,
+   "sliceSec": 6.0256,
+   "lenSec": 0.9752,
+   "vel": 0.97
+  },
+  {
+   "file": "pad_15.wav",
+   "keyNote": 50,
+   "minNote": 50,
+   "maxNote": 50,
+   "gainDb": 0.0,
+   "sliceSec": 7.0008,
+   "lenSec": 0.2438,
+   "vel": 0.88
+  },
+  {
+   "file": "pad_16.wav",
+   "keyNote": 51,
+   "minNote": 51,
+   "maxNote": 51,
+   "gainDb": 0.0,
+   "sliceSec": 7.2446,
+   "lenSec": 2.4328,
+   "vel": 0.97
+  }
+ ]
+}

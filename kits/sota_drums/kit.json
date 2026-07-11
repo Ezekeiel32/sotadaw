@@ -1,0 +1,75 @@
+{
+ "kind": "drums",
+ "samples": [
+  {
+   "file": "kick.wav",
+   "keyNote": 36,
+   "minNote": 36,
+   "maxNote": 36,
+   "gainDb": 0.0
+  },
+  {
+   "file": "kick_deep.wav",
+   "keyNote": 35,
+   "minNote": 35,
+   "maxNote": 35,
+   "gainDb": 0.0
+  },
+  {
+   "file": "snare.wav",
+   "keyNote": 38,
+   "minNote": 38,
+   "maxNote": 38,
+   "gainDb": 1.0
+  },
+  {
+   "file": "clap.wav",
+   "keyNote": 39,
+   "minNote": 39,
+   "maxNote": 39,
+   "gainDb": 1.0
+  },
+  {
+   "file": "hat.wav",
+   "keyNote": 42,
+   "minNote": 42,
+   "maxNote": 42,
+   "gainDb": 5.0
+  },
+  {
+   "file": "hat_dark.wav",
+   "keyNote": 41,
+   "minNote": 41,
+   "maxNote": 41,
+   "gainDb": 3.0
+  },
+  {
+   "file": "hat_open.wav",
+   "keyNote": 46,
+   "minNote": 46,
+   "maxNote": 46,
+   "gainDb": 4.0
+  },
+  {
+   "file": "perc.wav",
+   "keyNote": 43,
+   "minNote": 43,
+   "maxNote": 43,
+   "gainDb": 3.0
+  },
+  {
+   "file": "crash.wav",
+   "keyNote": 49,
+   "minNote": 49,
+   "maxNote": 49,
+   "gainDb": 4.0
+  },
+  {
+   "file": "sub808.wav",
+   "keyNote": 33,
+   "minNote": 24,
+   "maxNote": 40,
+   "gainDb": 0.0
+  }
+ ]
+}

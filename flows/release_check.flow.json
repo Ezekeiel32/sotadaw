@@ -1,0 +1,49 @@
+{
+ "name": "release_check",
+ "enabled": true,
+ "trigger": {
+  "kind": "manual"
+ },
+ "approval": "auto",
+ "comment": "the pre-release breath: audit, spotify verdict, full render + clip gate, ears \u2014 then the label-ready folder (license-gated)",
+ "steps": [
+  {
+   "tool": "finish_audit",
+   "args": {
+    "song": "$song"
+   }
+  },
+  {
+   "tool": "master_report",
+   "args": {
+    "song": "$song",
+    "platform": "spotify"
+   }
+  },
+  {
+   "tool": "render_song",
+   "args": {
+    "name": "$song",
+    "full": true
+   },
+   "gate": {
+    "metric": "last_render.clipped_samples",
+    "op": "==",
+    "val": 0
+   }
+  },
+  {
+   "tool": "analyze_wav",
+   "args": {
+    "path": "songs/$song.wav"
+   }
+  },
+  {
+   "tool": "release_pack",
+   "args": {
+    "song": "$song",
+    "platforms": "spotify"
+   }
+  }
+ ]
+}

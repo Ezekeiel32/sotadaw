@@ -1,0 +1,154 @@
+{
+  "version": 2,
+  "bpm": 132.0,
+  "key": "Fm",
+  "lengthBars": 8.0,
+  "masterGainDb": 0.0,
+  "swing": {
+    "grid": "16th",
+    "amount": 0.51
+  },
+  "sections": [
+    {
+      "name": "intro",
+      "startBar": 0.0
+    },
+    {
+      "name": "verse",
+      "startBar": 2.0
+    }
+  ],
+  "provenance": {
+    "agents": [
+      {
+        "model": [
+          "claude-opus-4-8",
+          "30"
+        ],
+        "persona": "",
+        "promptHash": "49420d2437149f29",
+        "at": "2026-07-05T03:12:54"
+      },
+      {
+        "model": "claude",
+        "persona": "",
+        "promptHash": "",
+        "at": "2026-07-06T09:04:11"
+      }
+    ],
+    "lineage": [
+      {
+        "t": 1.7832103747e9,
+        "event": "accept",
+        "prop": "_prop_demo_track",
+        "promptHash": "49420d2437149f29",
+        "note": ""
+      },
+      {
+        "t": 1.7833178518e9,
+        "event": "accept",
+        "prop": "_prop_demo_track",
+        "promptHash": "",
+        "note": ""
+      }
+    ],
+    "samples": [
+      {
+        "kit": "gm_drums",
+        "license": "bundled"
+      },
+      {
+        "kit": "piano",
+        "license": "bundled"
+      },
+      {
+        "kit": "strings",
+        "license": "bundled"
+      }
+    ]
+  },
+  "master": [
+    {
+      "type": "faustfx",
+      "id": "vst3:Surge XT Effects",
+      "params": {
+      }
+    },
+    {
+      "type": "faustfx",
+      "id": "fx_trim",
+      "params": {
+        "level": -4.0
+      }
+    },
+    {
+      "type": "faustfx",
+      "id": "fx_saturate",
+      "params": {
+        "drive": 5.0,
+        "mix": 1.0
+      }
+    },
+    {
+      "type": "faustfx",
+      "id": "fx_trim",
+      "params": {
+        "level": 6.0
+      }
+    },
+    {
+      "type": "faustfx",
+      "id": "fx_brickwall",
+      "params": {
+        "ceiling": -1.5
+      }
+    }
+  ],
+  "buses": [
+    {
+      "id": "verb",
+      "gainDb": 0.0,
+      "fx": [
+        {
+          "id": "fx_reverb",
+          "params": {
+            "mix": 1.0,
+            "size": 3.0
+          }
+        }
+      ]
+    }
+  ],
+  "tracks": [
+    {
+      "name": "808",
+      "source": {
+        "kind": "faust",
+        "id": "kick_808"
+      },
+      "gainDb": -7.0,
+      "pan": 0.0,
+      "color": "#c792ea",
+      "notes": [
+        {
+          "start": 0.0,
+          "len": 0.5,
+          "pitch": 36,
+          "vel": 1.0
+        },
+        {
+          "start": 4.0,
+          "len": 0.5,
+          "pitch": 38,
+          "vel": 1.0
+        },
+        {
+          "start": 8.0,
+          "len": 0.5,
+          "pitch": 40,
+          "vel": 1.0
+        }
+      ]
+    }
+  ]
+}

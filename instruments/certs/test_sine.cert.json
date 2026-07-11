@@ -1,0 +1,54 @@
+{
+ "name": "test_sine",
+ "kind": "voice",
+ "dsp_sha": "a184141bdd83d300",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -13.98,
+ "clipped_samples": 0,
+ "attack_ms": 0.0,
+ "sustain_rms_db": -16.99,
+ "sustain_centroid_hz": 444,
+ "harmonics_top": [
+  [
+   438.8,
+   -85.6
+  ],
+  [
+   439.4,
+   -6.0
+  ],
+  [
+   440.0,
+   0.0
+  ],
+  [
+   440.6,
+   -6.0
+  ],
+  [
+   441.2,
+   -84.3
+  ],
+  [
+   441.8,
+   -96.0
+  ],
+  [
+   5107.1,
+   -96.9
+  ],
+  [
+   5987.1,
+   -96.9
+  ]
+ ],
+ "decay_to_m60_s": ">end",
+ "noise_tail_dbfs": -16.99,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

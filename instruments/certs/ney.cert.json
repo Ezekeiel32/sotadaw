@@ -1,0 +1,54 @@
+{
+ "name": "ney",
+ "kind": "voice",
+ "dsp_sha": "c0f83567aba76e01",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -7.98,
+ "clipped_samples": 0,
+ "attack_ms": 60.0,
+ "sustain_rms_db": -13.48,
+ "sustain_centroid_hz": 1197,
+ "harmonics_top": [
+  [
+   256.5,
+   -12.3
+  ],
+  [
+   257.1,
+   -14.9
+  ],
+  [
+   261.2,
+   -3.1
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -9.4
+  ],
+  [
+   266.5,
+   -12.2
+  ],
+  [
+   267.1,
+   -14.7
+  ],
+  [
+   523.5,
+   -21.0
+  ]
+ ],
+ "decay_to_m60_s": 2.15,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

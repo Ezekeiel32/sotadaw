@@ -1,0 +1,54 @@
+{
+ "name": "vibraphone",
+ "kind": "voice",
+ "dsp_sha": "1eae4fb129d7cdee",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -0.8,
+ "clipped_samples": 0,
+ "attack_ms": 20.0,
+ "sustain_rms_db": -14.11,
+ "sustain_centroid_hz": 263,
+ "harmonics_top": [
+  [
+   257.1,
+   -21.2
+  ],
+  [
+   257.6,
+   -19.6
+  ],
+  [
+   260.6,
+   -17.9
+  ],
+  [
+   261.2,
+   -3.0
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -8.7
+  ],
+  [
+   265.3,
+   -23.4
+  ],
+  [
+   265.9,
+   -19.0
+  ]
+ ],
+ "decay_to_m60_s": 2.4,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

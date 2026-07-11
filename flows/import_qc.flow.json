@@ -1,0 +1,13 @@
+{
+ "name": "import_qc",
+ "enabled": true,
+ "trigger": {"kind": "on_import"},
+ "approval": "auto",
+ "comment": "every import gets its ears checked: preview render must be clip-free, then the full report lands in the run journal",
+ "steps": [
+  {"tool": "render_song", "args": {"name": "$song", "max_bars": 16},
+   "gate": {"metric": "last_render.clipped_samples", "op": "==", "val": 0}},
+  {"tool": "analyze_wav", "args": {"path": "songs/$song.wav"}},
+  {"tool": "finish_audit", "args": {"song": "$song"}}
+ ]
+}

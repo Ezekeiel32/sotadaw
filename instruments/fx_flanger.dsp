@@ -1,0 +1,11 @@
+import("stdfaust.lib");
+rate = hslider("rate", 0.22, 0.02, 3.0, 0.001);
+depth = hslider("depth", 0.75, 0.0, 1.0, 0.01);
+fbk = hslider("feedback", 0.45, 0.0, 0.9, 0.01);
+mix = hslider("mix", 0.5, 0.0, 1.0, 0.01);
+lfo1 = (1.0 + os.osc(rate)) * 0.5;
+lfo2 = (1.0 + os.osccos(rate)) * 0.5;
+d1 = (1.0 + lfo1 * 9.0 * depth) * 0.001 * ma.SR;
+d2 = (1.0 + lfo2 * 9.0 * depth) * 0.001 * ma.SR;
+wet = pf.flanger_stereo(2048, d1, d2, 1.0, fbk, 0);
+process = _,_ <: (wet : par(i, 2, *(mix))), par(i, 2, *(1.0 - mix)) :> _,_;

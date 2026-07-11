@@ -1,0 +1,54 @@
+{
+ "name": "organ_soul",
+ "kind": "voice",
+ "dsp_sha": "358331b2d1fae2fb",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -1.03,
+ "clipped_samples": 0,
+ "attack_ms": 40.0,
+ "sustain_rms_db": -10.72,
+ "sustain_centroid_hz": 512,
+ "harmonics_top": [
+  [
+   130.6,
+   -7.4
+  ],
+  [
+   131.2,
+   -8.8
+  ],
+  [
+   261.2,
+   -3.1
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -9.3
+  ],
+  [
+   392.4,
+   -6.7
+  ],
+  [
+   522.9,
+   -6.5
+  ],
+  [
+   523.5,
+   -6.2
+  ]
+ ],
+ "decay_to_m60_s": 2.01,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

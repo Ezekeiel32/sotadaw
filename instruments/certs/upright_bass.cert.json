@@ -1,0 +1,54 @@
+{
+ "name": "upright_bass",
+ "kind": "voice",
+ "dsp_sha": "1b6270f7edfb842d",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -7.91,
+ "clipped_samples": 0,
+ "attack_ms": 10.0,
+ "sustain_rms_db": -29.89,
+ "sustain_centroid_hz": 257,
+ "harmonics_top": [
+  [
+   259.4,
+   -22.3
+  ],
+  [
+   260.0,
+   -10.3
+  ],
+  [
+   260.6,
+   -3.8
+  ],
+  [
+   261.2,
+   -0.6
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -1.8
+  ],
+  [
+   262.9,
+   -6.3
+  ],
+  [
+   263.5,
+   -15.2
+  ]
+ ],
+ "decay_to_m60_s": 1.0,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

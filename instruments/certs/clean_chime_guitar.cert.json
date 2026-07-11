@@ -1,0 +1,54 @@
+{
+ "name": "clean_chime_guitar",
+ "kind": "voice",
+ "dsp_sha": "f6a21d23c09d4732",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -4.44,
+ "clipped_samples": 0,
+ "attack_ms": 10.0,
+ "sustain_rms_db": -51.48,
+ "sustain_centroid_hz": 1196,
+ "harmonics_top": [
+  [
+   785.9,
+   -4.7
+  ],
+  [
+   786.5,
+   0.0
+  ],
+  [
+   787.1,
+   -1.6
+  ],
+  [
+   787.6,
+   -1.1
+  ],
+  [
+   788.2,
+   -0.5
+  ],
+  [
+   1305.3,
+   -4.9
+  ],
+  [
+   1307.6,
+   -5.7
+  ],
+  [
+   1308.2,
+   -5.7
+  ]
+ ],
+ "decay_to_m60_s": 0.96,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

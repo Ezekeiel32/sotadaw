@@ -1,0 +1,54 @@
+{
+ "name": "sax_section",
+ "kind": "voice",
+ "dsp_sha": "0f1b6d09a3b3dcc6",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -0.8,
+ "clipped_samples": 0,
+ "attack_ms": 40.0,
+ "sustain_rms_db": -14.61,
+ "sustain_centroid_hz": 1661,
+ "harmonics_top": [
+  [
+   261.2,
+   -3.1
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   267.1,
+   -6.0
+  ],
+  [
+   517.6,
+   -6.7
+  ],
+  [
+   528.8,
+   -6.3
+  ],
+  [
+   779.4,
+   -7.0
+  ],
+  [
+   1035.9,
+   -6.4
+  ],
+  [
+   1057.1,
+   -6.9
+  ]
+ ],
+ "decay_to_m60_s": 2.09,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

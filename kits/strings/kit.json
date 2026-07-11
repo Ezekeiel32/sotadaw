@@ -1,0 +1,69 @@
+{
+ "name": "strings",
+ "kind": "pitched",
+ "samples": [
+  {
+   "file": "36.wav",
+   "keyNote": 36,
+   "minNote": 0,
+   "maxNote": 38,
+   "gainDb": 0.0
+  },
+  {
+   "file": "42.wav",
+   "keyNote": 42,
+   "minNote": 39,
+   "maxNote": 44,
+   "gainDb": 0.0
+  },
+  {
+   "file": "48.wav",
+   "keyNote": 48,
+   "minNote": 45,
+   "maxNote": 50,
+   "gainDb": 0.0
+  },
+  {
+   "file": "54.wav",
+   "keyNote": 54,
+   "minNote": 51,
+   "maxNote": 56,
+   "gainDb": 0.0
+  },
+  {
+   "file": "60.wav",
+   "keyNote": 60,
+   "minNote": 57,
+   "maxNote": 62,
+   "gainDb": 0.0
+  },
+  {
+   "file": "66.wav",
+   "keyNote": 66,
+   "minNote": 63,
+   "maxNote": 68,
+   "gainDb": 0.0
+  },
+  {
+   "file": "72.wav",
+   "keyNote": 72,
+   "minNote": 69,
+   "maxNote": 74,
+   "gainDb": 0.0
+  },
+  {
+   "file": "78.wav",
+   "keyNote": 78,
+   "minNote": 75,
+   "maxNote": 80,
+   "gainDb": 0.0
+  },
+  {
+   "file": "84.wav",
+   "keyNote": 84,
+   "minNote": 81,
+   "maxNote": 127,
+   "gainDb": 0.0
+  }
+ ]
+}

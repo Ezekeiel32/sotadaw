@@ -1,0 +1,54 @@
+{
+ "name": "flute_lead",
+ "kind": "voice",
+ "dsp_sha": "f8972c67edb06d39",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -1.49,
+ "clipped_samples": 0,
+ "attack_ms": 50.0,
+ "sustain_rms_db": -6.21,
+ "sustain_centroid_hz": 1509,
+ "harmonics_top": [
+  [
+   255.9,
+   -14.8
+  ],
+  [
+   256.5,
+   -9.7
+  ],
+  [
+   257.1,
+   -16.8
+  ],
+  [
+   261.2,
+   -3.1
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -9.3
+  ],
+  [
+   266.5,
+   -11.8
+  ],
+  [
+   267.1,
+   -10.5
+  ]
+ ],
+ "decay_to_m60_s": 2.11,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

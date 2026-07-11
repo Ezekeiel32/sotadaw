@@ -1,0 +1,146 @@
+{
+ "name": "gm_drums",
+ "kind": "drums",
+ "samples": [
+  {
+   "file": "36_kick.wav",
+   "keyNote": 36,
+   "minNote": 36,
+   "maxNote": 36,
+   "gainDb": 0.0
+  },
+  {
+   "file": "37_rim.wav",
+   "keyNote": 37,
+   "minNote": 37,
+   "maxNote": 37,
+   "gainDb": 0.0
+  },
+  {
+   "file": "38_snare.wav",
+   "keyNote": 38,
+   "minNote": 38,
+   "maxNote": 38,
+   "gainDb": 0.0
+  },
+  {
+   "file": "39_clap.wav",
+   "keyNote": 39,
+   "minNote": 39,
+   "maxNote": 39,
+   "gainDb": 0.0
+  },
+  {
+   "file": "40_snare2.wav",
+   "keyNote": 40,
+   "minNote": 40,
+   "maxNote": 40,
+   "gainDb": 0.0
+  },
+  {
+   "file": "42_hat_closed.wav",
+   "keyNote": 42,
+   "minNote": 42,
+   "maxNote": 42,
+   "gainDb": 0.0
+  },
+  {
+   "file": "43_tom_lo.wav",
+   "keyNote": 43,
+   "minNote": 43,
+   "maxNote": 43,
+   "gainDb": 0.0
+  },
+  {
+   "file": "44_hat_pedal.wav",
+   "keyNote": 44,
+   "minNote": 44,
+   "maxNote": 44,
+   "gainDb": 0.0
+  },
+  {
+   "file": "46_hat_open.wav",
+   "keyNote": 46,
+   "minNote": 46,
+   "maxNote": 46,
+   "gainDb": 0.0
+  },
+  {
+   "file": "47_tom_mid.wav",
+   "keyNote": 47,
+   "minNote": 47,
+   "maxNote": 47,
+   "gainDb": 0.0
+  },
+  {
+   "file": "49_crash.wav",
+   "keyNote": 49,
+   "minNote": 49,
+   "maxNote": 49,
+   "gainDb": 0.0
+  },
+  {
+   "file": "50_tom_hi.wav",
+   "keyNote": 50,
+   "minNote": 50,
+   "maxNote": 50,
+   "gainDb": 0.0
+  },
+  {
+   "file": "51_ride.wav",
+   "keyNote": 51,
+   "minNote": 51,
+   "maxNote": 51,
+   "gainDb": 0.0
+  },
+  {
+   "file": "53_ride_bell.wav",
+   "keyNote": 53,
+   "minNote": 53,
+   "maxNote": 53,
+   "gainDb": 0.0
+  },
+  {
+   "file": "54_tamb.wav",
+   "keyNote": 54,
+   "minNote": 54,
+   "maxNote": 54,
+   "gainDb": 0.0
+  },
+  {
+   "file": "56_cowbell.wav",
+   "keyNote": 56,
+   "minNote": 56,
+   "maxNote": 56,
+   "gainDb": 0.0
+  },
+  {
+   "file": "69_cabasa.wav",
+   "keyNote": 69,
+   "minNote": 69,
+   "maxNote": 69,
+   "gainDb": 0.0
+  },
+  {
+   "file": "70_maracas.wav",
+   "keyNote": 70,
+   "minNote": 70,
+   "maxNote": 70,
+   "gainDb": 0.0
+  },
+  {
+   "file": "75_clave.wav",
+   "keyNote": 75,
+   "minNote": 75,
+   "maxNote": 75,
+   "gainDb": 0.0
+  },
+  {
+   "file": "81_triangle.wav",
+   "keyNote": 81,
+   "minNote": 81,
+   "maxNote": 81,
+   "gainDb": 0.0
+  }
+ ]
+}

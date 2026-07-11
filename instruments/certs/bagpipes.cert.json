@@ -1,0 +1,54 @@
+{
+ "name": "bagpipes",
+ "kind": "voice",
+ "dsp_sha": "909bccf7f49e3b93",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -7.63,
+ "clipped_samples": 0,
+ "attack_ms": 20.0,
+ "sustain_rms_db": -19.55,
+ "sustain_centroid_hz": 1794,
+ "harmonics_top": [
+  [
+   116.5,
+   -4.9
+  ],
+  [
+   232.9,
+   -5.1
+  ],
+  [
+   261.2,
+   -3.1
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   523.5,
+   -7.4
+  ],
+  [
+   784.7,
+   -7.4
+  ],
+  [
+   1046.5,
+   -5.9
+  ],
+  [
+   1308.2,
+   -4.9
+  ]
+ ],
+ "decay_to_m60_s": 1.28,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

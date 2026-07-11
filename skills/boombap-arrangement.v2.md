@@ -1,0 +1,28 @@
+---
+name: boombap-arrangement
+version: 2
+kind: genre
+tags: [boombap, arrangement]
+compiled_from: knowledge-graph (tools/skill_compiler.py; provenance per fact below)
+hard_constraints:
+  - BPM 85-95; set the song key (suggested: A minor).
+  - Mix: clipped_samples == 0, LUFS -16..-9, band order low>lowmid>mid.
+  - SWING 16TH is non-negotiable: shift odd 16ths late; 0.54-0.58 gentle, 0.60-0.65 drunk
+  - GHOST NOTES is non-negotiable: low-velocity (0.25-0.45) off-grid hits between main hits
+  - GROOVE DILLA is non-negotiable: apply_groove('dilla', amount 0.6-0.9) on drums - drunk drag, late backbeat. The lofi/boombap feel IS this profile.
+---
+# Boombap arrangement (graph-compiled)
+
+## The pocket — boombap_drums
+snare 1&3 hard, swing 0.56-0.62, dusty kit  *(source: skill:boombap-arrangement@v1)*
+
+## Techniques (weight order — the top ones DEFINE the genre)
+- **swing 16th** (w1.0): shift odd 16ths late; 0.54-0.58 gentle, 0.60-0.65 drunk *(skill:trap-arrangement@v2)*
+- **ghost notes** (w0.92): low-velocity (0.25-0.45) off-grid hits between main hits *(skill:trap-arrangement@v2)*
+- **groove dilla** (w0.9): apply_groove('dilla', amount 0.6-0.9) on drums - drunk drag, late backbeat. The lofi/boombap feel IS this profile. *(curated:claude/2026-07-03 (groove engine profiles -> graph))*
+- **groove boombap 56** (w0.9): apply_groove('boombap_56', amount 0.8-1.0) - 56% swing + heavy backbeat velocities. *(curated:claude/2026-07-03 (groove engine profiles -> graph))*
+- **layered snare** (w0.84): sample clap + synth snare body at -12 to -18 *(skill:sound-palette@v2)*
+- **m7 chords** (w0.76): minor 7th / extended chords, mid register, soft velocity *(skill:lofi-arrangement@v1)*
+
+## Verify (the ears will check)
+After render: analyze_wav must show clipped_samples 0, LUFS in -16..-9, band order low>lowmid>mid. If a filter build was used, centroid_by_quarter must RISE into the drop.

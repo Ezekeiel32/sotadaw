@@ -1,0 +1,54 @@
+{
+ "name": "erhu",
+ "kind": "voice",
+ "dsp_sha": "198f2de623862015",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -4.09,
+ "clipped_samples": 0,
+ "attack_ms": 60.0,
+ "sustain_rms_db": -14.58,
+ "sustain_centroid_hz": 1981,
+ "harmonics_top": [
+  [
+   261.2,
+   -3.1
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -9.3
+  ],
+  [
+   267.1,
+   -10.3
+  ],
+  [
+   517.6,
+   -10.7
+  ],
+  [
+   522.9,
+   -8.8
+  ],
+  [
+   523.5,
+   -8.5
+  ],
+  [
+   528.8,
+   -10.5
+  ]
+ ],
+ "decay_to_m60_s": 2.14,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

@@ -1,0 +1,9 @@
+app/build/
+app/tracktion_engine/
+app/link/
+app/third_party/nam-core/
+.venv/
+__pycache__/
+*.pyc
+dist/
+agent/ipc/

@@ -1,0 +1,1250 @@
+{
+ "fxt": {
+  "fxt_off": 0,
+  "fxt_delay": 1,
+  "fxt_reverb": 2,
+  "fxt_phaser": 3,
+  "fxt_rotaryspeaker": 4,
+  "fxt_distortion": 5,
+  "fxt_eq": 6,
+  "fxt_freqshift": 7,
+  "fxt_conditioner": 8,
+  "fxt_chorus4": 9,
+  "fxt_vocoder": 10,
+  "fxt_reverb2": 11,
+  "fxt_flanger": 12,
+  "fxt_ringmod": 13,
+  "fxt_airwindows": 14,
+  "fxt_neuron": 15,
+  "fxt_geq11": 16,
+  "fxt_resonator": 17,
+  "fxt_chow": 18,
+  "fxt_exciter": 19,
+  "fxt_ensemble": 20,
+  "fxt_combulator": 21,
+  "fxt_nimbus": 22,
+  "fxt_tape": 23,
+  "fxt_treemonster": 24,
+  "fxt_waveshaper": 25,
+  "fxt_mstool": 26,
+  "fxt_spring_reverb": 27,
+  "fxt_bonsai": 28,
+  "fxt_audio_input": 29,
+  "fxt_floaty_delay": 30,
+  "fxt_convolution": 31
+ },
+ "ranges": {
+  "ct_portatime": {
+   "vt": "vt_float",
+   "min": -8.0,
+   "max": 2.0
+  },
+  "ct_lforate": {
+   "vt": "vt_float",
+   "min": -7.0,
+   "max": 9.0
+  },
+  "ct_lforate_deactivatable": {
+   "vt": "vt_float",
+   "min": -7.0,
+   "max": 9.0
+  },
+  "ct_envtime": {
+   "vt": "vt_float",
+   "min": -8.0,
+   "max": 5.0
+  },
+  "ct_envtime_deformable": {
+   "vt": "vt_float",
+   "min": -8.0,
+   "max": 5.0
+  },
+  "ct_envtime_deactivatable": {
+   "vt": "vt_float",
+   "min": -8.0,
+   "max": 5.0
+  },
+  "ct_envtime_linkable_delay": {
+   "vt": "vt_float",
+   "min": -8.0,
+   "max": 5.0
+  },
+  "ct_envtime_lfodecay": {
+   "vt": "vt_float",
+   "min": -8.0,
+   "max": 5.0
+  },
+  "ct_reverbpredelaytime": {
+   "vt": "vt_float",
+   "min": -8.0,
+   "max": 1.0
+  },
+  "ct_floaty_delay_time": {
+   "vt": "vt_float",
+   "min": -5.64386,
+   "max": 3.0
+  },
+  "ct_percent_with_extend_to_bipolar": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_percent_with_extend_to_bipolar_static_default": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_pitch_semi7bp": {
+   "vt": "vt_float",
+   "min": -7.0,
+   "max": 7.0
+  },
+  "ct_pitch_semi7bp_absolutable": {
+   "vt": "vt_float",
+   "min": -7.0,
+   "max": 7.0
+  },
+  "ct_pitch_extendable_very_low_minval": {
+   "vt": "vt_float",
+   "min": -60.0,
+   "max": 60.0
+  },
+  "ct_freq_fm2_offset": {
+   "vt": "vt_float",
+   "min": -10.0,
+   "max": 10.0
+  },
+  "ct_freq_reson_band1": {
+   "vt": "vt_float",
+   "min": -34.4936,
+   "max": -6.6305
+  },
+  "ct_freq_reson_band2": {
+   "vt": "vt_float",
+   "min": -6.6305,
+   "max": 21.23265
+  },
+  "ct_freq_reson_band3": {
+   "vt": "vt_float",
+   "min": 21.23265,
+   "max": 49.09578
+  },
+  "ct_freq_shift": {
+   "vt": "vt_float",
+   "min": -10.0,
+   "max": 10.0
+  },
+  "ct_decibel_extendable": {
+   "vt": "vt_float",
+   "min": -48.0,
+   "max": 48.0
+  },
+  "ct_decibel_narrow_extendable": {
+   "vt": "vt_float",
+   "min": -24.0,
+   "max": 24.0
+  },
+  "ct_decibel_narrow_short_extendable": {
+   "vt": "vt_float",
+   "min": -24.0,
+   "max": 24.0
+  },
+  "ct_oscspread": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_oscspread_bipolar": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_filter_feedback": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_osc_feedback": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_osc_feedback_negative": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_lfoamplitude": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_lfophaseshuffle": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_fmratio": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 32.0
+  },
+  "ct_reson_res_extendable": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_freq_audible_fm3_extendable": {
+   "vt": "vt_float",
+   "min": -60.0,
+   "max": 70.0
+  },
+  "ct_freq_audible_with_tunability": {
+   "vt": "vt_float",
+   "min": -60.0,
+   "max": 70.0
+  },
+  "ct_freq_audible_very_low_minval": {
+   "vt": "vt_float",
+   "min": -117.3763,
+   "max": 70.0
+  },
+  "ct_percent_oscdrift": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_twist_aux_mix": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_countedset_percent_extendable": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_countedset_percent_extendable_wtdeform": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_dly_fb_clippingmodes": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_bonsai_bass_boost": {
+   "vt": "vt_float",
+   "min": -24.0,
+   "max": 24.0
+  },
+  "ct_detuning": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 2.0
+  },
+  "ct_pbdepth": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 24.0
+  },
+  "ct_percent_deactivatable": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_percent_bipolar_deactivatable": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_freq_hpf": {
+   "vt": "vt_float",
+   "min": -72.0,
+   "max": 15.0
+  },
+  "ct_freq_audible_deactivatable": {
+   "vt": "vt_float",
+   "min": -60.0,
+   "max": 70.0
+  },
+  "ct_freq_audible_deactivatable_hp": {
+   "vt": "vt_float",
+   "min": -60.0,
+   "max": 70.0
+  },
+  "ct_freq_audible_deactivatable_lp": {
+   "vt": "vt_float",
+   "min": -60.0,
+   "max": 70.0
+  },
+  "ct_rotarydrive": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_airwindows_fx": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 10.0
+  },
+  "ct_decibel_deactivatable": {
+   "vt": "vt_float",
+   "min": -48.0,
+   "max": 48.0
+  },
+  "ct_decibel_narrow_deactivatable": {
+   "vt": "vt_float",
+   "min": -24.0,
+   "max": 24.0
+  },
+  "ct_decibel_extra_narrow_deactivatable": {
+   "vt": "vt_float",
+   "min": -12.0,
+   "max": 12.0
+  },
+  "ct_tape_drive": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_tape_speed": {
+   "vt": "vt_float",
+   "min": 1.0,
+   "max": 50.0
+  },
+  "ct_wstype": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_filtertype": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_amplitude_clipper": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_percent_with_string_deform_hook": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_percent_bipolar_with_string_filter_hook": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_lfodeform": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_modern_trimix": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_alias_mask": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_noise_color": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_amplitude_ringmod": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_decibel": {
+   "vt": "vt_float",
+   "min": -48.0,
+   "max": 48.0
+  },
+  "ct_decibel_narrow": {
+   "vt": "vt_float",
+   "min": -24.0,
+   "max": 24.0
+  },
+  "ct_decibel_extra_narrow": {
+   "vt": "vt_float",
+   "min": -12.0,
+   "max": 12.0
+  },
+  "ct_freq_mod": {
+   "vt": "vt_float",
+   "min": -96.0,
+   "max": 96.0
+  },
+  "ct_percent_bipolar": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_percent_bipolar_stereo": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_percent_bipolar_pan": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_percent_bipolar_stringbal": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_percent_bipolar_w_dynamic_unipolar_formatting": {
+   "vt": "vt_float",
+   "min": -1.0,
+   "max": 1.0
+  },
+  "ct_airwindows_param_bipolar": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_pitch": {
+   "vt": "vt_float",
+   "min": -60.0,
+   "max": 60.0
+  },
+  "ct_pitch4oct": {
+   "vt": "vt_float",
+   "min": -48.0,
+   "max": 48.0
+  },
+  "ct_floaty_delay_playrate": {
+   "vt": "vt_float",
+   "min": -5.0,
+   "max": 5.0
+  },
+  "ct_sinefmlegacy": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_sineoscmode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 27.0
+  },
+  "ct_ringmod_sineoscmode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 28.0
+  },
+  "ct_wt2window": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 8.0
+  },
+  "ct_flangermode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 3.0
+  },
+  "ct_fxlfowave": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 5.0
+  },
+  "ct_distortion_waveshape": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_reson_mode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 3.0
+  },
+  "ct_vocoder_bandcount": {
+   "vt": "vt_int",
+   "min": 4.0,
+   "max": 20.0
+  },
+  "ct_nimbusmode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 7.0
+  },
+  "ct_nimbusquality": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 3.0
+  },
+  "ct_stringosc_excitation_model": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_twist_engine": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 15.0
+  },
+  "ct_ensemble_stages": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_alias_wave": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_mscodec": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 2.0
+  },
+  "ct_reverbshape": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 3.0
+  },
+  "ct_bonsai_sat_filter": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_bonsai_sat_mode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 3.0
+  },
+  "ct_bonsai_noise_mode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_phaser_stages": {
+   "vt": "vt_int",
+   "min": 1.0,
+   "max": 16.0
+  },
+  "ct_countedset_percent": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_airwindows_param": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_airwindows_param_integral": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_syncpitch": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 60.0
+  },
+  "ct_fmratio_int": {
+   "vt": "vt_int",
+   "min": 1.0,
+   "max": 32.0
+  },
+  "ct_freq_audible": {
+   "vt": "vt_float",
+   "min": -60.0,
+   "max": 70.0
+  },
+  "ct_freq_vocoder_low": {
+   "vt": "vt_float",
+   "min": -36.0,
+   "max": 36.0
+  },
+  "ct_freq_vocoder_high": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 60.0
+  },
+  "ct_freq_ringmod": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 127.0
+  },
+  "ct_bandwidth": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 5.0
+  },
+  "ct_decibel_attenuation": {
+   "vt": "vt_float",
+   "min": -48.0,
+   "max": 0.0
+  },
+  "ct_decibel_attenuation_clipper": {
+   "vt": "vt_float",
+   "min": -48.0,
+   "max": 0.0
+  },
+  "ct_decibel_attenuation_large": {
+   "vt": "vt_float",
+   "min": -96.0,
+   "max": 0.0
+  },
+  "ct_decibel_attenuation_plus12": {
+   "vt": "vt_float",
+   "min": -48.0,
+   "max": 12.0
+  },
+  "ct_decibel_fmdepth": {
+   "vt": "vt_float",
+   "min": -48.0,
+   "max": 24.0
+  },
+  "ct_floaty_warp_time": {
+   "vt": "vt_float",
+   "min": -3.0,
+   "max": 4.0
+  },
+  "ct_delaymodtime": {
+   "vt": "vt_float",
+   "min": -11.0,
+   "max": -3.0
+  },
+  "ct_chorusmodtime": {
+   "vt": "vt_float",
+   "min": -11.0,
+   "max": -3.0
+  },
+  "ct_reverbtime": {
+   "vt": "vt_float",
+   "min": -4.0,
+   "max": 6.0
+  },
+  "ct_ensemble_lforate": {
+   "vt": "vt_float",
+   "min": null,
+   "max": null
+  },
+  "ct_ensemble_clockrate": {
+   "vt": "vt_float",
+   "min": 1.5,
+   "max": 100.0
+  },
+  "ct_lfotrigmode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_pitch_octave": {
+   "vt": "vt_int",
+   "min": -3.0,
+   "max": 3.0
+  },
+  "ct_bool_mute": {
+   "vt": "vt_bool",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_bool_solo": {
+   "vt": "vt_bool",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_bool_keytrack": {
+   "vt": "vt_bool",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_bool_retrigger": {
+   "vt": "vt_bool",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_bool_relative_switch": {
+   "vt": "vt_bool",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_bool_link_switch": {
+   "vt": "vt_bool",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_bool_unipolar": {
+   "vt": "vt_bool",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_bool": {
+   "vt": "vt_bool",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_float_toggle": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_osctype": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_fxtype": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_fxbypass": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_oscroute": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 2.0
+  },
+  "ct_envshape": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 2.0
+  },
+  "ct_envshape_attack": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 2.0
+  },
+  "ct_envmode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_stereowidth": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 120.0
+  },
+  "ct_lfotype": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_fbconfig": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_fmconfig": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_filtersubtype": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_midikey_or_channel": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 127.0
+  },
+  "ct_midikey": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 127.0
+  },
+  "ct_osccount": {
+   "vt": "vt_int",
+   "min": 1.0,
+   "max": 16.0
+  },
+  "ct_scenemode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_polymode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": null
+  },
+  "ct_polylimit": {
+   "vt": "vt_int",
+   "min": 2.0,
+   "max": 64.0
+  },
+  "ct_scenesel": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_percent": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_amplitude": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_character": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 2.0
+  },
+  "ct_vocoder_modulator_mode": {
+   "vt": "vt_int",
+   "min": 0.0,
+   "max": 3.0
+  },
+  "ct_flangerpitch": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 127.0
+  },
+  "ct_flangervoices": {
+   "vt": "vt_float",
+   "min": 1.0,
+   "max": 4.0
+  },
+  "ct_alias_bits": {
+   "vt": "vt_float",
+   "min": 1.0,
+   "max": 8.0
+  },
+  "ct_flangerspacing": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 12.0
+  },
+  "ct_percent200": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 2.0
+  },
+  "ct_sendlevel": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.5874011517
+  },
+  "ct_phaser_spread": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_chow_ratio": {
+   "vt": "vt_float",
+   "min": 1.0,
+   "max": 20.0
+  },
+  "ct_comp_attack_ms": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_comp_release_ms": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_tape_microns": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 500.0
+  },
+  "ct_spring_decay": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_convolution_delay": {
+   "vt": "vt_float",
+   "min": 0.0,
+   "max": 1.0
+  },
+  "ct_none": {
+   "vt": "vt_int",
+   "min": null,
+   "max": null
+  }
+ },
+ "effects": {
+  "5": {
+   "class": "DistortionEffect",
+   "ctrltypes": [
+    "ct_decibel_extendable",
+    "ct_freq_audible",
+    "ct_bandwidth",
+    "ct_freq_audible_deactivatable_lp",
+    "ct_decibel_narrow_extendable",
+    "ct_percent_bipolar",
+    "ct_distortion_waveshape",
+    "ct_decibel_extendable",
+    "ct_freq_audible",
+    "ct_bandwidth",
+    "ct_freq_audible_deactivatable_lp",
+    "ct_decibel_narrow"
+   ]
+  },
+  "3": {
+   "class": "PhaserEffect",
+   "ctrltypes": [
+    "ct_fxlfowave",
+    "ct_lforate_deactivatable",
+    "ct_percent",
+    "ct_percent",
+    "ct_phaser_stages",
+    "ct_percent",
+    "ct_percent_bipolar",
+    "ct_percent_bipolar",
+    "ct_percent_bipolar",
+    "ct_percent_bipolar_deactivatable",
+    "ct_decibel_narrow",
+    "ct_percent"
+   ]
+  },
+  "7": {
+   "class": "FrequencyShifterEffect",
+   "ctrltypes": [
+    "ct_freq_shift",
+    "ct_percent_bipolar",
+    "ct_envtime",
+    "ct_percent",
+    "ct_percent"
+   ]
+  },
+  "1": {
+   "class": "DelayEffect",
+   "ctrltypes": [
+    "ct_envtime",
+    "ct_envtime_linkable_delay",
+    "ct_dly_fb_clippingmodes",
+    "ct_percent_with_extend_to_bipolar",
+    "ct_freq_audible_deactivatable_hp",
+    "ct_freq_audible_deactivatable_lp",
+    "ct_lforate",
+    "ct_detuning",
+    "ct_percent_bipolar_stereo",
+    "ct_percent",
+    "ct_decibel_narrow"
+   ]
+  },
+  "16": {
+   "class": "GraphicEQ11BandEffect",
+   "ctrltypes": [
+    "ct_decibel",
+    "ct_decibel_narrow_deactivatable"
+   ]
+  },
+  "4": {
+   "class": "RotarySpeakerEffect",
+   "ctrltypes": [
+    "ct_lforate",
+    "ct_percent200",
+    "ct_rotarydrive",
+    "ct_distortion_waveshape",
+    "ct_percent",
+    "ct_percent",
+    "ct_decibel_narrow",
+    "ct_percent"
+   ]
+  },
+  "29": {
+   "class": "AudioInputEffect",
+   "ctrltypes": [
+    "ct_percent_bipolar_stereo",
+    "ct_percent_bipolar_stereo",
+    "ct_decibel_attenuation_large",
+    "ct_percent_bipolar_stereo",
+    "ct_percent_bipolar_stereo",
+    "ct_decibel_attenuation_large",
+    "ct_percent_bipolar_stereo",
+    "ct_percent_bipolar_stereo",
+    "ct_decibel_attenuation_large",
+    "ct_percent_bipolar",
+    "ct_percent"
+   ]
+  },
+  "2": {
+   "class": "Reverb1Effect",
+   "ctrltypes": [
+    "ct_envtime",
+    "ct_reverbshape",
+    "ct_percent",
+    "ct_reverbtime",
+    "ct_percent",
+    "ct_freq_audible_deactivatable_hp",
+    "ct_freq_audible",
+    "ct_decibel",
+    "ct_freq_audible_deactivatable_lp",
+    "ct_percent",
+    "ct_decibel_narrow",
+    "ct_percent"
+   ]
+  },
+  "12": {
+   "class": "FlangerEffect",
+   "ctrltypes": [
+    "ct_flangermode",
+    "ct_fxlfowave",
+    "ct_lforate",
+    "ct_percent",
+    "ct_flangervoices",
+    "ct_flangerpitch",
+    "ct_flangerspacing",
+    "ct_percent",
+    "ct_percent",
+    "ct_decibel_narrow",
+    "ct_percent_bipolar"
+   ]
+  },
+  "28": {
+   "class": "BonsaiEffect",
+   "ctrltypes": [
+    "ct_decibel_narrow",
+    "ct_bonsai_bass_boost",
+    "ct_percent",
+    "ct_bonsai_sat_filter",
+    "ct_bonsai_sat_mode",
+    "ct_percent",
+    "ct_percent",
+    "ct_decibel_narrow",
+    "ct_percent",
+    "ct_decibel_narrow",
+    "ct_percent"
+   ]
+  },
+  "17": {
+   "class": "ResonatorEffect",
+   "ctrltypes": [
+    "ct_freq_reson_band1",
+    "ct_reson_res_extendable",
+    "ct_amplitude",
+    "ct_freq_reson_band2",
+    "ct_reson_res_extendable",
+    "ct_amplitude",
+    "ct_freq_reson_band3",
+    "ct_reson_res_extendable",
+    "ct_amplitude",
+    "ct_reson_mode",
+    "ct_decibel",
+    "ct_percent"
+   ]
+  },
+  "8": {
+   "class": "ConditionerEffect",
+   "ctrltypes": [
+    "ct_decibel_extra_narrow_deactivatable",
+    "ct_decibel_extra_narrow_deactivatable",
+    "ct_percent_bipolar",
+    "ct_freq_audible_deactivatable_hp",
+    "ct_percent_bipolar",
+    "ct_decibel_attenuation",
+    "ct_percent_bipolar",
+    "ct_percent_bipolar",
+    "ct_decibel_attenuation"
+   ]
+  },
+  "10": {
+   "class": "VocoderEffect",
+   "ctrltypes": [
+    "ct_decibel",
+    "ct_decibel_attenuation_large",
+    "ct_percent",
+    "ct_decibel",
+    "ct_percent_bipolar",
+    "ct_vocoder_bandcount",
+    "ct_freq_vocoder_low",
+    "ct_freq_vocoder_high",
+    "ct_vocoder_modulator_mode",
+    "ct_percent_bipolar",
+    "ct_percent_bipolar",
+    "ct_percent"
+   ]
+  },
+  "6": {
+   "class": "ParametricEQ",
+   "ctrltypes": [
+    "ct_decibel_deactivatable",
+    "ct_freq_audible",
+    "ct_bandwidth",
+    "ct_decibel_deactivatable",
+    "ct_freq_audible",
+    "ct_bandwidth",
+    "ct_decibel_deactivatable",
+    "ct_freq_audible",
+    "ct_bandwidth",
+    "ct_decibel",
+    "ct_percent_bipolar"
+   ]
+  },
+  "24": {
+   "class": "TreemonsterEffect",
+   "ctrltypes": [
+    "ct_decibel_attenuation_large",
+    "ct_percent",
+    "ct_freq_audible_deactivatable_hp",
+    "ct_freq_audible_deactivatable_lp",
+    "ct_pitch",
+    "ct_percent",
+    "ct_percent_bipolar",
+    "ct_percent"
+   ]
+  },
+  "13": {
+   "class": "RingModulatorEffect",
+   "ctrltypes": [
+    "ct_ringmod_sineoscmode",
+    "ct_freq_ringmod",
+    "ct_oscspread",
+    "ct_osccount",
+    "ct_percent",
+    "ct_percent",
+    "ct_freq_audible_deactivatable_hp",
+    "ct_freq_audible_deactivatable_lp",
+    "ct_percent"
+   ]
+  },
+  "25": {
+   "class": "WaveShaperEffect",
+   "ctrltypes": [
+    "ct_freq_audible_deactivatable_hp",
+    "ct_freq_audible_deactivatable_lp",
+    "ct_wstype",
+    "ct_percent_bipolar",
+    "ct_decibel_narrow_short_extendable",
+    "ct_freq_audible_deactivatable_hp",
+    "ct_freq_audible_deactivatable_lp",
+    "ct_decibel_narrow_short_extendable",
+    "ct_percent"
+   ]
+  },
+  "21": {
+   "class": "CombulatorEffect",
+   "ctrltypes": [
+    "ct_percent",
+    "ct_freq_audible_very_low_minval",
+    "ct_pitch_extendable_very_low_minval",
+    "ct_pitch_extendable_very_low_minval",
+    "ct_percent_bipolar",
+    "ct_percent_bipolar_deactivatable",
+    "ct_amplitude",
+    "ct_amplitude",
+    "ct_amplitude",
+    "ct_percent_bipolar_pan",
+    "ct_percent_bipolar_pan",
+    "ct_percent"
+   ]
+  },
+  "22": {
+   "class": "NimbusEffect",
+   "ctrltypes": [
+    "ct_nimbusmode",
+    "ct_nimbusquality",
+    "ct_percent",
+    "ct_percent_bipolar_w_dynamic_unipolar_formatting",
+    "ct_pitch4oct",
+    "ct_percent_bipolar_w_dynamic_unipolar_formatting",
+    "ct_percent_bipolar_w_dynamic_unipolar_formatting",
+    "ct_percent",
+    "ct_float_toggle",
+    "ct_percent",
+    "ct_percent",
+    "ct_percent"
+   ]
+  },
+  "11": {
+   "class": "Reverb2Effect",
+   "ctrltypes": [
+    "ct_reverbpredelaytime",
+    "ct_percent_bipolar",
+    "ct_reverbtime",
+    "ct_percent",
+    "ct_percent",
+    "ct_percent",
+    "ct_percent",
+    "ct_percent",
+    "ct_decibel_narrow",
+    "ct_percent"
+   ]
+  },
+  "23": {
+   "class": "TapeEffect",
+   "ctrltypes": [
+    "ct_tape_drive",
+    "ct_percent",
+    "ct_percent",
+    "ct_percent_bipolar",
+    "ct_tape_speed",
+    "ct_tape_microns",
+    "ct_tape_microns",
+    "ct_tape_microns",
+    "ct_percent_deactivatable",
+    "ct_percent",
+    "ct_percent",
+    "ct_percent"
+   ]
+  },
+  "27": {
+   "class": "SpringReverbEffect",
+   "ctrltypes": [
+    "ct_percent",
+    "ct_spring_decay",
+    "ct_percent",
+    "ct_percent",
+    "ct_percent",
+    "ct_percent",
+    "ct_float_toggle",
+    "ct_percent"
+   ]
+  },
+  "15": {
+   "class": "NeuronEffect",
+   "ctrltypes": [
+    "ct_decibel_narrow",
+    "ct_percent",
+    "ct_percent",
+    "ct_percent",
+    "ct_percent",
+    "ct_freq_audible",
+    "ct_freq_mod",
+    "ct_fxlfowave",
+    "ct_lforate_deactivatable",
+    "ct_percent",
+    "ct_decibel_narrow",
+    "ct_decibel_narrow"
+   ]
+  },
+  "14": {
+   "class": "AirWindowsEffect",
+   "ctrltypes": [
+    "ct_airwindows_fx"
+   ]
+  },
+  "9": {
+   "class": "ChorusEffect",
+   "ctrltypes": [
+    "ct_lforate",
+    "ct_percent",
+    "ct_chorusmodtime",
+    "ct_percent",
+    "ct_freq_audible_deactivatable_hp",
+    "ct_freq_audible_deactivatable_lp",
+    "ct_percent",
+    "ct_decibel_narrow"
+   ]
+  }
+ }
+}

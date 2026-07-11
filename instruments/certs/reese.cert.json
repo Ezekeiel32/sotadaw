@@ -1,0 +1,54 @@
+{
+ "name": "reese",
+ "kind": "voice",
+ "dsp_sha": "b11d09e4da24c388",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -0.81,
+ "clipped_samples": 0,
+ "attack_ms": 40.0,
+ "sustain_rms_db": -16.29,
+ "sustain_centroid_hz": 721,
+ "harmonics_top": [
+  [
+   257.6,
+   -0.0
+  ],
+  [
+   261.2,
+   -3.4
+  ],
+  [
+   261.8,
+   -0.3
+  ],
+  [
+   265.3,
+   -1.0
+  ],
+  [
+   265.9,
+   -1.8
+  ],
+  [
+   269.4,
+   0.0
+  ],
+  [
+   1046.5,
+   -4.2
+  ],
+  [
+   1062.4,
+   -4.3
+  ]
+ ],
+ "decay_to_m60_s": 2.26,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

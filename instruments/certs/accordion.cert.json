@@ -1,0 +1,54 @@
+{
+ "name": "accordion",
+ "kind": "voice",
+ "dsp_sha": "99dc07bf045cba99",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -0.79,
+ "clipped_samples": 0,
+ "attack_ms": 200.0,
+ "sustain_rms_db": -10.34,
+ "sustain_centroid_hz": 1282,
+ "harmonics_top": [
+  [
+   260.0,
+   -8.8
+  ],
+  [
+   260.6,
+   0.0
+  ],
+  [
+   261.2,
+   -3.5
+  ],
+  [
+   261.8,
+   -10.4
+  ],
+  [
+   262.4,
+   -0.1
+  ],
+  [
+   262.9,
+   -2.4
+  ],
+  [
+   524.1,
+   -7.9
+  ],
+  [
+   787.6,
+   -9.6
+  ]
+ ],
+ "decay_to_m60_s": 1.88,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

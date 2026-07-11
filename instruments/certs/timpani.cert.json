@@ -1,0 +1,54 @@
+{
+ "name": "timpani",
+ "kind": "voice",
+ "dsp_sha": "31c152b5fe705865",
+ "m1_md5": "cec426b253528867",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-07",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -0.79,
+ "clipped_samples": 0,
+ "attack_ms": 30.0,
+ "sustain_rms_db": -15.36,
+ "sustain_centroid_hz": 262,
+ "harmonics_top": [
+  [
+   260.0,
+   -14.2
+  ],
+  [
+   260.6,
+   -5.0
+  ],
+  [
+   261.2,
+   -0.8
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -2.3
+  ],
+  [
+   262.9,
+   -8.5
+  ],
+  [
+   263.5,
+   -21.9
+  ],
+  [
+   264.1,
+   -24.7
+  ]
+ ],
+ "decay_to_m60_s": 1.09,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

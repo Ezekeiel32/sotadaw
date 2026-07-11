@@ -1,0 +1,23 @@
+diff --git a/modules/tracktion_engine/audio_files/tracktion_AudioFileUtils.cpp b/modules/tracktion_engine/audio_files/tracktion_AudioFileUtils.cpp
+index 8a8b3bf..42e2111 100644
+--- a/modules/tracktion_engine/audio_files/tracktion_AudioFileUtils.cpp
++++ b/modules/tracktion_engine/audio_files/tracktion_AudioFileUtils.cpp
+@@ -395,8 +395,17 @@ bool AudioFileUtils::reverse (Engine& engine,
+ 
+ void AudioFileUtils::addBWAVStartToMetadata (juce::StringPairArray& metadata, SampleCount time)
+ {
++    // SOTA DAW THE SEAL (app/patches/0002-render-epoch-seal.patch, docs/THE_PHYSICS.md E1):
++    // renders must be byte-stable. SOTADAW_RENDER_EPOCH=<unix-seconds> pins the BWAV
++    // origination stamp; unset = wall clock, behavior unchanged (UI exports keep human time).
++    auto originationTime = juce::Time::getCurrentTime();
++    const auto sealEpoch = juce::SystemStats::getEnvironmentVariable ("SOTADAW_RENDER_EPOCH", {});
++
++    if (sealEpoch.isNotEmpty())
++        originationTime = juce::Time (sealEpoch.getLargeIntValue() * 1000);
++
+     metadata.addArray (juce::WavAudioFormat::createBWAVMetadata ({}, "tracktion",
+-                                                                 {}, juce::Time::getCurrentTime(),
++                                                                 {}, originationTime,
+                                                                  time, {}));
+ }
+ 
