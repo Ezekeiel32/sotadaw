@@ -713,7 +713,7 @@
 "grid": {
 "bars": 2,
 "bass_style": "sustained",
-"bass_voice": "bass_warm",
+"bass_voice": "sub_clean",
 "chords": [
 [
 0,
@@ -724,6 +724,7 @@
 4
 ]
 ],
+"color_voice": "pad_motion",
 "hat": [
 8,
 24
@@ -1499,6 +1500,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "walking",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -1714,8 +1716,9 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
+"lead_voice": "clean_chime_guitar",
 "snare": [
 4,
 12
@@ -1761,6 +1764,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "roots",
+"bass_voice": "sub_clean",
 "chords": [
 [
 0,
@@ -2090,6 +2094,32 @@
 12
 ],
 "kick_gain_db": -4.0,
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+1,
+2
+],
+[
+4,
+8,
+2
+],
+[
+8,
+1,
+2
+],
+[
+12,
+8,
+2
+]
+],
+"voice": "supersaw_fat"
+},
 "snare": [],
 "swing": 0.5,
 "vel": {
@@ -2213,6 +2243,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "walking",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -2321,8 +2352,9 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "fiddle"
 },
+"lead_voice": "fiddle",
 "snare": [
 4,
 12
@@ -2810,6 +2842,7 @@
 "grid": {
 "bars": 2,
 "bass_style": "roots",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -2910,8 +2943,9 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
+"lead_voice": "clean_chime_guitar",
 "rim": [
 0,
 6,
@@ -3711,9 +3745,10 @@
 3
 ]
 ],
-"voice": "pluck2"
+"voice": "oud"
 },
 "lead_gain_db": -5.0,
+"lead_voice": "oud",
 "snare": [
 4,
 10,
@@ -3826,9 +3861,10 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
 "lead_gain_db": -6.0,
+"lead_voice": "clean_chime_guitar",
 "snare": [
 4,
 12
@@ -3923,7 +3959,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "sustained",
-"bass_voice": "bass_warm",
+"bass_voice": "sub_clean",
 "chords": [
 [
 0,
@@ -4365,8 +4401,9 @@
 3
 ]
 ],
-"voice": "pluck"
+"voice": "fiddle"
 },
+"lead_voice": "fiddle",
 "snare": [
 4,
 12
@@ -5205,6 +5242,7 @@
 "bars": 1,
 "bass_gain_db": -9.0,
 "bass_style": "roots",
+"bass_voice": "reese",
 "chords": [
 [
 0,
@@ -5698,9 +5736,10 @@
 2
 ]
 ],
-"voice": "pluck2"
+"voice": "strings_disco"
 },
 "lead_gain_db": -7.0,
+"lead_voice": "strings_disco",
 "snare": [
 4,
 12
@@ -6200,6 +6239,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "walking",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -6991,7 +7031,7 @@
 "bars": 1,
 "bass_gain_db": -8.0,
 "bass_style": "psy_rolling",
-"bass_voice": "bass_warm",
+"bass_voice": "reese",
 "chords": [
 [
 0,
@@ -7375,6 +7415,52 @@
 12
 ],
 "kick_gain_db": -4.0,
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+8,
+2
+],
+[
+2,
+5,
+2
+],
+[
+4,
+6,
+2
+],
+[
+6,
+5,
+2
+],
+[
+8,
+8,
+2
+],
+[
+10,
+5,
+2
+],
+[
+12,
+4,
+2
+],
+[
+14,
+5,
+2
+]
+],
+"voice": "supersaw"
+},
 "openhat": [
 2,
 6,
@@ -7447,9 +7533,10 @@
 2
 ]
 ],
-"voice": "pluck2"
+"voice": "clean_chime_guitar"
 },
 "lead_gain_db": -5.0,
+"lead_voice": "clean_chime_guitar",
 "swing": 0.5
 },
 "key": "A minor (fado menor)",
@@ -7558,9 +7645,10 @@
 3
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
 "lead_gain_db": -6.0,
+"lead_voice": "clean_chime_guitar",
 "snare": [
 4,
 7,
@@ -7607,6 +7695,7 @@
 "bars": 2,
 "bass_gain_db": -8.0,
 "bass_style": "roots",
+"bass_voice": "sub_808_slide",
 "chords": [
 [
 0,
@@ -7798,6 +7887,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "walking",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -8417,6 +8507,37 @@
 16,
 26
 ],
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+3,
+2
+],
+[
+3,
+5,
+1
+],
+[
+4,
+8,
+4
+],
+[
+10,
+6,
+2
+],
+[
+12,
+5,
+4
+]
+],
+"voice": "supersaw"
+},
 "snare": [
 8,
 24
@@ -8911,9 +9032,10 @@
 1
 ]
 ],
-"voice": "pluck2"
+"voice": "sine_siren"
 },
 "lead_gain_db": -4.0,
+"lead_voice": "sine_siren",
 "snare": [
 4,
 12
@@ -8942,6 +9064,7 @@
 "bars": 1,
 "bass_gain_db": -7.0,
 "bass_style": "sliding",
+"bass_voice": "sub_808_slide",
 "chords": [
 [
 0,
@@ -9426,9 +9549,10 @@
 1
 ]
 ],
-"voice": "pluck2"
+"voice": "acid303"
 },
 "lead_gain_db": -6.0,
+"lead_voice": "acid303",
 "openhat": [
 2,
 6,
@@ -9750,9 +9874,10 @@
 3
 ]
 ],
-"voice": "pluck2"
+"voice": "chiptune_pulse"
 },
 "lead_gain_db": -6.0,
+"lead_voice": "chiptune_pulse",
 "snare": [
 4,
 12
@@ -9990,6 +10115,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "walking",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -10536,6 +10662,7 @@
 ],
 "kick_gain_db": -5.0,
 "kick_voice": "kick_punch",
+"lead_voice": "clean_chime_guitar",
 "snare": [
 4,
 12
@@ -10897,7 +11024,7 @@
 "bars": 1,
 "bass_gain_db": -8.0,
 "bass_style": "offbeat",
-"bass_voice": "bass_warm",
+"bass_voice": "reese",
 "chords": [
 [
 0,
@@ -11235,7 +11362,7 @@
 "bars": 1,
 "bass_gain_db": -8.0,
 "bass_style": "sustained",
-"bass_voice": "bass_warm",
+"bass_voice": "reese",
 "chords": [
 [
 0,
@@ -11403,6 +11530,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "walking",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -11892,9 +12020,10 @@
 3
 ]
 ],
-"voice": "pluck2"
+"voice": "supersaw"
 },
 "lead_gain_db": -6.0,
+"lead_voice": "supersaw",
 "snare": [
 4,
 12
@@ -11990,8 +12119,9 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
+"lead_voice": "clean_chime_guitar",
 "snare": [
 3,
 6,
@@ -12246,6 +12376,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "roots",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -12400,9 +12531,10 @@
 2
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
 "lead_gain_db": -7.0,
+"lead_voice": "clean_chime_guitar",
 "snare": [
 4,
 12
@@ -12545,9 +12677,10 @@
 2
 ]
 ],
-"voice": "pluck2"
+"voice": "supersaw"
 },
 "lead_gain_db": -5.0,
+"lead_voice": "supersaw",
 "snare": [
 4,
 12
@@ -13345,9 +13478,10 @@
 2
 ]
 ],
-"voice": "pluck"
+"voice": "cine_brass"
 },
 "lead_gain_db": -7.0,
+"lead_voice": "cine_brass",
 "snare": [
 4,
 12
@@ -13552,8 +13686,9 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
+"lead_voice": "clean_chime_guitar",
 "snare": [
 4,
 12
@@ -13932,6 +14067,52 @@
 ],
 "kick_gain_db": -6.0,
 "kick_voice": "kick_punch",
+"lead": {
+"octave": 3,
+"steps": [
+[
+0,
+1,
+2
+],
+[
+3,
+1,
+1
+],
+[
+4,
+4,
+2
+],
+[
+6,
+1,
+1
+],
+[
+8,
+5,
+2
+],
+[
+11,
+4,
+1
+],
+[
+12,
+1,
+2
+],
+[
+14,
+7,
+1
+]
+],
+"voice": "highgain_guitar"
+},
 "ride": [
 0,
 2,
@@ -14056,6 +14237,7 @@
 "bars": 1,
 "bass_gain_db": -7.0,
 "bass_style": "sliding",
+"bass_voice": "sub_808_slide",
 "chords": [
 [
 0,
@@ -14320,6 +14502,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "walking",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -14664,9 +14847,10 @@
 3
 ]
 ],
-"voice": "pluck2"
+"voice": "clean_chime_guitar"
 },
 "lead_gain_db": -4.0,
+"lead_voice": "clean_chime_guitar",
 "swing": 0.54
 },
 "key": "A minor",
@@ -14866,8 +15050,9 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
+"lead_voice": "clean_chime_guitar",
 "snare": [
 4,
 12
@@ -15159,9 +15344,10 @@
 2
 ]
 ],
-"voice": "pluck2"
+"voice": "ep_bright"
 },
 "lead_gain_db": -6.0,
+"lead_voice": "ep_bright",
 "snare": [
 4,
 12
@@ -16140,6 +16326,32 @@
 8,
 12
 ],
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+3,
+4
+],
+[
+6,
+5,
+2
+],
+[
+8,
+6,
+4
+],
+[
+14,
+5,
+2
+]
+],
+"voice": "supersaw"
+},
 "snare": [
 4,
 12
@@ -16535,6 +16747,52 @@
 ],
 "kick_gain_db": -4.0,
 "kick_voice": "kick_punch",
+"lead": {
+"octave": 4,
+"steps": [
+[
+0,
+1,
+2
+],
+[
+2,
+1,
+2
+],
+[
+4,
+4,
+2
+],
+[
+6,
+4,
+2
+],
+[
+8,
+5,
+2
+],
+[
+10,
+5,
+2
+],
+[
+12,
+4,
+2
+],
+[
+14,
+4,
+2
+]
+],
+"voice": "fuzz_guitar"
+},
 "snare": [
 4,
 12
@@ -16927,9 +17185,10 @@
 3
 ]
 ],
-"voice": "pluck2"
+"voice": "oud"
 },
 "lead_gain_db": -4.0,
+"lead_voice": "oud",
 "snare": [
 2,
 6,
@@ -17732,9 +17991,10 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
 "lead_gain_db": -7.0,
+"lead_voice": "clean_chime_guitar",
 "snare": [
 4,
 12
@@ -18019,6 +18279,32 @@
 ],
 "kick_gain_db": -4.0,
 "kick_voice": "kick_punch",
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+5,
+4
+],
+[
+4,
+3,
+4
+],
+[
+8,
+4,
+4
+],
+[
+12,
+1,
+4
+]
+],
+"voice": "clean_chime_guitar"
+},
 "lead_gain_db": -6.0,
 "snare": [
 4,
@@ -18526,9 +18812,10 @@
 2
 ]
 ],
-"voice": "pluck2"
+"voice": "brass_stab"
 },
 "lead_gain_db": -6.0,
+"lead_voice": "brass_stab",
 "snare": [
 4,
 12
@@ -18671,8 +18958,9 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
+"lead_voice": "clean_chime_guitar",
 "snare": [
 4,
 12
@@ -18894,6 +19182,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "roots",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -19103,8 +19392,9 @@
 2
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
+"lead_voice": "clean_chime_guitar",
 "snare": [
 4,
 12
@@ -19138,6 +19428,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "walking",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -19206,7 +19497,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "offbeat",
-"bass_voice": "bass_warm",
+"bass_voice": "sub_clean",
 "chords": [
 [
 0,
@@ -19243,6 +19534,42 @@
 ],
 "kick_gain_db": -5.0,
 "kick_voice": "kick_punch",
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+5,
+2
+],
+[
+2,
+3,
+2
+],
+[
+4,
+1,
+4
+],
+[
+8,
+5,
+2
+],
+[
+10,
+6,
+2
+],
+[
+12,
+5,
+4
+]
+],
+"voice": "ep_bright"
+},
 "snare": [
 4,
 12
@@ -19417,6 +19744,7 @@
 "grid": {
 "bars": 1,
 "bass_style": "roots",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -19688,6 +20016,42 @@
 8,
 12
 ],
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+1,
+3
+],
+[
+3,
+5,
+3
+],
+[
+6,
+6,
+3
+],
+[
+9,
+5,
+3
+],
+[
+12,
+8,
+2
+],
+[
+14,
+5,
+2
+]
+],
+"voice": "supersaw_fat"
+},
 "openhat": [
 2,
 6,

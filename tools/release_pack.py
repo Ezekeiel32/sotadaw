@@ -32,23 +32,42 @@ PY = os.path.join(ROOT, ".venv", "bin", "python")
 if not os.path.exists(PY):
     PY = sys.executable
 
-# voicebank rights registry (grows with #30's bank registry; keyed by the
-# track-comment attribution export_master already stamps)
-VOICE_RIGHTS = {
-    "gahata meiji": {"attribution": "Gahata Meiji from LUNAI Project",
-                     "commercial": False,
-                     "why": "LUNAI voicebank: attribution required, NON-commercial"},
-}
+def voice_rights():
+    """Voicebank rights registry: every library/voices/*/bank.json manifest
+    (#30 THE VOICE UNIVERSE), keyed lowercase on its attribution string — the
+    exact text the landing stamps into track comments. Builtin Meiji fallback
+    covers pre-manifest installs."""
+    rights = {"gahata meiji": {"commercial": False,
+                               "why": "LUNAI voicebank: attribution required, NON-commercial"}}
+    vd = os.path.join(ROOT, "library", "voices")
+    if os.path.isdir(vd):
+        for d in sorted(os.listdir(vd)):
+            mp = os.path.join(vd, d, "bank.json")
+            if os.path.exists(mp):
+                try:
+                    m = json.load(open(mp))
+                    lic = m.get("license") or {}
+                    rights[str(m.get("attribution", d)).lower()] = {
+                        "commercial": bool(lic.get("commercial", False)),
+                        "why": lic.get("terms")
+                               or f"{m.get('display', d)}: "
+                                  f"{'commercial OK' if lic.get('commercial') else 'NON-commercial'}"
+                                  + (", attribution required"
+                                     if lic.get("attribution_required") else "")}
+                except Exception:
+                    pass
+    return rights
 
 
 def license_gate(song):
     """-> (rows, public_ok). Every rights row visible from the symbolic session."""
     rows, public_ok = [], True
+    rights = voice_rights()
     for t in song.get("tracks", []):
         c = str(t.get("comment", ""))
         if c.startswith("voice:"):
             vname = c.split("voice:", 1)[1].strip().lower()
-            hit = next((v for k, v in VOICE_RIGHTS.items() if k in vname), None)
+            hit = next((v for k, v in rights.items() if k in vname or vname in k), None)
             if hit:
                 rows.append({"item": f"track '{t.get('name')}' ({c})",
                              "license": hit["why"],

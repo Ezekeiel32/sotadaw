@@ -2781,6 +2781,27 @@ def t_analyze_reference(args):
         return f"REFERENCE MATCH FAILED:\n{(err or out)[-800:]}"
     return out.strip() + "\nTurn each gap line into ONE proposal move; re-render and re-check."
 
+def t_clone_sound(args):
+    """THE SOUND CLONER (BEST_DAW_30 #5): 'make me THIS sound' — footprint the
+    target wav, PICK the nearest existing voice, or FORGE a fitted template
+    (params, never samples — Timbre-Law clean)."""
+    py = VENV_PY if os.path.exists(VENV_PY) else "python3"
+    wav = args["wav"] if os.path.isabs(args["wav"]) else os.path.join(ROOT, args["wav"])
+    if not os.path.exists(wav):
+        return f"no such wav: {wav}"
+    cmd = [py, os.path.join(ROOT, "tools", "sound_clone.py"), wav,
+           re.sub(r"[^a-z0-9_]", "", str(args["name"]).lower()) or "clone", "--json"]
+    if args.get("family"):
+        cmd += ["--family", str(args["family"])]
+    if args.get("budget"):
+        cmd += ["--budget", str(int(args["budget"]))]
+    rc, out, err = run(cmd, timeout=1800)
+    if rc != 0:
+        return f"CLONE FAILED:\n{(out + err)[-600:]}"
+    return (out.strip() + "\nUse the source dict on any track (add_track/"
+            "update_track source=...); the clone manifest lives in library/clones/.")
+
+
 def t_release_pack(args):
     """THE RELEASE PACK (BEST_DAW_30 #27): one call -> a label-ready folder
     (C2PA master, stems, MIDI, .dawproject, credits + THE LICENSE GATE)."""
@@ -3890,6 +3911,8 @@ TOOLS = {
                     {"type": "object", "properties": {"song": {"type": "string"}, "a": {"type": "string"}, "b": {"type": "string"}}}),
     "release_pack": (t_release_pack, "THE RELEASE PACK: one call -> songs/<name>_release/ with the C2PA-signed master, per-track stems, exact MIDI, .dawproject session, credits.md (provenance, voices, per-platform loudness verdicts) and THE LICENSE GATE (a non-commercial voice marks the pack PRIVATE-ONLY, loudly). platforms: list or comma string (spotify/apple/youtube/tidal/...). bits: 16 adds TPDF dither for CD delivery.",
                     {"type": "object", "properties": {"song": {"type": "string"}, "platforms": {"type": "string"}, "bits": {"type": "integer"}}, "required": ["song"]}),
+    "clone_sound": (t_clone_sound, "THE SOUND CLONER: 'make me THIS sound' from any wav — footprints the target (band shares/centroid/sustain), PICKS the nearest existing voice when close enough, else FORGES a template family (wt_morph/fm4_keys/supersaw...) by coordinate descent through the real engine and returns a fitted {kind:faust,id,params} source dict. Parameters, never samples (Timbre Law). budget = max candidate renders (default 60, ~seconds each).",
+                    {"type": "object", "properties": {"wav": {"type": "string"}, "name": {"type": "string"}, "family": {"type": "string"}, "budget": {"type": "integer"}}, "required": ["wav", "name"]}),
     "match_reference": (t_match_reference, "R2 THE REFERENCE CIRCLE: gap report vs a STORED reference — every import_song_audio banks the record's DNA (bpm/key, sections, chords, groove, band profile, lufs/dbtp/crest) as a KG Reference node, so 'make it sound like that record I imported' needs NO wav re-read. Returns always-on numeric deltas (ref minus current: lufs/dbtp/bands/width/centroid/bpm) + thresholded gap MOVES + both structures + the record's own groove to apply_groove. Reference = song name or hash prefix; list stored ones by passing anything unknown.",
                     {"type": "object", "properties": {"song": {"type": "string"}, "reference": {"type": "string"}}, "required": ["song", "reference"]}),
     "time_machine": (t_time_machine, "R7 THE TIME MACHINE twin: list a song's whole timeline — every accept (git) + crash-net journal moments, newest first with tracks/bars stats — or restore any point AS A PROPOSAL (writes _prop_<song>.json; base untouched until user accept; history never rewritten). Use when the user says 'go back to how it was', 'yesterday's version', 'before you changed X'. action:list first, then action:restore with the ref.",

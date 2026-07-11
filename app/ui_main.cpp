@@ -26,8 +26,10 @@
 #include "JamStrip.h"
 #include "Keymap.h"
 #include "Navigator.h"
-#include <execinfo.h>
-#include <sys/time.h>
+#ifndef _WIN32
+ #include <execinfo.h>
+ #include <sys/time.h>
+#endif
 #include <sys/stat.h>
 
 // ===== WAVE 4 PROFILER (fable-lag) ==========================================
@@ -41,6 +43,13 @@
 // exactly the attribution question. Zero cost unless armed.
 namespace sotaprof
 {
+#ifdef _WIN32
+    // PORT_SPEC.md: SIGPROF/backtrace are POSIX — the self-profiler is a no-op
+    // on Windows (external profilers exist there; this rig was built for a box
+    // that denies them).
+    static void arm() {}
+    static void dump() {}
+#else
     static void* buf[1 << 21];                    // 16MB of addresses
     static std::atomic<int> used { 0 };
     static void onProf (int)
@@ -100,6 +109,7 @@ namespace sotaprof
                      dir.getChildFile ("prof.samples").getFullPathName().toRawUTF8());
         std::fflush (stdout);
     }
+#endif // _WIN32
 }
 
 const char* FaustInstrumentPlugin::xmlTypeName = "faustInstrument";
@@ -20594,7 +20604,12 @@ public:
         // and non-RT helpers starve the RT device callback under box load
         // (playback shredded into snippets, Chezy live 2026-07-10). 0 = keep an
         // explicit user override; heavy sessions: SOTADAW_AUDIO_THREADS=4.
+       #ifdef _WIN32
+        if (std::getenv ("SOTADAW_AUDIO_THREADS") == nullptr)
+            _putenv_s ("SOTADAW_AUDIO_THREADS", "1");
+       #else
         setenv ("SOTADAW_AUDIO_THREADS", "1", 0);
+       #endif
         // BLACK BOX: the app records its own death. A crash (SIGSEGV/abort/...)
         // appends a stack backtrace to agent/ipc/app_crash.log — which send_logs.sh
         // and log_stream.sh ship to the dev box. "the DAW crashed because?!" must

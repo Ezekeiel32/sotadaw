@@ -1807,7 +1807,21 @@ def transport_block(context, song_path):
         return ""
 
 
+def voice_attr():
+    """The ACTIVE voicebank's attribution (BEST_DAW_30 #30: manifest truth, not
+    a hardcode) — library/voices/<active>/bank.json; env SOTADAW_VOICE_BANK
+    switches banks; the Meiji literal is the pre-manifest fallback."""
+    try:
+        import json as _j
+        bank = os.environ.get("SOTADAW_VOICE_BANK") or "gahata_meiji"
+        m = _j.load(open(os.path.join(ROOT, "library", "voices", bank, "bank.json")))
+        return str(m.get("attribution") or "Gahata Meiji from LUNAI Project")
+    except Exception:
+        return "Gahata Meiji from LUNAI Project"
+
+
 def recent_edits_block(song, k=5, max_age_s=1800):
+
     """THE EDIT DIGEST (BEST_DAW_30 #13c, CC4 P2's last missing context organ):
     the last few edit receipts (base + live take) ride every prompt — follow-up
     asks ('a bit more', 'not that hat move') bind to what ACTUALLY just changed
@@ -3753,7 +3767,7 @@ def handle(req):
                         emit(rid, "activity", text=_tail[:160])
                         chronicle.append(song, "event",
                                          f"MAKE SINGS WORDS: '{_first}…' on the {genre} "
-                                         "take (voice: Gahata Meiji from LUNAI Project)")
+                                         f"take (voice: {voice_attr()})")
             except Exception:
                 pass
             if not _sung:
@@ -3770,7 +3784,7 @@ def handle(req):
                     emit(rid, "activity", text=_tail[:160])
                     chronicle.append(song, "event",
                                      f"MAKE SINGS: '{_syl}' topline on the {genre} take "
-                                     "(voice: Gahata Meiji from LUNAI Project)")
+                                     f"(voice: {voice_attr()})")
                 else:
                     emit(rid, "activity",
                          text=("voice skipped: " + (rv.stdout + rv.stderr).strip()[-120:]))

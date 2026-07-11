@@ -1,0 +1,54 @@
+{
+ "name": "wt_morph",
+ "kind": "voice",
+ "dsp_sha": "2b3a86d5cb78e629",
+ "m1_md5": "ffee78e6e25243f3",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-12",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -9.06,
+ "clipped_samples": 0,
+ "attack_ms": 20.0,
+ "sustain_rms_db": -12.97,
+ "sustain_centroid_hz": 275,
+ "harmonics_top": [
+  [
+   130.0,
+   -11.6
+  ],
+  [
+   130.6,
+   0.0
+  ],
+  [
+   131.2,
+   -1.3
+  ],
+  [
+   131.8,
+   -18.3
+  ],
+  [
+   261.8,
+   -16.6
+  ],
+  [
+   392.4,
+   -11.2
+  ],
+  [
+   392.9,
+   -15.3
+  ],
+  [
+   654.1,
+   -18.4
+  ]
+ ],
+ "decay_to_m60_s": 4.69,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

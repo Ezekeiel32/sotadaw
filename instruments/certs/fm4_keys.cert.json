@@ -1,0 +1,54 @@
+{
+ "name": "fm4_keys",
+ "kind": "voice",
+ "dsp_sha": "945331416bc266f7",
+ "m1_md5": "ffee78e6e25243f3",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-07-12",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -2.22,
+ "clipped_samples": 0,
+ "attack_ms": 20.0,
+ "sustain_rms_db": -11.23,
+ "sustain_centroid_hz": 307,
+ "harmonics_top": [
+  [
+   130.6,
+   -9.4
+  ],
+  [
+   131.2,
+   0.0
+  ],
+  [
+   131.8,
+   -0.7
+  ],
+  [
+   262.4,
+   -11.5
+  ],
+  [
+   391.8,
+   -15.0
+  ],
+  [
+   392.4,
+   -8.6
+  ],
+  [
+   392.9,
+   -8.1
+  ],
+  [
+   393.5,
+   -12.3
+  ]
+ ],
+ "decay_to_m60_s": 4.99,
+ "noise_tail_dbfs": -200.0,
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "audible": true
+ }
+}

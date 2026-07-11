@@ -75,8 +75,9 @@ def status():
     a = assets()
     missing = [k for k, p in a.items() if not os.path.exists(p)]
     print(json.dumps({
-        "bank": "gahata_meiji (LUNAI)" if os.path.isdir(BANK) else "NOT INSTALLED",
-        "attribution_required": "Gahata Meiji from LUNAI Project",
+        "bank": (manifest().get("display", os.path.basename(BANK)) if os.path.isdir(BANK) else "NOT INSTALLED"),
+        "banks_installed": list_banks(),
+        "attribution_required": attribution(),
         "assets_ok": [k for k in a if k not in missing],
         "missing": missing,
         "runner": "BUILT + verified (dur->pitch->acoustic->vocoder; f0 tracks melody, sing_battery)" if not missing
@@ -237,8 +238,8 @@ def build_ds(song_name, track_name):
         ds_notes.append({"word": w, "ph": ph, "midi": n["pitch"],
                          "start_s": round(n["start"] * spb, 4),
                          "dur_s": round(max(0.08, n["len"] * spb), 4)})
-    ds = {"lang": "en", "singer": "gahata_meiji",
-          "attribution": "Gahata Meiji from LUNAI Project",
+    ds = {"lang": "en", "singer": manifest().get("name", DEFAULT_BANK),
+          "attribution": attribution(),
           "bpm": song.get("bpm"), "notes": ds_notes}
     out = os.path.join(ROOT, "songs", f"{song_name}.ds")
     json.dump(ds, open(out, "w"), indent=1)
@@ -591,7 +592,7 @@ def render(song_name, track_name, embed="standard", steps=30):
             vt["sends"] = [{"bus": "verb", "gainDb": -14}]
         song["tracks"].append(vt)
     vt["audioClips"] = [{"file": os.path.relpath(out, ROOT), "startBeat": 0}]
-    vt["comment"] = "voice: Gahata Meiji from LUNAI Project"
+    vt["comment"] = "voice: " + attribution()
     # THE LEVEL LAW (A2M byte-par, 2026-07-10): the sung vocal lands AT THE
     # RECORD'S OWN VOCAL LEVEL, not at a house trim. Forensics measured the
     # old -1.5 default +5.9dB over the real vocal — the loudest lane in the
@@ -668,7 +669,7 @@ def render(song_name, track_name, embed="standard", steps=30):
     print(f"SUNG {len(events)} words / {n_toks} phonemes / {n_frames} frames "
           f"({total_windows} phrase windows, {n_frames*spf:.1f}s sung) "
           f"in {_t.time()-t0:.0f}s -> {out} (+ 'vocals' track). "
-          f"Voice: Gahata Meiji from LUNAI Project."
+          f"Voice: {attribution()}."
           + (f" Unsung words (not in dict): {sorted(set(misses))[:8]}" if misses else ""))
 
 if __name__ == "__main__":

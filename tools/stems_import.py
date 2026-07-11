@@ -1070,6 +1070,36 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
                                       ("voice", "score", "mode", "why")}
                     print(f"[ear] {nm}: {r['voice']} ({r['mode']}, "
                           f"d={r['score']}) — {r['why']}", flush=True)
+                    # THE GENERATIVE HANDOFF (BEST_DAW_30 #8): when the whole
+                    # palette is FAR from the stem (pick distance past the
+                    # forge gate), FORGE a fitted voice instead of settling —
+                    # sound_clone's coordinate descent on a template family,
+                    # kept only when it measures CLOSER than the pick.
+                    # SOTADAW_CLONE_ON_IMPORT=0 kills; fail-open to the pick.
+                    _fgate = float(os.environ.get("SOTADAW_FORGE_GATE", "0.9"))
+                    if (os.environ.get("SOTADAW_CLONE_ON_IMPORT", "1") != "0"
+                            and stem_nm not in ("drums", "vocals")
+                            and float(r.get("score", 0)) > _fgate):
+                        try:
+                            import sound_clone
+                            _hb("forging a closer voice", 0.88, nm)
+                            fo = sound_clone.clone(
+                                wavp, f"{name}_{stem_nm}",
+                                budget=int(os.environ.get(
+                                    "SOTADAW_FORGE_BUDGET", "24")),
+                                quiet=True)
+                            if (fo.get("verdict") == "FORGED"
+                                    and fo["distance"] < float(r["score"])):
+                                t["source"] = fo["source"]
+                                ear_report[nm]["forged"] = {
+                                    "template": fo["source"]["id"],
+                                    "distance": fo["distance"]}
+                                print(f"[ear] {nm}: FORGED "
+                                      f"{fo['source']['id']} d={fo['distance']}"
+                                      f" (pick was {r['score']})", flush=True)
+                        except Exception as fe:
+                            print(f"[ear] {nm}: forge skipped "
+                                  f"({type(fe).__name__}: {fe})", flush=True)
                 else:
                     print(f"[ear] {nm}: window silent — original source kept",
                           flush=True)
