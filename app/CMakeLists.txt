@@ -32,7 +32,7 @@ add_subdirectory(tracktion_engine/modules      ${CMAKE_BINARY_DIR}/_tracktion)
 
 juce_add_console_app(m1 PRODUCT_NAME "M1")
 target_sources(m1 PRIVATE main.cpp)
-target_include_directories(m1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} /usr/include
+target_include_directories(m1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-stretch
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-linear/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/faust_vendor)
@@ -107,7 +107,7 @@ target_link_libraries(m1 PRIVATE tracktion_engine juce::juce_cryptography ${SOTA
 # --- GUI app (UI seam v0) ---
 juce_add_gui_app(sotadaw PRODUCT_NAME "SOTA DAW")
 target_sources(sotadaw PRIVATE ui_main.cpp)
-target_include_directories(sotadaw PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} /usr/include
+target_include_directories(sotadaw PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-stretch
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-linear/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/faust_vendor)
