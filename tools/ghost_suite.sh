@@ -41,6 +41,7 @@ leg "revise_receipts (seam)"       python3 tools/revise_receipts_e2e.py
 leg "delta_ear (revise Δ seam)"    python3 tools/delta_ear_e2e.py
 leg "blind_round (N-take A/B)"     python3 tools/blind_round_e2e.py
 leg "blind_card (UI pick seam)"    python3 tools/blind_card_e2e.py
+leg "world_grid (#1 den-8/16)"     python3 tools/world_grid_e2e.py
 leg "prop_fence (base immutable)"  python3 tools/prop_fence_e2e.py
 leg "living_cards (chat rolls)"    python3 tools/cards_e2e.py 1
 leg "ears_on_write"                python3 tools/ears_on_write_battery.py

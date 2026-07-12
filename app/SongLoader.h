@@ -269,6 +269,24 @@ struct Song
     {
         return engineBeat (q0 + len) - engineBeat (q0);
     }
+    double quarterFromEngine (double e) const   // the inverse crossing (playhead reads)
+    {
+        if (meterMap.empty()) return e;
+        double eAcc = 0.0, prevQ = 0.0, f = 1.0;
+        for (auto& mp : meterMap)
+        {
+            const double mq = barStartBeat (mp.bar);
+            if (mq > prevQ)
+            {
+                const double span = (mq - prevQ) * f;
+                if (eAcc + span >= e - 1e-9) return prevQ + (e - eAcc) / f;
+                eAcc += span;
+                prevQ = mq;
+            }
+            f = mp.den / 4.0;
+        }
+        return prevQ + (e - eAcc) / f;
+    }
 };
 
 inline std::map<juce::String, float> parseParams (const juce::var& v)
@@ -1071,7 +1089,7 @@ inline te::AutomatableParameter* resolveAutoTarget (const juce::String& target,
     return nullptr;
 }
 
-inline void addAutomationCurve (te::Edit& edit, const SongState& s, te::AutomatableParameter* param,
+inline void addAutomationCurve (te::Edit& edit, const Song& s, te::AutomatableParameter* param,
                                 const SongAuto& a, bool isVolumeDb)
 {
     auto& curve = param->getCurve();

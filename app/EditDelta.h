@@ -316,11 +316,13 @@ inline bool applyEditDelta (te::Edit& edit, const Song& oldS, const Song& newS,
                 ops.push_back ([param] { param->getCurve().clear (nullptr); });
             }
             else
-                ops.push_back ([&edit, param, entries, isVolDb]
-                {
+                ops.push_back ([&edit, &newS, param, entries, isVolDb]
+                {   // #1 conversion boundary: curve beats cross via newS's meter
+                    // map (a meterMap CHANGE never reaches here — extras residue
+                    // refuses the delta and buildEdit runs)
                     param->getCurve().clear (nullptr);
                     for (auto& a : entries)
-                        addAutomationCurve (edit, param, a, isVolDb);
+                        addAutomationCurve (edit, newS, param, a, isVolDb);
                 });
             addClass ("autocurve");
         }
