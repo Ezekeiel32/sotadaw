@@ -13,7 +13,7 @@ public:
     // action = THE ACTION STREAM: one structured agent tool-call, streamed the
     // instant its tool_use block lands — a DAW component (family glyph + summary
     // + target track), never prose. meta = [family, tool, track, colourHex].
-    enum class Kind { user, agent, tool, action, status, error, proposal, analysis, perception, report, live };
+    enum class Kind { user, agent, tool, action, status, error, proposal, analysis, perception, report, live, variants };
     struct Msg { Kind kind; juce::String text; juce::StringArray meta; float h = 20.0f;
                  bool expanded = false; bool wasStream = false; bool wasThink = false;
                  std::vector<float> peaks;
@@ -24,6 +24,10 @@ public:
     std::function<void()> onAudition, onAccept, onReject;   // proposal-card buttons
     std::function<void()> onPlayTake;                       // #17: EARS card ▶ = hear what it measured
     std::function<void (const juce::String&)> onSuggest;    // empty-state starter chips -> prompt box
+    // #21c BLIND ROUND: variants card. meta stride 4 = [label, wav, lufs, peak]
+    // per take; text empty while open, the picked LABEL once decided (card dims,
+    // pick chips retire). Play passes the wav path, pick passes the label.
+    std::function<void (const juce::String&)> onPlayVariant, onPickVariant;
 
     ChatPanel()
     {
@@ -58,7 +62,9 @@ public:
                    .replace (juce::String::fromUTF8 ("\xe2\x80\x94"), " - ")
                    .replace (juce::String::fromUTF8 ("\xe2\x80\x93"), "-");
         text = text.trim();   // ** and ` now RENDER (appendInline) - the old strip hid them
-        if (text.isEmpty()) return;
+        if (text.isEmpty() && k != Kind::variants) return;   // #21c: an OPEN round card's
+                                                             // text is empty BY DESIGN
+                                                             // (it becomes the picked label)
         // TOKEN STREAM fold (pass 5, hardened 2026-07-11): the block-complete
         // reply REPLACES its own live-typing card - the final lands where it
         // typed, never a twin. The card is rarely msgs.back() by then (cost
@@ -254,6 +260,54 @@ public:
             }
     }
     void setProposalPeaks (const std::vector<float>& p) { setPeaksOn (Kind::proposal, p); }
+
+    // #21c: the blind verdict landed — the newest round card shows its pick and
+    // retires its chips (the wavs are gone server-side; a dead ▶ would lie)
+    void markVariantsPicked (const juce::String& label)
+    {
+        for (auto it = msgs.rbegin(); it != msgs.rend(); ++it)
+            if (it->kind == Kind::variants) { it->text = label; break; }
+        content.repaint();
+    }
+
+    // #21c camera hooks (SOTADAW_SNAP_BLIND): machine truth about the newest
+    // round card + a click through the REAL hit-scan (hits fill during paint —
+    // census after a shoot, never before)
+    juce::String blindCensus() const
+    {
+        for (auto it = msgs.rbegin(); it != msgs.rend(); ++it)
+            if (it->kind == Kind::variants)
+            {
+                int play = 0, pick = 0;
+                for (auto& h : content.hits)
+                {
+                    if (h.action >= 20 && h.action < 28) ++play;
+                    if (h.action >= 40 && h.action < 48) ++pick;
+                }
+                juce::StringArray labs;
+                for (int i = 0; i + 3 < it->meta.size(); i += 4) labs.add (it->meta[i]);
+                return "n=" + juce::String (it->meta.size() / 4)
+                     + " labels=" + labs.joinIntoString (",")
+                     + " picked=" + (it->text.isEmpty() ? "-" : it->text)
+                     + " hitsPlay=" + juce::String (play)
+                     + " hitsPick=" + juce::String (pick);
+            }
+        return "n=0";
+    }
+    bool clickAction (int action)
+    {
+        for (auto& h : content.hits)
+            if (h.action == action)
+            {
+                const auto now = juce::Time::getCurrentTime();
+                const juce::MouseEvent ev (juce::Desktop::getInstance().getMainMouseSource(),
+                                           h.r.getCentre(), {}, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                           &content, &content, now, h.r.getCentre(), now, 1, false);
+                content.mouseUp (ev);
+                return true;
+            }
+        return false;
+    }
 
     void toggleExpand (int idx)         // fold/unfold a long reply (also the smoke rig's probe)
     {
@@ -473,6 +527,22 @@ private:
                     if (h.action == 1 && owner->onAccept)   owner->onAccept();
                     if (h.action == 2 && owner->onReject)   owner->onReject();
                     if (h.action == 3 && owner->onPlayTake) owner->onPlayTake();   // #17 ▶
+                    if (h.action >= 20 && h.action < 48)   // #21c blind round: ▶ take / PICK
+                        for (auto it = owner->msgs.rbegin(); it != owner->msgs.rend(); ++it)
+                            if (it->kind == Kind::variants)
+                            {
+                                if (it->text.isEmpty())    // an open round only
+                                {
+                                    const bool pick = h.action >= 40;
+                                    const int s = (h.action - (pick ? 40 : 20)) * 4;
+                                    if (s + 3 < it->meta.size())
+                                    {
+                                        if (pick && owner->onPickVariant)        owner->onPickVariant (it->meta[s]);
+                                        if (! pick && owner->onPlayVariant)      owner->onPlayVariant (it->meta[s + 1]);
+                                    }
+                                }
+                                break;
+                            }
                     static const char* starters[] = { "make the drop hit harder and darker",
                                                       "hum a topline over the lead",
                                                       "tighten the mix - kick and bass are fighting",
@@ -749,6 +819,76 @@ private:
                     }
                     hits.push_back ({ card, 100 + (int) (&m - &owner->msgs[0]) });
                     drawCopied (g, card, (int) (&m - &owner->msgs[0]));
+                    y += m.h;
+                    continue;
+                }
+                if (m.kind == Kind::variants)
+                {
+                    // #21c BLIND ROUND CARD: N anonymous takes, each playable,
+                    // one PICK crowns. meta stride 4 = [label, wav, lufs, peak];
+                    // text = the picked label once decided (chips retire, card dims
+                    // — the loser wavs are GONE server-side, a live ▶ would lie).
+                    const int n = m.meta.size() / 4;
+                    const bool picked = m.text.isNotEmpty();
+                    juce::Rectangle<float> card (10.0f, y, cardW, m.h - 8.0f);
+                    theme::card (g, card, theme::panelHi, 9.0f);
+                    const auto edge = picked ? theme::textMute : theme::accent;
+                    g.setColour (edge.withAlpha (0.45f));
+                    g.drawRoundedRectangle (card.reduced (0.5f), 9.0f, 1.0f);
+                    g.setColour (edge);
+                    g.setFont (theme::ui (9.5f, juce::Font::bold));
+                    g.drawText (picked ? "BLIND ROUND - PICKED " + m.text
+                                       : "BLIND ROUND - listen, then PICK",
+                                card.reduced (12.0f, 6.0f).toNearestInt(),
+                                juce::Justification::topLeft);
+                    for (int i = 0; i < n; ++i)
+                    {
+                        auto r = juce::Rectangle<float> (card.getX() + 10.0f,
+                                                         card.getY() + 24.0f + 26.0f * (float) i,
+                                                         card.getWidth() - 20.0f, 24.0f);
+                        const bool winner = picked && m.meta[i * 4] == m.text;
+                        const float dim = (picked && ! winner) ? 0.3f : 1.0f;
+                        if (! picked)                       // ▶ pill (open rounds only)
+                        {
+                            auto pb = r.removeFromLeft (30.0f).reduced (2.0f, 4.0f);
+                            g.setColour (theme::accent.withAlpha (hoverAction == 20 + i ? 0.4f : 0.18f));
+                            g.fillRoundedRectangle (pb, 8.0f);
+                            g.setColour (theme::accent);
+                            juce::Path tri;
+                            tri.addTriangle (pb.getCentreX() - 3.0f, pb.getCentreY() - 4.0f,
+                                             pb.getCentreX() - 3.0f, pb.getCentreY() + 4.0f,
+                                             pb.getCentreX() + 5.0f, pb.getCentreY());
+                            g.fillPath (tri);
+                            hits.push_back ({ pb, 20 + i });
+                        }
+                        else r.removeFromLeft (30.0f);
+                        g.setColour ((winner ? theme::accent : theme::text).withAlpha (dim));
+                        g.setFont (theme::mono (15.0f, juce::Font::bold));
+                        g.drawText (m.meta[i * 4], r.removeFromLeft (26.0f).toNearestInt(),
+                                    juce::Justification::centredLeft);
+                        g.setColour (theme::textMute.withAlpha (dim));
+                        g.setFont (theme::mono (10.5f));
+                        g.drawText (m.meta[i * 4 + 2] + " LUFS   " + m.meta[i * 4 + 3] + " dBFS",
+                                    r.withTrimmedRight (54.0f).toNearestInt(),
+                                    juce::Justification::centredLeft);
+                        if (! picked)                       // PICK chip
+                        {
+                            auto pk = r.removeFromRight (50.0f).reduced (2.0f, 3.0f);
+                            g.setColour (theme::good.withAlpha (hoverAction == 40 + i ? 0.5f : 0.2f));
+                            g.fillRoundedRectangle (pk, 9.0f);
+                            g.setColour (theme::good);
+                            g.setFont (theme::ui (10.0f, juce::Font::bold));
+                            g.drawText ("PICK", pk.toNearestInt(), juce::Justification::centred);
+                            hits.push_back ({ pk, 40 + i });
+                        }
+                        else if (winner)
+                        {
+                            g.setColour (theme::good);
+                            g.setFont (theme::ui (10.0f, juce::Font::bold));
+                            g.drawText ("-> proposal", r.removeFromRight (74.0f).toNearestInt(),
+                                        juce::Justification::centredRight);
+                        }
+                    }
                     y += m.h;
                     continue;
                 }
@@ -1232,6 +1372,7 @@ private:
         if (m.kind == Kind::live)        m.h = (float) m.liveH + 16.0f;
         else if (m.kind == Kind::status)      m.h = 15.0f;   // tight: runs recede
         else if (m.kind == Kind::analysis) m.h = 66.0f;
+        else if (m.kind == Kind::variants) m.h = 38.0f + 26.0f * (float) (m.meta.size() / 4);
         else if (m.kind == Kind::report)
             m.h = 32.0f + 13.0f * (float) juce::StringArray::fromLines (m.text).size();
         else if (m.kind == Kind::perception)

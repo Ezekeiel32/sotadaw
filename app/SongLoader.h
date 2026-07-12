@@ -245,6 +245,30 @@ struct Song
     {
         return meterMap.empty() ? lengthBars * 4.0 : barStartBeat (lengthBars);
     }
+
+    // THE CONVERSION BOUNDARY (#1, den 8/16): engine BeatPositions are
+    // DENOMINATOR-beats (measured 2026-07-12: 18 quarter-beats fed under a 7/8
+    // timesig rendered 4.5s — every unit became an eighth). The whole song
+    // model speaks QUARTER-beats; these two are the ONE crossing where quarter
+    // becomes engine. Piecewise per meter region: engine-beats-per-quarter =
+    // den/4 (den==4 regions are identity — mapless songs cross unchanged).
+    double engineBeat (double q) const
+    {
+        if (meterMap.empty()) return q;
+        double e = 0.0, prevQ = 0.0, f = 1.0;
+        for (auto& mp : meterMap)
+        {
+            const double mq = barStartBeat (mp.bar);
+            if (mq >= q + 1e-9) break;       // region starts after q (map sorted)
+            if (mq > prevQ) { e += (mq - prevQ) * f; prevQ = mq; }
+            f = mp.den / 4.0;
+        }
+        return e + (q - prevQ) * f;
+    }
+    double engineBeatLen (double q0, double len) const   // durations cross piecewise too
+    {
+        return engineBeat (q0 + len) - engineBeat (q0);
+    }
 };
 
 inline std::map<juce::String, float> parseParams (const juce::var& v)
@@ -1047,13 +1071,13 @@ inline te::AutomatableParameter* resolveAutoTarget (const juce::String& target,
     return nullptr;
 }
 
-inline void addAutomationCurve (te::Edit& edit, te::AutomatableParameter* param,
+inline void addAutomationCurve (te::Edit& edit, const SongState& s, te::AutomatableParameter* param,
                                 const SongAuto& a, bool isVolumeDb)
 {
     auto& curve = param->getCurve();
     for (auto& pt : a.points)
     {
-        const auto tpos = edit.tempoSequence.toTime (te::BeatPosition::fromBeats (pt.beat));
+        const auto tpos = edit.tempoSequence.toTime (te::BeatPosition::fromBeats (s.engineBeat (pt.beat)));
         const float val = isVolumeDb ? te::decibelsToVolumeFaderPosition ((float) pt.v)
                                      : (float) pt.v;
         curve.addPoint (tpos, val, (float) pt.curve, nullptr);
@@ -1163,33 +1187,27 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
     for (auto& tp : s.tempoMap)            // TEMPO IS A CURVE: ramps/switches; everything
         if (tp.bar > 0 && tp.bpm >= 20 && tp.bpm <= 400)   // downstream places in beats, so
             edit->tempoSequence.insertTempo (               // notes/clips/automation follow;
-                te::BeatPosition::fromBeats (s.barStartBeat (tp.bar)), // #1: bar->beat rides the
+                te::BeatPosition::fromBeats (s.engineBeat (s.barStartBeat (tp.bar))), // #1: meter-aware
                 tp.bpm, (float) juce::jlimit (-1.0, 1.0, tp.curve));   // meter map (4/4 = old math)
     // THE WORLD GRID (#1): meterMap -> engine time signatures. Bars stop lying:
     // the click, MIDI/DAWproject exports and every bar boundary the engine
     // reports now speak the real meter. Notes stay quarter-beat absolute.
     for (auto& mp : s.meterMap)
     {
-        // v1 boundary (measured 2026-07-12): engine BeatPositions are
-        // DENOMINATOR-beats — a 7/8 timesig re-denominates every note/clip/
-        // automation position this build feeds in quarter-beats (an 18-beat
-        // song rendered 4.5s: 0.25s eighth-beats). den==4 meters (3/4, 5/4,
-        // 7/4...) are exact with zero conversion; den 8/16 keep OUR bar math
-        // (ruler/roll truth) and enter the engine with the quarter<->engine
-        // conversion boundary leg. Loud, never silent.
-        if (mp.den != 4)
-        {
-            errors << "meterMap: " << mp.num << "/" << mp.den
-                   << " shapes bars in-app; engine time-signature lands with "
-                      "the conversion-boundary leg (den==4 meters are live)\n";
-            continue;
-        }
+        // THE CONVERSION BOUNDARY (#1, complete): engine BeatPositions are
+        // DENOMINATOR-beats — a 7/8 timesig re-denominates every position the
+        // engine ingests (measured: an 18-quarter-beat song rendered 4.5s of
+        // 0.25s eighth-beats). Every fromBeats on the arrangement lanes now
+        // crosses through s.engineBeat()/engineBeatLen() (den==4 = identity),
+        // so den 8/16 timesigs are live: bars, click, exports AND audio agree
+        // with the ruler's quarter-beat truth. Launcher slots stay identity
+        // (pattern-local loop ranges, meter-agnostic by design).
         te::TimeSigSetting::Ptr tsg;
         if (mp.bar <= 0)
             tsg = edit->tempoSequence.getTimeSig (0);
         else
             tsg = edit->tempoSequence.insertTimeSig (
-                      te::BeatPosition::fromBeats (s.barStartBeat (mp.bar)));
+                      te::BeatPosition::fromBeats (s.engineBeat (s.barStartBeat (mp.bar))));
         if (tsg != nullptr)
         {
             tsg->numerator = mp.num;
@@ -1269,7 +1287,7 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
                 scenes[sc]->name = s.sceneNames[sc];
         }
     }
-    const auto songEnd = edit->tempoSequence.toTime (te::BeatPosition::fromBeats (s.totalBeats() + 4.0));
+    const auto songEnd = edit->tempoSequence.toTime (te::BeatPosition::fromBeats (s.engineBeat (s.totalBeats()) + 4.0));
 
     // bus numbers are 1-based; assigned before tracks so sends can reference them
     std::map<juce::String, int> busNum;
@@ -1342,7 +1360,7 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
             bool isVolDb = false;
             juce::String aerr;
             if (auto* param = resolveAutoTarget (a.target, vol, sourcePlug, fxPlugs, isVolDb, aerr))
-                addAutomationCurve (*edit, param, a, isVolDb);
+                addAutomationCurve (*edit, s, param, a, isVolDb);
             else
                 errors << t.name << ": automation: " << aerr << "\n";
         }
@@ -1375,8 +1393,8 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
                             }
                         }
                         clip->getSequence().addNote (outPitch,
-                                                     te::BeatPosition::fromBeats (applySwing (n.start, s)),
-                                                     te::BeatDuration::fromBeats (n.len),
+                                                     te::BeatPosition::fromBeats (s.engineBeat (applySwing (n.start, s))),
+                                                     te::BeatDuration::fromBeats (s.engineBeatLen (applySwing (n.start, s), n.len)),
                                                      juce::jlimit (1, 127, (int) std::lround (n.vel * 127.0)),
                                                      0, nullptr);
                     }
@@ -1413,10 +1431,10 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
             auto f = juce::File::isAbsolutePath (ac.file) ? juce::File (ac.file)
                                                           : sotadawRoot().getChildFile (ac.file);
             if (! f.existsAsFile()) { errors << t.name << ": missing audio file " << ac.file << "\n"; continue; }
-            const auto tStart = edit->tempoSequence.toTime (te::BeatPosition::fromBeats (ac.startBeat));
+            const auto tStart = edit->tempoSequence.toTime (te::BeatPosition::fromBeats (s.engineBeat (ac.startBeat)));
             double lenS = 0;
             if (ac.lengthBeats > 0)
-                lenS = (edit->tempoSequence.toTime (te::BeatPosition::fromBeats (ac.startBeat + ac.lengthBeats))
+                lenS = (edit->tempoSequence.toTime (te::BeatPosition::fromBeats (s.engineBeat (ac.startBeat + ac.lengthBeats)))
                         - tStart).inSeconds();
             else
                 lenS = te::AudioFile (engine, f).getLength() - ac.offsetSec;   // rest of file
@@ -1446,16 +1464,21 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
                                                                  : te::AudioFadeCurve::linear;
                     const auto clipEnd = tStart + te::TimeDuration::fromSeconds (juce::jmax (0.1, lenS));
                     if (effFadeIn > 0)
-                    {
+                    {   // fade spans cross the boundary too (quarter -> engine)
                         clip->setFadeIn (edit->tempoSequence.toTime (edit->tempoSequence.toBeats (tStart)
-                                             + te::BeatDuration::fromBeats (effFadeIn)) - tStart);
+                                             + te::BeatDuration::fromBeats (s.engineBeatLen (ac.startBeat, effFadeIn))) - tStart);
                         clip->setFadeInType (xfade[(size_t) acIdx].first > ac.fadeInBeats
                                                  ? te::AudioFadeCurve::convex : curve);
                     }
                     if (effFadeOut > 0)
-                    {
+                    {   // anchored at the clip END when the quarter length is known;
+                        // open-length clips keep the start-region factor (exact under
+                        // one meter, approximate only across a change)
+                        const double foLen = ac.lengthBeats > 0
+                            ? s.engineBeatLen (ac.startBeat + ac.lengthBeats - effFadeOut, effFadeOut)
+                            : s.engineBeatLen (ac.startBeat, effFadeOut);
                         clip->setFadeOut (clipEnd - edit->tempoSequence.toTime (edit->tempoSequence.toBeats (clipEnd)
-                                              - te::BeatDuration::fromBeats (effFadeOut)));
+                                              - te::BeatDuration::fromBeats (foLen)));
                         clip->setFadeOutType (xfade[(size_t) acIdx].second > ac.fadeOutBeats
                                                   ? te::AudioFadeCurve::convex : curve);
                     }
@@ -1680,7 +1703,7 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
         if (a.target == "masterGainDb")
         {
             if (auto* mv = edit->getMasterVolumePlugin().get())
-                addAutomationCurve (*edit, mv->volParam.get(), a, true);
+                addAutomationCurve (*edit, s, mv->volParam.get(), a, true);
         }
         else if (a.target.startsWith ("master[") && a.target.contains ("]."))
         {
@@ -1689,7 +1712,7 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
             if (idx >= 0 && idx < (int) masterFxPlugs.size())
             {
                 if (auto p = masterFxPlugs[(size_t) idx]->getAutomatableParameterByID (id))
-                    addAutomationCurve (*edit, p.get(), a, false);
+                    addAutomationCurve (*edit, s, p.get(), a, false);
                 else
                     errors << "song automation: param not found: " << a.target << "\n";
             }

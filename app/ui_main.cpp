@@ -8742,6 +8742,23 @@ public:
         };
         chat.onAccept   = [this] { if (proposalPending) decideProposal (true); };
         chat.onReject   = [this] { requestReject(); };   // the chat door leads to the WHY moment too
+        chat.onPlayVariant = [this] (const juce::String& wav)   // #21c: hear a blind take
+        {
+            auto f = sotadaw::sotadawRoot().getChildFile (wav);
+            if (preview != nullptr && f.existsAsFile())
+            {
+                preview->play (f);
+                setStatus ("playing a blind take - identities hidden until you pick");
+            }
+            else setStatus ("that take's audio is gone (round already decided?)");
+        };
+        chat.onPickVariant = [this] (const juce::String& label) // #21c: the blind verdict
+        {
+            writeRequest ("pick_variant",
+                          "\"label\": " + juce::JSON::toString (juce::var (label)) + ",");
+            chat.markVariantsPicked (label);
+            setStatus ("picked take " + label + " - crowning it as THE proposal");
+        };
         chat.onSuggest  = [this] (const juce::String& t)   // starter chip -> editable prompt
         {
             promptBox.setText (t, juce::dontSendNotification);
@@ -11833,6 +11850,48 @@ public:
             edit->getTransport().setPosition (tracktion::TimePosition());
             edit->getTransport().play (false);
             std::cout << "[clock] transport rolling" << std::endl;
+        }
+    }
+
+    void rigBlindStage (int stage)
+    {   // #21c BLIND ROUND CAMERA stages (SOTADAW_SNAP_BLIND; driver
+        // tools/blind_card_e2e.py): 1 = a variants event through the REAL
+        // pollEvents onto the agent page; 2 = census + PICK A through the real
+        // hit-scan (writeRequest fires, snapshot mode never launches a daemon);
+        // 3 = the verdict truth ([blind] lines are the machine's).
+        if (stage == 1)
+        {
+            if (! agentMode)
+            {
+                setAgentMode (true);
+                agentMix = 1.0f; stageVeil.mix = 1.0f;
+                resized();
+            }
+            juce::FileOutputStream os (eventsFile);
+            if (os.openedOk())
+            {
+                os.setPosition (eventsFile.getSize());
+                os.writeText ("{\"kind\":\"variants\",\"song\":\"" + songName
+                              + "\",\"blind\":true,\"t\":1,\"takes\":["
+                                "{\"label\":\"A\",\"wav\":\"songs/_snapblind_a.wav\",\"lufs\":-10.9,\"peak\":-1.4},"
+                                "{\"label\":\"B\",\"wav\":\"songs/_snapblind_b.wav\",\"lufs\":-11.6,\"peak\":-2.1}]}\n",
+                              false, false, "\n");
+                os.flush();
+            }
+            pollEvents();
+        }
+        if (stage == 2)
+        {
+            std::cout << "[blind] stage=1 " << chat.blindCensus() << std::endl;
+            chat.clickAction (40);          // PICK take A — the real dispatch
+        }
+        if (stage == 3)
+        {
+            const auto rq = ipcDir.getChildFile ("request.json").loadFileAsString();
+            std::cout << "[blind] stage=2 " << chat.blindCensus()
+                      << " req_pick=" << (rq.contains ("pick_variant") ? 1 : 0)
+                      << " req_label=" << (rq.contains ("\"label\": \"A\"") ? 1 : 0)
+                      << std::endl;
         }
     }
 
@@ -17291,6 +17350,23 @@ private:  // (restores the section the HANDS burst was in)
             else if (kind == "verb_report")  // read-only verb: the full report, chat-folded
                 appendActivity ("[" + ev.getProperty ("verb", "?").toString() + "] "
                                 + ev.getProperty ("text", "").toString());
+            else if (kind == "variants")     // #21c: N anonymous takes -> BLIND CARDS
+            {
+                juce::StringArray vm;
+                if (auto* arr = ev.getProperty ("takes", juce::var()).getArray())
+                    for (auto& t : *arr)
+                        vm.addArray ({ t.getProperty ("label", "?").toString(),
+                                       t.getProperty ("wav", "").toString(),
+                                       t.getProperty ("lufs", juce::var()).toString(),
+                                       t.getProperty ("peak", juce::var()).toString() });
+                if (vm.size() >= 8)          // a round is >= 2 takes by law
+                {
+                    chat.add (ChatPanel::Kind::variants, "", vm);
+                    appendActivity ("[blind round] " + juce::String (vm.size() / 4)
+                                    + " takes - listen, then pick");
+                    setStatus ("blind round: listen, then PICK a take");
+                }
+            }
             else if (kind == "activity_stream")   // pass 5: tokens TYPE into a live card
                 chat.streamText (ev.getProperty ("text", "").toString(),
                                  ev.getProperty ("tag", "").toString() == "thinking");
@@ -21660,6 +21736,28 @@ public:
                     shoot ("agent", "chronicle_replay.png");
                     juce::Timer::callAfterDelay (250, []
                     { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+                });
+                return;
+            }
+            if (std::getenv ("SOTADAW_SNAP_BLIND") != nullptr)
+            {   // #21c BLIND ROUND CAMERA: a variants event lands through the REAL
+                // pollEvents as an anonymous card; PICK rides the REAL hit-scan ->
+                // request.json + chips retire. Census after shoots (paint fills hits).
+                juce::Timer::callAfterDelay (1400, [this, shoot]
+                {
+                    snapComp->rigBlindStage (1);
+                    juce::Timer::callAfterDelay (900, [this, shoot]
+                    {
+                        shoot ("agent", "blind_card.png");
+                        snapComp->rigBlindStage (2);
+                        juce::Timer::callAfterDelay (700, [this, shoot]
+                        {
+                            shoot ("agent", "blind_picked.png");
+                            snapComp->rigBlindStage (3);
+                            juce::Timer::callAfterDelay (250, []
+                            { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+                        });
+                    });
                 });
                 return;
             }

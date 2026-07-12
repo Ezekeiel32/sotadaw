@@ -3486,6 +3486,116 @@ def handle_verb(req):
             pass
     emit(rid, "done", ok=True)
 
+def make_one_variant(rid, genre, seed, vname):
+    """#21c: ONE zero-token take under a variant name — loop_gen -> arrange ->
+    render -> wall -> loudness (the universal pass; WALL LAW IS TOTAL). Returns
+    the analysis dict, or None (a failed variant skips, never kills the round)."""
+    py = VENV_PY if os.path.exists(VENV_PY) else sys.executable
+    tmp = f"_mt_{vname}"
+    r1 = subprocess.run([py, os.path.join(ROOT, "tools", "loop_gen.py"), genre, tmp,
+                         "--bars", "4", "--seed", str(seed)],
+                        capture_output=True, text=True)
+    if r1.returncode != 0:
+        emit(rid, "activity", text=f"[variants] {vname}: loop_gen failed — skipped")
+        return None
+    r2 = subprocess.run([py, os.path.join(ROOT, "tools", "arrange.py"),
+                         os.path.join(SONGS, f"{tmp}.json"), "--out", vname,
+                         "--genre", genre, "--seed", str(seed)],
+                        capture_output=True, text=True)
+    try:
+        os.remove(os.path.join(SONGS, f"{tmp}.json"))
+    except OSError:
+        pass
+    if r2.returncode != 0:
+        emit(rid, "activity", text=f"[variants] {vname}: arrange failed — skipped")
+        return None
+    a = render_and_analyze(rid, vname, "variant")
+    a = clip_wall(rid, vname, a)            # wall first; recovery lifts CLEAN takes
+    a = loudness_recovery(rid, vname, a, genre)
+    return a
+
+
+def blind_round_ask(text, genre_pref=""):
+    """#21c THE BLIND ROUND ROUTER: an ask shaped EXACTLY 'make/give me N
+    versions|takes|variants (of X)' with a resolvable genre (ask words first,
+    the dock's genre_pref as fallback) routes to the zero-token round.
+    Precision-first like the parse lane: any doubt = None (the LLM rail runs).
+    Returns (n, genre) or None."""
+    t = str(text or "").lower().strip()
+    m = re.match(r"^(?:make|give me|gimme|offer)\s+(?:me\s+|us\s+)?"
+                 r"(2|3|4|two|three|four)\s+"
+                 r"(?:different\s+|blind\s+|fresh\s+|new\s+)*"
+                 r"(?:versions?|takes?|variants?|options?)"
+                 r"(?:\s+of\s+(.+?)|\s+to\s+pick\s+from)?[\s.!]*$", t)
+    if not m:
+        return None
+    n = {"two": 2, "three": 3, "four": 4}.get(m.group(1)) or int(m.group(1))
+    words = re.sub(r"[^a-z0-9_ ]", "",
+                   ((m.group(2) or "") + " " + str(genre_pref or ""))
+                   .lower().replace("-", "_")).split()
+    try:
+        known = set(json.load(open(os.path.join(ROOT, "agent",
+                                                "dna_cache.json")))["genres"])
+    except Exception:
+        return None
+    for i in range(len(words) - 1):         # two-word genres outrank singles
+        for two in (words[i] + "_" + words[i + 1], words[i] + words[i + 1]):
+            if two in known:
+                return n, two
+    for w in words:
+        if w in known:
+            return n, w
+    return None                             # shape matched, genre didn't: honest miss
+
+
+def handle_blind_round(rid, req, song, genre, seed, n_var):
+    """#21c N-TAKE BLIND A/B: N zero-token takes land as ANONYMOUS playable
+    variants — creation order is shuffled away from the labels (the label map
+    is server truth in ipc/variants_<song>.json), pick_variant crowns the
+    winner as THE proposal, losers retire. Deterministic per seed: take k's
+    seed = seed + k*7919 (explicit seed = byte-exact reruns, generative law)."""
+    import random as _rnd
+    emit(rid, "status",
+         text=f"BLIND ROUND: making {n_var} {genre} takes (seed {seed}) — "
+              "no tokens, all DNA…")
+    order = list(range(n_var))
+    _rnd.SystemRandom().shuffle(order)      # blindness: label order != seed order
+    labels = ["A", "B", "C", "D"]
+    vmap, takes = {}, []
+    for li, k in enumerate(order):
+        sd = seed + k * 7919
+        lab = labels[li]
+        # files are named by LABEL, never by creation index — a _var_..._0 path
+        # on the card would leak seed order and unblind the round
+        vname = f"_var_{song}_{lab.lower()}"
+        a = make_one_variant(rid, genre, sd, vname)
+        if not a:
+            continue
+        vmap[lab] = {"json": f"{vname}.json", "wav": f"{vname}.wav", "seed": sd}
+        takes.append({"label": lab, "wav": f"songs/{vname}.wav",
+                      "lufs": a.get("lufs_integrated"), "peak": a.get("peak_dbfs")})
+        emit(rid, "activity",
+             text=f"[variants] take {lab} ready ({a.get('lufs_integrated')} LUFS)")
+    if len(takes) < 2:
+        for o in vmap.values():             # a one-take round is just a MAKE gone shy
+            for pth in (o.get("json"), o.get("wav")):
+                p2 = os.path.join(SONGS, pth)
+                os.path.exists(p2) and os.remove(p2)
+        emit(rid, "error", text="blind round failed — fewer than 2 takes landed")
+        emit(rid, "done", ok=False)
+        return
+    takes.sort(key=lambda t_: t_["label"])
+    _awrite(os.path.join(IPC, f"variants_{song}.json"),
+            {"song": song, "genre": genre, "takes": vmap, "t": time.time()})
+    emit(rid, "variants", song=song, takes=takes, blind=True,
+         note="listen blind, then pick_variant {label} — the winner becomes "
+              "THE proposal; losers retire")
+    chronicle.append(song, "event",
+                     f"BLIND ROUND: {len(takes)} {genre} takes offered "
+                     f"({'/'.join(t_['label'] for t_ in takes)})")
+    emit(rid, "done", ok=True)
+
+
 # ---------------- request handling ----------------
 def handle(req):
     rid = req.get("id", 0)
@@ -3758,6 +3868,54 @@ def handle(req):
         emit(rid, "done", ok=True)
         return
 
+    if rtype == "pick_variant":
+        # #21c: the blind verdict — the picked take BECOMES the proposal (files
+        # move, receipts fresh), the deck flow takes over, losers + map retire.
+        lab = str(req.get("label", "")).strip().upper()
+        vmp = os.path.join(IPC, f"variants_{song}.json")
+        if not os.path.exists(vmp):
+            emit(rid, "error", text="no blind round is open on this song")
+            return
+        vm = json.load(open(vmp))
+        ch = (vm.get("takes") or {}).get(lab)
+        if not ch:
+            emit(rid, "error",
+                 text=f"no take '{lab}' in the round "
+                      f"({'/'.join(sorted(vm.get('takes', {})))})")
+            return
+        os.replace(os.path.join(SONGS, ch["json"]), prop_json)
+        _vw = os.path.join(SONGS, ch["wav"])
+        if os.path.exists(_vw):
+            os.replace(_vw, os.path.join(SONGS, f"{prop}.wav"))
+        surgical.clear_receipts(prop)       # fresh prop = fresh ledger
+        surgical.coarse_receipt(prop, "make_track", fields=["*"],
+                                summary=f"blind round winner {lab} "
+                                        f"({vm.get('genre', '?')}, seed {ch.get('seed')})")
+        for l2, o in (vm.get("takes") or {}).items():
+            if l2 == lab:
+                continue
+            for pth in (o.get("json"), o.get("wav")):
+                p2 = os.path.join(SONGS, pth)
+                os.path.exists(p2) and os.remove(p2)
+        os.remove(vmp)
+        last_prompts[song] = f"[blind round] picked take {lab}"
+        last_genres[song] = vm.get("genre", last_genres.get(song, ""))
+        chronicle.append(song, "user", f"[blind pick] take {lab}")
+        emit(rid, "proposal", song=song, proposal=prop)
+        try:   # deck EARS from the already-walled wav — no re-render
+            _pyv = VENV_PY if os.path.exists(VENV_PY) else "python3"
+            _rca, _outa, _ = run([_pyv, os.path.join(ROOT, "tools", "analyze2.py"),
+                                  os.path.join(SONGS, f"{prop}.wav")], timeout=120)
+            if _rca == 0:
+                _d = json.loads(_outa)
+                emit(rid, "analysis", which="proposal", peak=_d.get("peak_dbfs"),
+                     clipped=_d.get("clipped_samples"),
+                     lufs=_d.get("lufs_integrated"))
+        except Exception:
+            pass
+        emit(rid, "done", ok=True)
+        return
+
     if rtype == "make_track":
         # ZERO-TOKEN one-button track: deterministic loop_gen -> arrange lands as a
         # normal PROPOSAL over the open song (Audition/Accept just work).
@@ -3767,6 +3925,18 @@ def handle(req):
         genre = re.sub(r"[^a-z0-9_]", "", str(req.get("genre", "house")).lower())
         last_genres[song] = genre           # ATTRIBUTION v3: the verdict knows its genre
         seed = int(req.get("seed", 0))
+        try:                                # #21c N-TAKE BLIND A/B (sidecar half)
+            n_var = max(0, min(4, int(req.get("variants") or 0)))
+        except (TypeError, ValueError):
+            n_var = 0
+        if n_var >= 2:
+            if os.path.exists(prop_json):
+                emit(rid, "error", text="a proposal is already pending — Accept/Reject it "
+                                        "before opening a blind round")
+                emit(rid, "done", ok=False)
+                return
+            handle_blind_round(rid, req, song, genre, seed, n_var)
+            return
         emit(rid, "status", text=f"making a {genre} track (seed {seed}) — no tokens, all DNA…")
         py = VENV_PY if os.path.exists(VENV_PY) else sys.executable
         tmp = f"_mt_{song}"
@@ -3937,6 +4107,17 @@ def handle(req):
         # Precision-first: any doubt = honest miss, and the cloud rail below runs
         # byte-identically. Pending proposals / revises stay on the LLM rail
         # (that's where conversation lives). SOTADAW_PARSE=0 kills the lane.
+        # #21c BLIND ROUND ROUTER: 'make 3 takes of techno' on a FRESH ask
+        # (no pending prop, not a revise) never spends a token — N DNA seeds
+        # land as anonymous cards, pick_variant crowns. Seed rolls fresh and
+        # is echoed (generative seed law).
+        if not (req.get("revise") or explicit_model
+                or os.path.exists(os.path.join(SONGS, f"_prop_{song}.json"))):
+            _br = blind_round_ask(req.get("text", ""), req.get("genre_pref", ""))
+            if _br:
+                handle_blind_round(rid, req, song, _br[1],
+                                   int.from_bytes(os.urandom(2), "big"), _br[0])
+                return
         plan = None
         parse_miss = parse_lane_skip_reason(
             explicit_model, bool(req.get("revise")),

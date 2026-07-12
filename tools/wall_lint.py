@@ -30,8 +30,8 @@ def main():
             inside_wall = True
         elif re.match(r"^def \w+", l):
             inside_wall = False
-        if 'render_and_analyze(' not in l or '"proposal"' not in l:
-            continue
+        if 'render_and_analyze(' not in l or not ('"proposal"' in l or '"variant"' in l):
+            continue    # "variant" = the blind-round lane (#21c): same wall law
         if inside_wall:
             continue
         window = "\n".join(lines[i:i + 8])
@@ -39,7 +39,8 @@ def main():
             bad.append((i + 1, l.strip()))
     for n, l in bad:
         print(f"UNWALLED PROPOSAL RENDER at sidecar.py:{n}: {l}")
-    n_ok = len([l for l in lines if 'render_and_analyze(' in l and '"proposal"' in l]) - len(bad)
+    n_ok = len([l for l in lines if 'render_and_analyze(' in l
+                and ('"proposal"' in l or '"variant"' in l)]) - len(bad)
     print(f"wall lint: {n_ok} walled proposal renders, {len(bad)} unwalled "
           f"{'— LAW HOLDS' if not bad else '— LAW BROKEN'}")
     sys.exit(1 if bad else 0)

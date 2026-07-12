@@ -166,6 +166,18 @@ jobs:
           & "$env:TEMP\sotadaw_inst\bin\m1.exe" render songs/_jitprobe.json "$env:TEMP\installed_jit.wav" 2> "$env:TEMP\jit_err.txt"
           Get-Content "$env:TEMP\jit_err.txt" | Select-String "fxdbg"
           python tools/ci_wav_gate.py "$env:TEMP\installed_jit.wav" 3
+          # THE WORKSPACE LANE (real-install dialog 2026-07-12: launcher copied m1.exe
+          # away from faust.dll): run the REAL launcher's staging headlessly, then the
+          # WORKSPACE m1.exe — the exact binary+path the app invokes at runtime.
+          $env:SOTADAW_STAGE_ONLY = "1"
+          & "$env:TEMP\sotadaw_inst\sotadaw-launch.cmd"
+          $ws = "$env:LOCALAPPDATA\sotadaw"
+          & "$ws\app\build\m1_artefacts\Release\m1.exe" render "$ws\songs\demo_track.json" "$env:TEMP\ws_render.wav"
+          if ($LASTEXITCODE -ne 0) { Write-Error "workspace m1 died (missing-dll class)"; exit 1 }
+          python tools/ci_wav_gate.py "$env:TEMP\ws_render.wav"
+          & "$ws\app\build\m1_artefacts\Release\m1.exe" render songs/_jitprobe.json "$env:TEMP\ws_jit.wav"
+          if ($LASTEXITCODE -ne 0) { Write-Error "workspace m1 JIT died"; exit 1 }
+          python tools/ci_wav_gate.py "$env:TEMP\ws_jit.wav" 3
 
       - name: P4 macos — UNIVERSAL check + dmg + attach + run the bundled engine
         if: matrix.name == 'macos'
