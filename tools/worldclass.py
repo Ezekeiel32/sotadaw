@@ -110,7 +110,11 @@ def floor_verdict(song, analysis=None):
 
     try:
         mg = float(song.get("masterGainDb", 0) or 0)
-        if mg > 0.0 and any(f.get("id") == "fx_truepeak" for f in master):
+        # brickwall counts: it's still a wall, and the legacy heal upgrades it
+        # to fx_truepeak IN THIS SAME PASS — checking truepeak-only left the
+        # healed song standing with the positive gain unflagged
+        if mg > 0.0 and any(f.get("id") in ("fx_truepeak", "fx_brickwall")
+                            for f in master):
             hard.append({"code": "post_wall_gain", "heal": ("zero_master_gain",),
                          "why": f"masterGainDb +{mg:g} AFTER the wall re-opens "
                                 "the headroom the wall just closed"})
@@ -191,6 +195,25 @@ def heal(song, verdict):
         if not any(f.get("id") == "fx_truepeak" for f in doc["master"]):
             doc["master"].append({"id": "fx_truepeak", "params": {"ceiling": -1.2}})
             receipts.append("release wall appended (chain lost its last stage)")
+    # WALL LAST, WALL ONCE: upgrade_wall converts the legacy limiter IN PLACE —
+    # if it wasn't the chain's last stage, post-wall fx (a saturator, a trim up)
+    # re-clip what the wall just caught; and an upgraded legacy next to an
+    # existing truepeak leaves TWO walls in series. Normalize: exactly one
+    # fx_truepeak, seated at the end. Only fires when a heal touched the wall.
+    if receipts:
+        m = doc.get("master", []) or []
+        walls = [f for f in m if f.get("id") == "fx_truepeak"]
+        if walls and (len(walls) > 1 or m[-1].get("id") != "fx_truepeak"):
+            rest = [f for f in m if f.get("id") != "fx_truepeak"]
+            keep = walls[-1]
+            try:  # the tightest declared ceiling survives a merge
+                keep_ceil = min(float((w.get("params") or {}).get("ceiling", -1.2))
+                                for w in walls)
+                keep.setdefault("params", {})["ceiling"] = keep_ceil
+            except (TypeError, ValueError):
+                pass
+            doc["master"] = rest + [keep]
+            receipts.append("release wall re-seated LAST (single wall)")
     return doc, receipts
 
 

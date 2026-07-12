@@ -474,7 +474,7 @@ def t_rebuild_engine(args):
     tail = (out + err)[-1200:]
     return ("REBUILD OK\n" if rc == 0 else "REBUILD FAILED\n") + tail
 
-_DOCTOR_HARD = {"M1", "M3", "X1", "X2", "X3", "C3"}   # objective, always-wrong; rest = taste/maturity
+_DOCTOR_HARD = {"M1", "M3", "X1", "X2", "X3", "X4", "C3"}   # objective, always-wrong; rest = taste/maturity
 
 def _doctor_verdict(song):
     """EARS ON WRITE (Chezy: 'the agent is OBLIVIOUS to sound and music quality'):
@@ -528,11 +528,22 @@ def _track_verdict(t):
             finds.append(f"[M1] '{nm}' (sub) is WIDENED — mono cancellation -> strip fx_widen")
     if role == "focal" and pan > 0.2:
         finds.append(f"[M3] '{nm}' (lead/focal) panned {t.get('pan')} — focus wanders -> pan toward 0")
+    try:                                   # zone truth lives UPSTREAM (doctor.FX_ZONES)
+        import doctor as _doc
+        _zones_of = _doc.FX_ZONES.get
+    except Exception:
+        _zones_of = lambda _i: None        # fail-open: the critic never kills the pen
     for f in t.get("fx", []) or []:
         if f.get("id") == "fx_trim" and "gain" in (f.get("params") or {}):
             finds.append(f"[X2] fx_trim on '{nm}' has param 'gain' — the zone is 'level'; this trim does NOTHING")
         if f.get("type") == "limiter":
             finds.append(f"[X2] deprecated type:'limiter' on '{nm}' — ceiling non-functional -> fx_truepeak")
+        zones = _zones_of(f.get("id"))
+        if zones is not None:              # unknown/vst3 fx ids skip (their params are a different space)
+            bad = [k for k in (f.get("params") or {})
+                   if k not in zones and not (f.get("id") == "fx_trim" and k == "gain")]
+            if bad:
+                finds.append(f"[X2] {f.get('id')} on '{nm}' has unknown param(s) {bad} — real zones: {sorted(zones)}; these do NOTHING")
     return ("\nDOCTOR: " + "; ".join(finds[:3])) if finds else ""
 
 def t_write_song(args):
@@ -3718,7 +3729,7 @@ TOOLS = {
                  {"type": "object", "properties": {"song": {"type": "string"}, "take": {"type": "string"},
                   "at_bar": {"type": "number"}, "prefix": {"type": "string"}},
                   "required": ["song", "take"]}),
-    "set_track_fx": (t_set_track_fx, "Set a track's FX chain in signal order: faust fx (fx_reverb, fx_delay, fx_saturate, fx_softclip [drive: gentle pre-wall drum-bus glue], fx_crush [bits/srate/mix: bitcrush + sample-rate reduce — lo-fi/sigilkore grit], fx_widen, fx_ms_eq [mid/side EQ: mid_low/mid_high/side_low/side_high/width], fx_multiband [3-band comp: low/mid/high thresh+ratio, makeup], fx_comp [THE channel/bus compressor: thresh/ratio (honest N:1)/attack/release ms/makeup dB — stereo-linked; glue: thresh -24 ratio 3; snare crack: thresh -20 ratio 4 attack 5. Use INSTEAD of {\"type\":\"comp\"}, whose friendly-param wiring is dead], fx_transient [attack/sustain shaper ±12 dB: drum punch attack +6..9, tame ring/room sustain -4..-8; 0/0 = unity], fx_filter [cutoff/res], fx_flanger [stereo swept-comb motion: rate/depth/feedback/mix — psy leads, jet risers, pad shimmer], fx_pump, fx_deess [split-band sibilance tamer, FIRST in the vocal chain pre-reverb: freq/thresh/amount], fx_gate [downward expander for recorded stems: thresh/depth/rel — bleed + noise floor between phrases; thresh must clear the floor's CRESTS (peak follower), depth 0 = bypass], fx_trim, fx_djfilter, fx_brickwall, fx_truepeak [ISP release wall: ceiling = output dBTP]), built-ins ({\"type\":\"eq\"|\"comp\"}), or vst3 inserts ({\"id\":\"vst3:<name>\", \"preset\": <blob path>}), or NAM amp/pedal captures ({\"id\":\"nam:<path/to/capture.nam>\", \"params\":{\"input_db\":0,\"output_db\":0}} — library.json nam_captures; mono-sum DI), or CLAP plugins ({\"id\":\"clap:<path/to/plugin.clap>\", \"params\":{\"index\":0,\"mix\":1.0}} — library.json clap_plugins; direct C-ABI host, any .clap effect). Any entry takes \"bypass\": true (created but disabled — A/B without losing settings). Space/depth lives here.",
+    "set_track_fx": (t_set_track_fx, "Set a track's FX chain in signal order: faust fx (fx_reverb, fx_delay, fx_saturate, fx_softclip [drive: gentle pre-wall drum-bus glue], fx_crush [bits/srate/mix: bitcrush + sample-rate reduce — lo-fi/sigilkore grit], fx_widen, fx_ms_eq [mid/side EQ: mid_low/mid_high/side_low/side_high/width], fx_multiband [3-band comp: low/mid/high thresh+ratio, makeup], fx_comp [THE channel/bus compressor: thresh/ratio (honest N:1)/attack/release ms/makeup dB — stereo-linked; glue: thresh -24 ratio 3; snare crack: thresh -20 ratio 4 attack 5. Use INSTEAD of {\"type\":\"comp\"}, whose friendly-param wiring is dead], fx_transient [attack/sustain shaper ±12 dB: drum punch attack +6..9, tame ring/room sustain -4..-8; 0/0 = unity], fx_filter [cutoff/res — resonant LOWPASS only; there is NO 'mode' zone], fx_hipass [cutoff/res — resonant HIGHPASS: clean mud/rumble off pads, leads, verbs, buses; never on kick/bass/808], fx_flanger [stereo swept-comb motion: rate/depth/feedback/mix — psy leads, jet risers, pad shimmer], fx_pump, fx_deess [split-band sibilance tamer, FIRST in the vocal chain pre-reverb: freq/thresh/ratio], fx_gate [downward expander for recorded stems: thresh/depth/rel — bleed + noise floor between phrases; thresh must clear the floor's CRESTS (peak follower), depth 0 = bypass], fx_trim, fx_djfilter, fx_brickwall, fx_truepeak [ISP release wall: ceiling = output dBTP]), built-ins ({\"type\":\"eq\"|\"comp\"}), or vst3 inserts ({\"id\":\"vst3:<name>\", \"preset\": <blob path>}), or NAM amp/pedal captures ({\"id\":\"nam:<path/to/capture.nam>\", \"params\":{\"input_db\":0,\"output_db\":0}} — library.json nam_captures; mono-sum DI), or CLAP plugins ({\"id\":\"clap:<path/to/plugin.clap>\", \"params\":{\"index\":0,\"mix\":1.0}} — library.json clap_plugins; direct C-ABI host, any .clap effect). Any entry takes \"bypass\": true (created but disabled — A/B without losing settings). Space/depth lives here.",
                      {"type": "object", "properties": {"song": {"type": "string"}, "track": {"type": "string"},
                       "fx": {"type": ["array", "string"]}}, "required": ["song", "track", "fx"]}),
     "write_lyrics": (t_write_lyrics, "Write timestamp-aware lyrics into a song: [{beat, text}] — each line lands on an exact beat. Compose them AWARE of the arrangement (hooks at drops, flow matching drum density).",

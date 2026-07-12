@@ -618,7 +618,14 @@ def render(song_name, track_name, embed="standard", steps=30):
               f"{F} frames ({F * spf:.1f}s) @ {base:.1f}s", flush=True)
     from scipy.io import wavfile
     out = os.path.join(ROOT, "songs", f"{song_name}_vocal.wav")
-    wavfile.write(out, SR, (np.clip(buf, -1, 1) * 32767).astype(np.int16))
+    # THE LIVE-APP STOMP LAW (crash court 2026-07-12 14:38, Chezy live): the
+    # UI memory-maps this wav while playing; an IN-PLACE rewrite truncates
+    # the mapping under the audio thread — SEGV in MemoryMappedWavReader::
+    # readSamples (symbolized). tmp + os.replace = a NEW inode; the engine's
+    # map keeps the old bytes alive until it reloads. Same law as _awrite.
+    _tmp_wav = out + ".w~.wav"
+    wavfile.write(_tmp_wav, SR, (np.clip(buf, -1, 1) * 32767).astype(np.int16))
+    os.replace(_tmp_wav, out)
 
     # land it in the song as a real (replaceable) audio track. On IMPORTED
     # songs 'vocals' is the muted stem REFERENCE (the record's own vocal) —

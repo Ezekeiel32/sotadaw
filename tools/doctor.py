@@ -27,6 +27,36 @@ import automix as M
 from expressive import nomml_level
 import songname
 
+# Zone truth per faust fx — extracted from instruments/fx_*.dsp slider
+# declarations (2026-07-12). setZone() is EXACT-name; a param not in this
+# set is a silent no-op. New fx: add its zones here or it fail-opens (no
+# false X2, but no protection either).
+FX_ZONES = {
+    "fx_brickwall": {"ceiling"},
+    "fx_comp": {"thresh", "ratio", "attack", "release", "makeup"},
+    "fx_crush": {"bits", "srate", "mix"},
+    "fx_deess": {"freq", "thresh", "ratio"},
+    "fx_delay": {"time", "feedback", "mix"},
+    "fx_djfilter": {"knob", "res"},
+    "fx_filter": {"cutoff", "res"},
+    "fx_flanger": {"rate", "depth", "feedback", "mix"},
+    "fx_gate": {"thresh", "depth", "rel"},
+    "fx_hipass": {"cutoff", "res"},
+    "fx_ms_eq": {"mid_low", "mid_high", "side_low", "side_high",
+                 "width", "low_freq", "high_freq"},
+    "fx_multiband": {"xlow", "xhigh", "attack", "release",
+                     "low_thresh", "low_ratio", "mid_thresh", "mid_ratio",
+                     "high_thresh", "high_ratio", "makeup"},
+    "fx_pump": {"rate", "depth", "release"},
+    "fx_reverb": {"mix", "size", "damp"},
+    "fx_saturate": {"drive", "tone", "mix"},
+    "fx_softclip": {"drive"},
+    "fx_transient": {"attack", "sustain"},
+    "fx_trim": {"level"},
+    "fx_truepeak": {"ceiling"},
+    "fx_widen": {"width", "rate"},
+}
+
 
 def diagnose(song):
     issues = []
@@ -145,6 +175,19 @@ def diagnose(song):
                 issues.append(("X3", f"master fx_djfilter parked dark (knob {knob:+.2f}, no automation) — the whole mix is muffled",
                                "return the knob toward 0, or automate the sweep"))
 
+    # X4 positive master volume after the wall: masterGainDb applies AFTER the
+    # whole master chain — a positive value re-opens the headroom the limiter
+    # just closed (the export clips 'through' the wall). Same truth the floor
+    # heals (worldclass post_wall_gain) — the Doctor chip must see it too.
+    try:
+        mg = float(song.get("masterGainDb", 0) or 0)
+    except (TypeError, ValueError):
+        mg = 0.0
+    if mg > 0.0 and any(f.get("id") in ("fx_truepeak", "fx_brickwall")
+                        for f in song.get("master", [])):
+        issues.append(("X4", f"masterGainDb {mg:+.1f} runs AFTER the wall — re-opens the clipping the limiter just closed",
+                       "set masterGainDb 0; stage level with fx_trim inside the chain"))
+
     # X2 zone traps the schema can't see: params that silently do NOTHING
     # (upstreamed from the write-path verdict so the Doctor chip sees them too).
     # Sweeps EVERY chain that hosts fx — tracks, master, AND buses (I5, THE TEN:
@@ -159,6 +202,19 @@ def diagnose(song):
             if f.get("id") == "fx_trim" and "gain" in (f.get("params") or {}):
                 issues.append(("X2", f"fx_trim on '{t.get('name')}' has param 'gain' — the zone is 'level'; this trim does NOTHING",
                                "rename the param to level"))
+            # X2 generalized: setZone() matches zone NAMES exactly — any
+            # unknown param is silently ignored and the fx runs at defaults.
+            # Table = the zone declarations in instruments/fx_*.dsp; unknown
+            # fx ids skip (fail-open for future fx); vst3 params are a
+            # different space (natural units on display names) — exempt.
+            zones = FX_ZONES.get(f.get("id"))
+            if zones is not None:
+                bad = [k for k in (f.get("params") or {})
+                       if k not in zones
+                       and not (f.get("id") == "fx_trim" and k == "gain")]
+                if bad:
+                    issues.append(("X2", f"{f.get('id')} on '{t.get('name')}' has unknown param(s) {bad} — real zones: {sorted(zones)}; these do NOTHING",
+                                   "rename to a real zone or remove the param"))
             if f.get("type") == "limiter":
                 issues.append(("X2", f"deprecated type:'limiter' on '{t.get('name')}' — its ceiling is non-functional",
                                "use fx_truepeak (ceiling = output dBTP)"))

@@ -176,6 +176,10 @@ def main():
        "import-path vocals_sung mint carries comp+delay (dr19)")
     ok(_src.count('"id": "fx_deess"') >= 2,
        "the de-esser stands FIRST in BOTH vocal chains (dr19)")
+    # THE LIVE-APP STOMP LAW (crash 2026-07-12 14:38): the vocal wav lands
+    # via tmp + os.replace — never an in-place rewrite under the UI's map
+    ok("os.replace(_tmp_wav, out)" in _src,
+       "vocal wav lands atomically (new inode; the UI's map stays valid)")
 
     print(f"sing-preflight battery: {PASS}/{PASS + len(FAIL)} "
           + ("clean" if not FAIL else "RED"))

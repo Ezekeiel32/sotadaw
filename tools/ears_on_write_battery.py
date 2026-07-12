@@ -152,6 +152,31 @@ def main():
     r = write("_ears_f", open_f)
     ok("[X3]" not in r, "T7c: an open master filter is no violation")
 
+    # X2 GENERALIZED (zone-truth table, 2026-07-12): setZone matches names
+    # EXACTLY — any unknown param is a silent no-op; the doctor knows every
+    # zone in instruments/fx_*.dsp now, not just fx_trim's 'gain'
+    write("_ears_x", trap)
+    r = daw_mcp.TOOLS["set_track_fx"][0]({"song": "_ears_x", "track": "keys",
+                                          "fx": [{"id": "fx_delay",
+                                                  "params": {"wet": 0.3, "time": 0.4}}]})
+    ok("DOCTOR:" in r and "[X2]" in r and "wet" in r,
+       f"T8: unknown param 'wet' on fx_delay fires generalized X2 ({r.splitlines()[-1][:80]})")
+    r = daw_mcp.TOOLS["set_track_fx"][0]({"song": "_ears_x", "track": "keys",
+                                          "fx": [{"id": "fx_ms_eq",
+                                                  "params": {"side_low": -2.0, "width": 1.2}}]})
+    ok("DOCTOR:" not in r, "T8b: valid zone names on fx_ms_eq stay SILENT")
+
+    # X4: positive masterGainDb AFTER the wall re-opens what the wall closed
+    x4 = json.loads(json.dumps(trap))
+    x4["masterGainDb"] = 2.5
+    r = write("_ears_x", x4)
+    ok("[X4]" in r and "wall" in r,
+       f"T9: masterGainDb +2.5 after the wall fires X4 ({r.splitlines()[-1][:80]})")
+    x4["masterGainDb"] = 0.0
+    r = write("_ears_x", x4)
+    ok("[X4]" not in r, "T9b: masterGainDb 0 with a wall is lawful")
+    scrub("_ears_x")
+
     # determinism
     ok(write("_ears_a", dirty) == write("_ears_a", dirty), "verdicts deterministic")
 

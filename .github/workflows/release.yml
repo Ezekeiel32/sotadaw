@@ -46,14 +46,25 @@ jobs:
         shell: bash
         run: git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/Ableton/link app/link
 
+      - name: windows faust dist (JIT proven on this OS — run 29191251031)
+        if: matrix.name == 'windows'
+        shell: bash
+        run: |
+          curl -fsSL -o faust.exe https://github.com/grame-cncm/faust/releases/download/2.85.9/Faust-2.85.9-win64.exe
+          7z x -ofaustdist faust.exe > /dev/null || true
+          ls faustdist/lib | head -4
+
       - name: configure + build (P1)
         shell: bash
         run: |
           EXTRA=""
+          JIT="-DSOTADAW_ENABLE_JIT=OFF"
           if [ "${{ matrix.name }}" = "macos" ]; then
             EXTRA='-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0'
+          elif [ "${{ matrix.name }}" = "windows" ]; then
+            JIT="-DSOTADAW_ENABLE_JIT=ON -DSOTADAW_FAUST_DIST=$PWD/faustdist"
           fi
-          cmake -B app/build -S app -DCMAKE_BUILD_TYPE=Release -DSOTADAW_ENABLE_JIT=OFF $EXTRA
+          cmake -B app/build -S app -DCMAKE_BUILD_TYPE=Release $JIT $EXTRA
           cmake --build app/build --config Release -j 3
 
       - name: locate artefacts
@@ -66,6 +77,10 @@ jobs:
       - name: P2 engine truth — render real audio on this OS
         shell: bash
         run: |
+          if [ "${{ matrix.name }}" = "windows" ]; then
+            cp faustdist/lib/faust.dll "$(dirname "$M1")/"
+            export SOTADAW_FAUST_LIB_PATH="$PWD/faustdist/share/faust"
+          fi
           "$M1" render songs/demo_track.json out_${{ matrix.name }}.wav
           python3 tools/ci_wav_gate.py out_${{ matrix.name }}.wav || python tools/ci_wav_gate.py out_${{ matrix.name }}.wav
 
@@ -96,11 +111,29 @@ jobs:
           curl -fsSL -o /tmp/pyembed.zip https://www.python.org/ftp/python/3.12.8/python-3.12.8-embed-amd64.zip
           mkdir -p installer/windows/python-embed
           unzip -q /tmp/pyembed.zip -d installer/windows/python-embed
+          # live-JIT payload: the dll + faust stdlib ride the wizard
+          cp faustdist/lib/faust.dll installer/windows/
+          cp -r faustdist/share/faust installer/windows/faustlibs
+          # probe files for the installed-JIT gate (P4)
+          cat > instruments/_jitprobe.dsp <<'DSP'
+          import("stdfaust.lib");
+          freq = hslider("freq", 440, 40, 3000, 0.01);
+          gain = hslider("gain", 0.7, 0, 1, 0.01);
+          gate = button("gate");
+          process = os.sawtooth(freq) * gain * en.adsr(0.01, 0.1, 0.8, 0.2, gate) : fi.lowpass(2, 2400) <: _,_;
+          DSP
+          cat > songs/_jitprobe.json <<'JSON'
+          {"bpm":120,"lengthBars":4,"tracks":[{"name":"probe","source":{"kind":"faust","id":"_jitprobe"},
+           "notes":[{"beat":0,"pitch":60,"lengthBeats":0.9,"velocity":0.9},{"beat":1,"pitch":62,"lengthBeats":0.9,"velocity":0.9},
+                    {"beat":2,"pitch":64,"lengthBeats":0.9,"velocity":0.9},{"beat":3,"pitch":65,"lengthBeats":0.9,"velocity":0.9},
+                    {"beat":4,"pitch":67,"lengthBeats":0.9,"velocity":0.9},{"beat":5,"pitch":69,"lengthBeats":0.9,"velocity":0.9},
+                    {"beat":6,"pitch":71,"lengthBeats":0.9,"velocity":0.9},{"beat":7,"pitch":72,"lengthBeats":0.9,"velocity":0.9}]}]}
+          JSON
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           [ -f "$ISCC" ] || choco install innosetup -y --no-progress
           "$ISCC" installer/windows/sotadaw.iss
           ls -la installer/windows/Output/
-      - name: P4 windows — install + run the installed engine
+      - name: P4 windows — install + run the installed engine (incl. installed JIT)
         if: matrix.name == 'windows'
         shell: pwsh
         run: |
@@ -108,6 +141,12 @@ jobs:
           Start-Process -Wait -FilePath $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$env:TEMP\sotadaw_inst"
           & "$env:TEMP\sotadaw_inst\bin\m1.exe" render "$env:TEMP\sotadaw_inst\payload\songs\demo_track.json" "$env:TEMP\installed.wav"
           python tools/ci_wav_gate.py "$env:TEMP\installed.wav"
+          # installed live-JIT truth: never-registered .dsp through the installed dll+libs
+          $env:SOTADAW_FAUST_LIB_PATH = "$env:TEMP\sotadaw_inst\faustlibs"
+          $env:SOTADAW_FX_DEBUG = "1"
+          & "$env:TEMP\sotadaw_inst\bin\m1.exe" render songs/_jitprobe.json "$env:TEMP\installed_jit.wav" 2> "$env:TEMP\jit_err.txt"
+          Get-Content "$env:TEMP\jit_err.txt" | Select-String "fxdbg"
+          python tools/ci_wav_gate.py "$env:TEMP\installed_jit.wav" 3
 
       - name: P4 macos — UNIVERSAL check + dmg + attach + run the bundled engine
         if: matrix.name == 'macos'
@@ -172,7 +211,8 @@ jobs:
               -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
             cmake --build fb --target staticlib -j 3 || cmake --build fb -j 3
             mkdir -p faustdist/lib faustdist/include faustdist/share
-            cp $(find fb -name 'libfaust*.a' | head -1) faustdist/lib/libfaust.a
+            LIBA=$(find fb fsrc/build -name 'libfaust*.a' | head -1)   # their LIBDIR = fsrc/build/lib
+            cp "$LIBA" faustdist/lib/libfaust.a
             cp -R fsrc/architecture/faust faustdist/include/faust
             cp -R fsrc/libraries faustdist/share/faust
             lipo -info faustdist/lib/libfaust.a

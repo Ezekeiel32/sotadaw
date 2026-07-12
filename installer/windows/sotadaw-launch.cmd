@@ -20,5 +20,7 @@ if not exist "%WS%\app\build\m1_artefacts\Release" mkdir "%WS%\app\build\m1_arte
 copy /Y "%ENGINE%bin\m1.exe" "%WS%\app\build\m1_artefacts\Release\m1.exe" >nul
 rem bundled CPython (embeddable): the agent works with zero preinstalled Python
 if exist "%ENGINE%python\python.exe" set "PATH=%ENGINE%python;%PATH%"
+rem live-JIT: bundled faust stdlib for brand-new .dsp instruments
+if exist "%ENGINE%faustlibs\stdfaust.lib" set "SOTADAW_FAUST_LIB_PATH=%ENGINE%faustlibs"
 set "SOTADAW_ROOT=%WS%"
 start "" "%ENGINE%bin\SOTA DAW.exe" %*

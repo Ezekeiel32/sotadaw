@@ -624,7 +624,13 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
         # sub-int16-LSB content; forcing PCM_16 truncated it to zero and made
         # passthrough spans non-bit-true). Unknown exotic subtypes -> PCM_16.
         keep = info.subtype.startswith("PCM") or "FLOAT" in info.subtype or "DOUBLE" in info.subtype
-        sf.write(out_path, out, fs, subtype=info.subtype if keep else "PCM_16")
+        # THE LIVE-APP STOMP LAW: a same-style re-tune targets the wav the UI is
+        # already playing (clip file == _tuned_<stem>_<style>.wav) — writing it in
+        # place truncates under the engine's memory map (audio-thread SEGV, the
+        # 2026-07-12 sing crash class). Land atomically: new inode, old map lives.
+        _tmp_out = out_path + ".w~.wav"
+        sf.write(_tmp_out, out, fs, subtype=info.subtype if keep else "PCM_16")
+        os.replace(_tmp_out, out_path)
 
     # report
     notes_rep = []

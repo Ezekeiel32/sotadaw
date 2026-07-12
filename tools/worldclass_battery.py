@@ -115,7 +115,31 @@ def main():
     check("kernel is pure: input song never mutated",
           __import__("json").dumps(s, sort_keys=True) == s0)
 
-    want = 13
+    # ---- doctor hardening trio (2026-07-12) ----
+    s = base_song(masterGainDb=2.0,
+                  master=[{"id": "fx_brickwall", "params": {"ceiling": -1.0}}])
+    v = wc.floor_verdict(s, LOUD)
+    check("post-wall +gain convicts on a BRICKWALL wall too",
+          any(h["code"] == "post_wall_gain" for h in v["hard"]), v)
+
+    s = base_song(master=[{"type": "limiter", "params": {}},
+                          {"id": "fx_saturate", "params": {"drive": 4}}])
+    v = wc.floor_verdict(s, LOUD)
+    fixed, rec = wc.heal(s, v)
+    check("mid-chain legacy heal re-seats the wall LAST",
+          fixed["master"][-1]["id"] == "fx_truepeak"
+          and fixed["master"][0]["id"] == "fx_saturate", fixed["master"])
+
+    s = base_song(master=[{"id": "fx_brickwall", "params": {"ceiling": -0.8}},
+                          {"id": "fx_truepeak", "params": {"ceiling": -1.5}}])
+    v = wc.floor_verdict(s, LOUD)
+    fixed, rec = wc.heal(s, v)
+    walls = [f for f in fixed["master"] if f.get("id") == "fx_truepeak"]
+    check("double wall merges to ONE, tightest ceiling survives",
+          len(walls) == 1 and walls[0]["params"]["ceiling"] == -1.5
+          and fixed["master"][-1]["id"] == "fx_truepeak", fixed["master"])
+
+    want = 16
     ok = not FAILS and N == want
     print(f"[wc-battery] {N}/{want} checks, "
           + ("ALL PASS — the floor holds" if ok else f"RED: {FAILS}"))

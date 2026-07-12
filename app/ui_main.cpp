@@ -9034,6 +9034,8 @@ public:
         if (! d.existsAsFile()) d = sotadaw::sotadawRoot().getChildFile ("songs/v1_test.json");
         if (d.existsAsFile()) loadSong (d);
         populateBrowser();
+        clockFollowOn = std::getenv ("SOTADAW_CLOCK_FOLLOW") != nullptr
+                        || loadUiPrefString ("clockFollow", "") == "1";   // R6 opt-in
         // #24a THE FRONT DOOR (V41/V58): a FIRST boot (no lastSong pref ever
         // written, not a rig) lands the newcomer in the generator's arms —
         // prompt prefilled with a real MAKE, status names the one gesture.
@@ -13454,6 +13456,74 @@ private:
         }
         // MIDI thread -> message thread; SafePointer guards the shutdown race
         juce::Component::SafePointer<MainComponent> safe (this);
+        // R6 THE CLOCK-IN FOLLOW (BEST_DAW_30 #18): external MIDI clock slaves
+        // tempo + start/stop through the ROOM's own door (the Link path,
+        // verbatim). OPT-IN (uiPref clockFollow=1 or SOTADAW_CLOCK_FOLLOW=1) —
+        // a stray drum machine must never hijack a session uninvited.
+        // Stability gate: three consecutive observed quarters within 1 BPM
+        // before anything applies — clock jitter never wobbles the grid.
+        if (clockFollowOn)
+        {
+            if (m.isMidiClock())
+            {
+                const double now = juce::Time::getMillisecondCounterHiRes();
+                if (ckLastTickMs > 0)
+                {
+                    const double dt = now - ckLastTickMs;
+                    if (dt > 1.0 && dt < 200.0)
+                    {
+                        ckAccumMs += dt;
+                        if (++ckTicks >= 24)                 // one quarter observed
+                        {
+                            const double bpm = 60000.0 / ckAccumMs;
+                            ckTicks = 0;
+                            ckAccumMs = 0;
+                            ckStable = std::abs (bpm - ckPendBpm) <= 1.0 ? ckStable + 1 : 0;
+                            ckPendBpm = bpm;
+                            if (ckStable >= 2 && std::abs (bpm - ckAppliedBpm) > 0.5
+                                && bpm >= 40 && bpm <= 220)
+                            {
+                                ckAppliedBpm = bpm;
+                                juce::MessageManager::callAsync ([safe, bpm]
+                                {
+                                    auto* self = safe.getComponent();
+                                    if (self == nullptr || self->edit == nullptr) return;
+                                    self->song.bpm = std::round (bpm * 10.0) / 10.0;
+                                    self->edit->tempoSequence.getTempo (0)->setBpm (self->song.bpm);
+                                    self->scheduleSave();
+                                    self->refreshTransportLabels();
+                                    self->setStatus ("CLOCK IN -> " + juce::String (self->song.bpm, 1)
+                                                     + " (external gear is the conductor)");
+                                });
+                            }
+                        }
+                    }
+                    else { ckTicks = 0; ckAccumMs = 0; ckStable = 0; }   // gap = resync
+                }
+                ckLastTickMs = now;
+                return;
+            }
+            if (m.isMidiStart() || m.isMidiStop())
+            {
+                const bool play = m.isMidiStart();
+                juce::MessageManager::callAsync ([safe, play]
+                {
+                    auto* self = safe.getComponent();
+                    if (self == nullptr || self->edit == nullptr) return;
+                    auto& t = self->edit->getTransport();
+                    if (play && ! t.isPlaying())
+                    {
+                        t.setPosition (tracktion::TimePosition());
+                        t.play (false);
+                        self->playButton.setButtonText ("Stop");
+                    }
+                    else if (! play && t.isPlaying())
+                        self->stopPlayback();
+                    self->setStatus (play ? "CLOCK IN: START" : "CLOCK IN: STOP");
+                });
+                return;
+            }
+        }
         {   // CONTROLLER PROFILES: a known device's input routes by ACTION first
             const bool note = m.isNoteOn();
             if (note || m.isController())
@@ -20455,6 +20525,9 @@ private:  // (restores the section the HANDS burst was in)
     double stallLastPos = -1.0;            // V49 v1.5 hang namer state
     int stallTicks = 0;
     bool stallNamed = false;
+    bool clockFollowOn = false;            // R6 clock-in follow (opt-in; MIDI thread reads only)
+    double ckLastTickMs = -1, ckAccumMs = 0, ckPendBpm = 0, ckAppliedBpm = 0;
+    int ckTicks = 0, ckStable = 0;
     juce::String songName;
     juce::ChildProcess sidecar, exportProc;
 
