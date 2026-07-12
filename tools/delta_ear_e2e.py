@@ -47,13 +47,25 @@ def main():
         check("seed render (the previous take's wav)",
               r.returncode == 0 and os.path.exists(prop_wav),
               (r.stdout + r.stderr)[-160:])
-        env = dict(os.environ, SOTADAW_IPC=ipc, SOTADAW_MOCK="1",
-                   SOTADAW_CHRONICLE="0")
-        sc = subprocess.Popen([PY, os.path.join(ROOT, "agent", "sidecar.py")],
-                              env=env, stdout=open(os.path.join(ipc, "out.log"), "w"),
+        env = dict(os.environ, SOTADAW_IPC=ipc, SOTADAW_CHRONICLE="0")
+        sc = subprocess.Popen([PY, os.path.join(ROOT, "agent", "sidecar.py"),
+                               "--mock"],   # ARGV flag, NOT env (cost me 2 real
+                              env=env,      # token runs on 2026-07-12)
+                              stdout=open(os.path.join(ipc, "out.log"), "w"),
                               stderr=subprocess.STDOUT, start_new_session=True)
         pid = sc.pid
-        time.sleep(2.0)
+        # THE MOCK GUARD: refuse to file the request until the daemon SAYS it is
+        # in the zero-token lane — a mis-flagged run must cost nothing twice.
+        mock_up, t0 = False, time.time()
+        while time.time() - t0 < 20:
+            ol = os.path.join(ipc, "out.log")
+            if os.path.exists(ol) and "up (mock=True)" in open(ol, errors="replace").read():
+                mock_up = True
+                break
+            time.sleep(0.5)
+        check("mock lane engaged (zero tokens)", mock_up)
+        if not mock_up:
+            raise SystemExit("refusing to run against a REAL agent")
         json.dump({"id": 7, "type": "prompt", "text": "make it quieter",
                    "song": name, "revise": True},
                   open(os.path.join(ipc, "request.json"), "w"))
@@ -84,6 +96,13 @@ def main():
         if delta_line:
             print("   sentence:", sent[:140])
     finally:
+        if N["fail"]:   # evidence BEFORE the scrub (the stand-down gate lesson)
+            for f in ("events.jsonl", "out.log"):
+                p = os.path.join(ipc, f)
+                if os.path.exists(p):
+                    print(f"--- {f} tail ---")
+                    print("\n".join(open(p, errors="replace").read()
+                                    .splitlines()[-14:]))
         if pid:
             try:
                 os.kill(pid, signal.SIGTERM)

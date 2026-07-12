@@ -2275,6 +2275,86 @@ static bool sameNotes (const std::vector<SongNote>& a, const std::vector<SongNot
             return false;
     return true;
 }
+// AUDIO CLIPS ride the same cross-window payload ("sotadaw_notes" stays the
+// FIRST key — the roll's pull gate checks startsWith on it; clips are a
+// sibling array readers may ignore).
+static juce::var clipToVar (const SongAudioClip& c)
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("file", c.file);
+    o->setProperty ("s", c.startBeat);    o->setProperty ("len", c.lengthBeats);
+    o->setProperty ("off", c.offsetSec);  o->setProperty ("g", c.gainDb);
+    o->setProperty ("bpm", c.sourceBpm);
+    if (c.stretch.isNotEmpty())   o->setProperty ("st", c.stretch);
+    if (c.fadeInBeats > 0)        o->setProperty ("fi", c.fadeInBeats);
+    if (c.fadeOutBeats > 0)       o->setProperty ("fo", c.fadeOutBeats);
+    if (c.fadeCurve.isNotEmpty()) o->setProperty ("fc", c.fadeCurve);
+    return juce::var (o);
+}
+static SongAudioClip clipFromVar (const juce::var& v)
+{
+    SongAudioClip c;
+    if (auto* o = v.getDynamicObject())
+    {
+        c.file         = o->getProperty ("file").toString();
+        c.startBeat    = (double) o->getProperty ("s");
+        c.lengthBeats  = juce::jmax (0.05, (double) o->getProperty ("len"));
+        c.offsetSec    = (double) o->getProperty ("off");
+        c.gainDb       = (double) o->getProperty ("g");
+        c.sourceBpm    = (double) o->getProperty ("bpm");
+        c.stretch      = o->getProperty ("st").toString();
+        c.fadeInBeats  = (double) o->getProperty ("fi");
+        c.fadeOutBeats = (double) o->getProperty ("fo");
+        c.fadeCurve    = o->getProperty ("fc").toString();
+    }
+    return c;
+}
+static juce::String blockToClipText (const std::vector<SongNote>& ns,
+                                     const std::vector<SongAudioClip>& cs)
+{
+    juce::Array<juce::var> na, ca;
+    for (auto& n : ns)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("s", n.start);  o->setProperty ("l", n.len);
+        o->setProperty ("p", n.pitch);  o->setProperty ("v", n.vel);
+        if (n.chance < 1.0) o->setProperty ("c", n.chance);
+        na.add (juce::var (o));
+    }
+    for (auto& c : cs) ca.add (clipToVar (c));
+    auto* root = new juce::DynamicObject();
+    root->setProperty ("sotadaw_notes", na);
+    if (! ca.isEmpty()) root->setProperty ("sotadaw_clips", ca);
+    return juce::JSON::toString (juce::var (root), true);
+}
+static std::vector<SongAudioClip> clipsFromClipText (const juce::String& txt)
+{
+    std::vector<SongAudioClip> out;
+    if (! txt.startsWith ("{\"sotadaw_notes\"")) return out;
+    const juce::var v = juce::JSON::parse (txt);   // hold the var (lifetime law)
+    auto* obj = v.getDynamicObject();
+    if (obj == nullptr) return out;
+    const auto clips = obj->getProperty ("sotadaw_clips");
+    if (! clips.isArray()) return out;
+    for (auto& cv : *clips.getArray())
+    {
+        auto c = clipFromVar (cv);
+        if (c.file.isNotEmpty()) out.push_back (std::move (c));
+    }
+    return out;
+}
+static bool sameClips (const std::vector<SongAudioClip>& a,
+                       const std::vector<SongAudioClip>& b)
+{
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (a[i].file != b[i].file
+            || std::abs (a[i].startBeat - b[i].startBeat) > 1e-9
+            || std::abs (a[i].lengthBeats - b[i].lengthBeats) > 1e-9
+            || std::abs (a[i].offsetSec - b[i].offsetSec) > 1e-9)
+            return false;
+    return true;
+}
 
 //==============================================================================
 // Piano-roll v2: drag move, right-edge resize, right-click delete, velocity lane.
@@ -14509,9 +14589,9 @@ private:
     }
     void blockDelete()
     {
-        if (laneNoteSel.empty()) return;
+        if (laneNoteSel.empty() && laneClipSel.empty()) return;
         snapshot();
-        int nDel = 0;
+        int nDel = 0, cDel = 0;
         juce::StringArray touched;
         for (auto& [ti, idxs] : laneNoteSel)
         {
@@ -14521,13 +14601,27 @@ private:
                 if (*it < ns.size()) { ns.erase (ns.begin() + (long) *it); ++nDel; }
             touched.addIfNotAlreadyThere (song.tracks[(size_t) ti].name);
         }
+        for (auto& [ti, idxs] : laneClipSel)      // selected AUDIO CLIPS die too (2026-07-12)
+        {
+            if (ti < 0 || ti >= (int) song.tracks.size()) continue;
+            auto& cs = song.tracks[(size_t) ti].audioClips;
+            for (auto it = idxs.rbegin(); it != idxs.rend(); ++it)
+                if (*it >= 0 && *it < (int) cs.size())
+                { cs.erase (cs.begin() + (long) *it); ++cDel; }
+            touched.addIfNotAlreadyThere (song.tracks[(size_t) ti].name);
+        }
         laneNoteSel.clear();
+        laneClipSel.clear();
         saveNow();
         engineDirty = true;
         for (auto* l : lanes) { l->setNoteSelection ({}); l->markDirty(); }
+        pushClipViews();
         refreshContextChips();
-        setStatus ("THE BLOCK: " + juce::String (nDel) + " notes deleted");
-        handReceipt ("hand.block_delete", touched, juce::String (nDel) + " notes deleted");
+        juce::String what;
+        if (nDel > 0) what << nDel << " notes";
+        if (cDel > 0) what << (what.isEmpty() ? "" : " + ") << cDel << " audio clips";
+        setStatus ("THE BLOCK: " + (what.isEmpty() ? juce::String ("nothing") : what) + " deleted");
+        handReceipt ("hand.block_delete", touched, what + " deleted");
     }
     void blockRepeatRight()                             // FL's Ctrl+B: the loop-builder's verb
     {
@@ -14552,14 +14646,35 @@ private:
     // selected track.
     void blockCopy()
     {
-        if (laneNoteSel.empty()) return;
+        if (laneNoteSel.empty() && laneClipSel.empty()) return;
         noteClip.clear(); noteClipLane.clear();
+        clipClip.clear(); clipClipLane.clear();
+        // THE SNIPPET LAW (Chezy live 2026-07-12: "cant copy paste orr even
+        // select audio snippets!"): a loop brace over selected audio copies
+        // the braced INTERSECTION — the brace IS the snippet selector on
+        // clips too long to marquee. No brace = the whole clip.
+        const bool brace = loopB > loopA && loopA >= 0;
         double minStart = 1e18;
+        bool trimmed = false;
         for (auto& [ti, idxs] : laneNoteSel)
             if (ti >= 0 && ti < (int) song.tracks.size())
                 for (auto i : idxs)
                     if (i < song.tracks[(size_t) ti].notes.size())
                         minStart = juce::jmin (minStart, song.tracks[(size_t) ti].notes[i].start);
+        for (auto& [ti, idxs] : laneClipSel)
+            if (ti >= 0 && ti < (int) song.tracks.size())
+                for (auto ci : idxs)
+                    if (ci >= 0 && ci < (int) song.tracks[(size_t) ti].audioClips.size())
+                    {
+                        auto& c = song.tracks[(size_t) ti].audioClips[(size_t) ci];
+                        const double len = c.lengthBeats > 0 ? c.lengthBeats
+                                             : juce::jmax (0.5, song.totalBeats() - c.startBeat);
+                        if (brace && (c.startBeat + len <= loopA || c.startBeat >= loopB))
+                            continue;              // braced copy skips clips outside it
+                        minStart = juce::jmin (minStart, brace ? juce::jmax (c.startBeat, (double) loopA)
+                                                               : c.startBeat);
+                    }
+        if (minStart > 1e17) return;               // nothing actually copyable
         for (auto& [ti, idxs] : laneNoteSel)
             if (ti >= 0 && ti < (int) song.tracks.size())
                 for (auto i : idxs)
@@ -14570,12 +14685,46 @@ private:
                         noteClip.push_back (n);
                         noteClipLane.push_back (ti);
                     }
-        juce::SystemClipboard::copyTextToClipboard (notesToClipText (noteClip));
-        setStatus ("copied " + juce::String ((int) noteClip.size()) + " notes");
+        for (auto& [ti, idxs] : laneClipSel)
+            if (ti >= 0 && ti < (int) song.tracks.size())
+                for (auto ci : idxs)
+                    if (ci >= 0 && ci < (int) song.tracks[(size_t) ti].audioClips.size())
+                    {
+                        auto cc = song.tracks[(size_t) ti].audioClips[(size_t) ci];
+                        const double len = cc.lengthBeats > 0 ? cc.lengthBeats
+                                             : juce::jmax (0.5, song.totalBeats() - cc.startBeat);
+                        const double s0 = cc.startBeat, s1 = cc.startBeat + len;
+                        if (brace && (s1 <= loopA || s0 >= loopB)) continue;
+                        cc.lengthBeats = len;                      // concretize open-ended clips
+                        if (brace && (s0 < loopA || s1 > loopB))
+                        {
+                            const double ns0 = juce::jmax (s0, (double) loopA);
+                            const double ns1 = juce::jmin (s1, (double) loopB);
+                            // offsetSec lives in SOURCE seconds: warped clips
+                            // convert at the record's bpm, unwarped at the song's
+                            const double srcSpb = cc.sourceBpm > 0 ? 60.0 / cc.sourceBpm
+                                                                   : 60.0 / juce::jmax (1.0, song.bpm);
+                            cc.offsetSec += (ns0 - s0) * srcSpb;
+                            cc.startBeat = ns0;
+                            cc.lengthBeats = ns1 - ns0;
+                            if (ns0 > s0) cc.fadeInBeats = 0;      // cut edges lose their fades
+                            if (ns1 < s1) cc.fadeOutBeats = 0;
+                            trimmed = true;
+                        }
+                        cc.startBeat -= minStart;
+                        clipClip.push_back (std::move (cc));
+                        clipClipLane.push_back (ti);
+                    }
+        juce::SystemClipboard::copyTextToClipboard (blockToClipText (noteClip, clipClip));
+        juce::String what;
+        if (! noteClip.empty()) what << (int) noteClip.size() << " notes";
+        if (! clipClip.empty()) what << (what.isEmpty() ? "" : " + ")
+                                     << (int) clipClip.size() << " audio clips";
+        setStatus ("copied " + what + (trimmed ? " (braced snippet)" : ""));
     }
     void blockCut()
     {
-        if (laneNoteSel.empty()) return;
+        if (laneNoteSel.empty() && laneClipSel.empty()) return;
         blockCopy();
         blockDelete();                       // snapshots + receipts + clears the selection
     }
@@ -14590,14 +14739,19 @@ private:
         // cross-window: adopt a FRESHER system-clipboard payload (another
         // window's copy); an identical one keeps the local lane origins
         {
-            auto in = notesFromClipText (juce::SystemClipboard::getTextFromClipboard());
-            if (! in.empty() && ! sameNotes (in, noteClip))
+            const auto txt = juce::SystemClipboard::getTextFromClipboard();
+            auto in  = notesFromClipText (txt);
+            auto inC = clipsFromClipText (txt);
+            if ((! in.empty() || ! inC.empty())
+                && (! sameNotes (in, noteClip) || ! sameClips (inC, clipClip)))
             {
                 noteClip = std::move (in);
-                noteClipLane.clear();          // foreign notes carry no lanes here
+                noteClipLane.clear();          // foreign payloads carry no lanes here
+                clipClip = std::move (inC);
+                clipClipLane.clear();
             }
         }
-        if (noteClip.empty() || song.tracks.empty()) return;
+        if ((noteClip.empty() && clipClip.empty()) || song.tracks.empty()) return;
         snapshot();
         const double g  = juce::jmax (laneSnapBeats(), 0.25);
         const double at = std::round (playheadBeatNow() / g) * g;   // paste AT the playhead (H2 law)
@@ -14617,20 +14771,64 @@ private:
             touched.addIfNotAlreadyThere (song.tracks[(size_t) dst].name);
         }
         laneNoteSel = std::move (fresh);                 // the paste lands selected, under the hand
+        // AUDIO CLIPS land too (2026-07-12): origin lane when it still hosts
+        // audio, else ONE minted audio lane — the paste is never refused.
+        // Clips past the end GROW the world (never clamp a snippet away).
+        bool minted = false;
+        double endBeat = 0;
+        if (! clipClip.empty())
+        {
+            const bool claned = clipClipLane.size() == clipClip.size();
+            int mintedTi = -1;
+            std::map<int, std::set<int>> freshClips;
+            for (size_t k = 0; k < clipClip.size(); ++k)
+            {
+                auto c = clipClip[k];
+                c.startBeat = juce::jmax (0.0, c.startBeat + at);
+                int dst = claned ? clipClipLane[k] : -1;
+                const bool hostOk = dst >= 0 && dst < (int) song.tracks.size()
+                                    && song.tracks[(size_t) dst].source.kind == "audio";
+                if (! hostOk)
+                {
+                    if (mintedTi < 0)
+                    {
+                        sotadaw::SongTrack t;
+                        t.name = "paste";
+                        t.source.kind = "audio";
+                        song.tracks.push_back (std::move (t));
+                        mintedTi = (int) song.tracks.size() - 1;
+                        minted = true;
+                    }
+                    dst = mintedTi;
+                }
+                endBeat = juce::jmax (endBeat, c.startBeat + c.lengthBeats);
+                freshClips[dst].insert ((int) song.tracks[(size_t) dst].audioClips.size());
+                song.tracks[(size_t) dst].audioClips.push_back (std::move (c));
+                touched.addIfNotAlreadyThere (song.tracks[(size_t) dst].name);
+            }
+            laneClipSel = std::move (freshClips);        // pasted clips land selected too
+            if (growSongToFit (endBeat)) { viewPpb = 0; viewStart = 0; }
+        }
         saveNow();
         engineDirty = true;
-        for (int i = 0; i < lanes.size(); ++i)
-        {
-            auto it = laneNoteSel.find (i);
-            lanes[i]->setNoteSelection (it != laneNoteSel.end() ? it->second : std::set<size_t>());
-            lanes[i]->markDirty();
-        }
+        if (minted)
+            rebuildLanes();                              // a new lane exists: rebuild is the door
+        else
+            for (int i = 0; i < lanes.size(); ++i)
+            {
+                auto it = laneNoteSel.find (i);
+                lanes[i]->setNoteSelection (it != laneNoteSel.end() ? it->second : std::set<size_t>());
+                lanes[i]->markDirty();
+            }
+        if (! clipClip.empty() && ! minted) pushClipViews();
         refreshContextChips();
-        setStatus ("THE BLOCK: pasted " + juce::String ((int) noteClip.size())
-                   + " notes at beat " + juce::String (at, 2));
+        juce::String what;
+        if (! noteClip.empty()) what << (int) noteClip.size() << " notes";
+        if (! clipClip.empty()) what << (what.isEmpty() ? "" : " + ")
+                                     << (int) clipClip.size() << " audio clips";
+        setStatus ("THE BLOCK: pasted " + what + " at beat " + juce::String (at, 2));
         handReceipt ("hand.block_paste", touched,
-                     juce::String ((int) noteClip.size()) + " notes pasted at beat "
-                     + juce::String (at, 2));
+                     what + " pasted at beat " + juce::String (at, 2));
     }
     void blockTranspose (int semis)
     {
@@ -15334,7 +15532,10 @@ private:
         paletteShown.clear();                // stale pointers die with the registry
         paletteDrop.setVisible (false);
         auto noPrompt = [this] { return ! promptBox.hasKeyboardFocus (true); };
-        auto hasBlock = [this] { return ! roll.isVisible() && ! laneNoteSel.empty(); };
+        // audio clips COUNT as a block (Chezy live 2026-07-12: a selected clip
+        // answered no key — copy/cut/delete were note-gated)
+        auto hasBlock = [this] { return ! roll.isVisible()
+                                        && (! laneNoteSel.empty() || ! laneClipSel.empty()); };
         keymap.add ("transport.play", "play / stop", "TRANSPORT + VIEW", 0,
                     juce::KeyPress (juce::KeyPress::spaceKey), 0, "space", nullptr,
                     [this] { togglePlay(); });
@@ -15454,7 +15655,15 @@ private:
               .hidden = true;
         keymap.add ("block.paste", "", "ARRANGE", 1,
                     juce::KeyPress ('v', juce::ModifierKeys::commandModifier, 0), 0, "",
-                    [this, noPrompt] { return noPrompt() && ! roll.isVisible() && ! noteClip.empty(); },
+                    [this, noPrompt]
+                    {   // an EMPTY local store must not gate off a cross-window
+                        // paste: another window's copy lives on the SYSTEM
+                        // clipboard (the old gate ate every foreign ctrl+V)
+                        return noPrompt() && ! roll.isVisible()
+                               && (! noteClip.empty() || ! clipClip.empty()
+                                   || juce::SystemClipboard::getTextFromClipboard()
+                                          .startsWith ("{\"sotadaw_notes\""));
+                    },
                     [this] { blockPaste(); })
               .hidden = true;
         keymap.add ("block.transposeUp", "transpose selection (shift = octave)", "ARRANGE", 1,
@@ -17051,12 +17260,18 @@ private:  // (restores the section the HANDS burst was in)
                             ev.getProperty ("peak", 0.0).toString(),
                             ev.getProperty ("clipped", 0).toString(),
                             ev.getProperty ("lufs", 0.0).toString() });
-                // CHAT P2: the proposal's rendered waveform onto its card
+                // CHAT P2: the proposal's rendered waveform onto its card —
+                // and (#17) onto the EARS card itself: the strip IS the wav
+                // the card's ▶ pill plays.
                 if (ev.getProperty ("which", "").toString() == "proposal")
                 {
                     auto wav = sotadaw::sotadawRoot().getChildFile ("songs/_prop_" + songName + ".wav");
                     if (wav.existsAsFile())
-                        chat.setProposalPeaks (readWavPeaks (wav, 170));
+                    {
+                        const auto pk = readWavPeaks (wav, 170);
+                        chat.setProposalPeaks (pk);
+                        chat.setPeaksOn (ChatPanel::Kind::analysis, pk);
+                    }
                 }
                 // ...and ON THE DECK: the verdict rides the decision surface
                 if ((proposalStreaming || proposalPending)
@@ -20994,6 +21209,8 @@ private:  // (restores the section the HANDS burst was in)
     std::map<int, std::set<int>> laneClipSel;      // THE CLIP BLOCK: host truth, crosses lanes
     std::vector<SongNote> noteClip;      // H24 THE SHARED CLIPBOARD: roll + arrange, one store
     std::vector<int>      noteClipLane;  // origin lane per note; size mismatch = lane-less (roll copy)
+    std::vector<sotadaw::SongAudioClip> clipClip;   // AUDIO CLIPS in the block clipboard (2026-07-12)
+    std::vector<int>                    clipClipLane;
     juce::Point<int> marqueeA, marqueeB;  // the sweep, in MainComponent coords
     bool marqueeOn = false;
     Keymap keymap;                        // THE SPINE (H22): keys + '?' share one truth

@@ -38,6 +38,7 @@ echo "== THE GUARDIAN SUITE =="
 leg "ghost_e2e (accept+reject x3)" python3 tools/ghost_e2e.py 3
 leg "scalpel (kernel battery)"     python3 tools/surgical_battery.py
 leg "revise_receipts (seam)"       python3 tools/revise_receipts_e2e.py
+leg "delta_ear (revise Δ seam)"    python3 tools/delta_ear_e2e.py
 leg "prop_fence (base immutable)"  python3 tools/prop_fence_e2e.py
 leg "living_cards (chat rolls)"    python3 tools/cards_e2e.py 1
 leg "ears_on_write"                python3 tools/ears_on_write_battery.py

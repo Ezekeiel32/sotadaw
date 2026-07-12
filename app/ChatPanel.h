@@ -238,11 +238,12 @@ public:
 
     // CHAT P2 (f124): the rendered take's WAVEFORM rides the proposal card —
     // the ears' evidence inline, not just buttons. Attaches to the newest
-    // proposal message; heights re-measure.
-    void setProposalPeaks (const std::vector<float>& p)
+    // message of that kind; heights re-measure. #17: the EARS card wears the
+    // same strip — it SHOWS the wav its ▶ pill plays.
+    void setPeaksOn (Kind k, const std::vector<float>& p)
     {
         for (auto it = msgs.rbegin(); it != msgs.rend(); ++it)
-            if (it->kind == Kind::proposal)
+            if (it->kind == k)
             {
                 const float old = it->h;
                 it->peaks = p;
@@ -252,6 +253,7 @@ public:
                 return;
             }
     }
+    void setProposalPeaks (const std::vector<float>& p) { setPeaksOn (Kind::proposal, p); }
 
     void toggleExpand (int idx)         // fold/unfold a long reply (also the smoke rig's probe)
     {

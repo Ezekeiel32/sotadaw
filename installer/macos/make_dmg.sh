@@ -67,5 +67,12 @@ chmod +x "$APP/Contents/MacOS/sotadaw-launch"
 # linker-applied ones don't cover our added launcher/payload)
 codesign -s - --force --deep "$APP" 2>/dev/null || true
 
-hdiutil create -volname "SOTA DAW" -srcfolder "$APP" -ov -format UDZO dist/SOTA_DAW-macOS.dmg
+# CI runners race deep-codesign vs dmg creation ("Resource busy") — settle + retry
+for i in 1 2 3 4 5; do
+  if hdiutil create -volname "SOTA DAW" -srcfolder "$APP" -ov -format UDZO dist/SOTA_DAW-macOS.dmg; then
+    break
+  fi
+  [ "$i" = 5 ] && exit 1
+  sleep 8
+done
 shasum -a 256 dist/SOTA_DAW-macOS.dmg | tee dist/SOTA_DAW-macOS.dmg.sha256
