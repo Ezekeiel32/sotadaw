@@ -54,6 +54,24 @@ jobs:
           7z x -ofaustdist faust.exe > /dev/null || true
           ls faustdist/lib | head -4
 
+      - name: macos faust dist (JIT proven — interp-only universal from source)
+        if: matrix.name == 'macos'
+        shell: bash
+        run: |
+          git clone --depth 1 --branch 2.85.9 https://github.com/grame-cncm/faust fsrc
+          git clone --depth 1 https://github.com/grame-cncm/faustlibraries fsrc/libraries_full
+          rm -rf fsrc/libraries && mv fsrc/libraries_full fsrc/libraries
+          cmake -S fsrc/build -B fb -C fsrc/build/backends/interp.cmake \
+            -DINCLUDE_STATIC=ON -DINCLUDE_DYNAMIC=OFF -DINCLUDE_EXECUTABLE=OFF \
+            -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          cmake --build fb --target staticlib -j 3 || cmake --build fb -j 3
+          mkdir -p faustdist/lib faustdist/include faustdist/share
+          cp "$(find fb fsrc/build -name 'libfaust*.a' | head -1)" faustdist/lib/libfaust.a
+          cp -R fsrc/architecture/faust faustdist/include/faust
+          cp -R fsrc/libraries faustdist/share/faust
+          lipo -info faustdist/lib/libfaust.a
+
       - name: configure + build (P1)
         shell: bash
         run: |
@@ -61,6 +79,7 @@ jobs:
           JIT="-DSOTADAW_ENABLE_JIT=OFF"
           if [ "${{ matrix.name }}" = "macos" ]; then
             EXTRA='-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0'
+            JIT="-DSOTADAW_ENABLE_JIT=ON -DSOTADAW_FAUST_DIST=$PWD/faustdist"
           elif [ "${{ matrix.name }}" = "windows" ]; then
             JIT="-DSOTADAW_ENABLE_JIT=ON -DSOTADAW_FAUST_DIST=$PWD/faustdist"
           fi

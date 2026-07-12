@@ -188,7 +188,27 @@ def main():
           fixed["tracks"][0]["fx"][0]["params"] == {"time": 0.4, "mix": 0.3},
           fixed["tracks"][0]["fx"])
 
-    want = 21
+    # ---- mono-below FREQUENCY truth (2026-07-12, ledger 162 #5) ----
+    s = base_song()
+    s["tracks"].append({"name": "melody", "pan": 0.5,      # an 808 in disguise
+                        "notes": [{"start": i * 1.0, "len": 0.8, "pitch": 34, "vel": 0.9}
+                                  for i in range(8)], "fx": []})
+    v = wc.floor_verdict(s, LOUD)
+    fixed, rec = wc.heal(s, v)
+    check("sub CONTENT named 'melody' convicts + centers (freq truth)",
+          any(h["code"] == "sub_stereo" for h in v["hard"])
+          and fixed["tracks"][1]["pan"] == 0.0, (v["hard"], fixed["tracks"][1]))
+
+    s = base_song()
+    s["tracks"].append({"name": "drums", "pan": 0.3,       # GM numbers are NOT pitches
+                        "notes": [{"start": i * 0.5, "len": 0.1,
+                                   "pitch": 36 if i % 2 == 0 else 38, "vel": 0.9}
+                                  for i in range(16)], "fx": []})
+    v = wc.floor_verdict(s, LOUD)
+    check("drum lane with low GM numbers stays exempt",
+          not any(h["code"] == "sub_stereo" for h in v["hard"]), v["hard"])
+
+    want = 23
     ok = not FAILS and N == want
     print(f"[wc-battery] {N}/{want} checks, "
           + ("ALL PASS — the floor holds" if ok else f"RED: {FAILS}"))

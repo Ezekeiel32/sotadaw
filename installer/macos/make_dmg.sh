@@ -21,6 +21,8 @@ fi
 cp app/build/m1_artefacts/Release/m1 "$APP/Contents/MacOS/m1" 2>/dev/null || true
 
 tools/stage_payload.sh "$APP/Contents/Resources/sotadaw-payload"
+# live-JIT stdlib (CI drops the faust dist at ./faustdist; absent = no-op)
+[ -d faustdist/share/faust ] && cp -R faustdist/share/faust "$APP/Contents/Resources/faustlibs" || true
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -45,6 +47,9 @@ PAY="$HERE/../Resources/sotadaw-payload"
 if [ ! -d "$WS" ]; then
   mkdir -p "$WS"; cp -R "$PAY/." "$WS/"; mkdir -p "$WS/songs" "$WS/app"
   export SOTADAW_FIRST_RUN=1
+fi
+if [ -d "$HERE/../Resources/faustlibs" ]; then
+  export SOTADAW_FAUST_LIB_PATH="$HERE/../Resources/faustlibs"
 fi
 if command -v git >/dev/null && [ ! -d "$WS/.git" ]; then
   git -C "$WS" init -q && git -C "$WS" config user.name "SOTA DAW" && \

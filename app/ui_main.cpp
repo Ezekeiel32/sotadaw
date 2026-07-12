@@ -3013,7 +3013,7 @@ public:
         const double div = snapBeats > 0 ? snapBeats : 0.25;
         const double beat = juce::jlimit (0.0, beats - div,
                                           std::floor (beatOfX (e.x) / div) * div);
-        const int newPitch = snapPitchScale (rows[(size_t) row]);   // scale lock (H12)
+        const int newPitch = snapPitchScale (rows[(size_t) row], beat);   // scale/chord lock (H12/#23b)
         armEdit(); dragEditArmed = true;        // one undo step for place (+ the drag/brush it may become)
         selection.clear();
         selected = (int) t.notes.size();
@@ -3332,6 +3332,96 @@ public:
         if (onChanged) onChanged();
         repaint();
     }
+    // #23c gestures — both group the selection into STACKS (notes sharing a start
+    // within 1e-3 beats); a stack of one is a finger, not a hand: left alone.
+    std::vector<std::pair<double, std::vector<size_t>>> selStacks()
+    {
+        auto& t = song->tracks[(size_t) trackIndex];
+        std::vector<std::pair<double, std::vector<size_t>>> stacks;
+        for (auto i : selOrAll())
+            if (i < t.notes.size())
+            {
+                bool placed = false;
+                for (auto& sp : stacks)
+                    if (std::abs (sp.first - t.notes[i].start) < 1e-3)
+                        { sp.second.push_back (i); placed = true; break; }
+                if (! placed) stacks.push_back ({ t.notes[i].start, { i } });
+            }
+        return stacks;
+    }
+    void opStrum (double ms, bool up)        // the stack spreads like a hand; releases hold
+    {
+        auto& t = song->tracks[(size_t) trackIndex];
+        auto stacks = selStacks();
+        bool any = false;
+        for (auto& sp : stacks) any = any || sp.second.size() >= 2;
+        if (! any) return;
+        const double spread = ms * juce::jmax (1.0, song->bpm) / 60000.0;   // ms -> beats
+        const double beats = song->totalBeats();
+        armEdit();
+        for (auto& sp : stacks)
+        {
+            if (sp.second.size() < 2) continue;
+            auto& v = sp.second;
+            std::sort (v.begin(), v.end(), [&] (size_t a, size_t b)
+                       { return up ? t.notes[a].pitch < t.notes[b].pitch
+                                   : t.notes[a].pitch > t.notes[b].pitch; });
+            for (size_t k = 1; k < v.size(); ++k)
+            {
+                auto& n = t.notes[v[k]];
+                const double d = spread * (double) k;
+                n.start = juce::jlimit (0.0, beats - 0.05, n.start + d);
+                n.len   = juce::jmax (0.05, n.len - d);
+            }
+        }
+        if (onChanged) onChanged();
+        repaint();
+    }
+    void opArp (int pattern)                 // 0 up · 1 down · 2 up-down: the held
+    {                                        // chord becomes a line at the grid
+        auto& t = song->tracks[(size_t) trackIndex];
+        auto stacks = selStacks();
+        const double g = snapBeats > 0 ? snapBeats : 0.25;
+        std::vector<sotadaw::SongNote> fresh;
+        std::vector<size_t> kill;
+        for (auto& sp : stacks)
+        {
+            if (sp.second.size() < 2) continue;
+            double span = 0.0, vel = 0.0;
+            std::vector<int> ps;
+            for (auto i : sp.second)
+            {
+                span = juce::jmax (span, t.notes[i].len);
+                vel += t.notes[i].vel;
+                ps.push_back (t.notes[i].pitch);
+                kill.push_back (i);
+            }
+            vel /= (double) sp.second.size();
+            std::sort (ps.begin(), ps.end());
+            auto seq = ps;
+            if (pattern == 1) std::reverse (seq.begin(), seq.end());
+            else if (pattern == 2)
+                for (int k = (int) ps.size() - 2; k >= 1; --k)
+                    seq.push_back (ps[(size_t) k]);
+            int j = 0;
+            for (double b = sp.first; b < sp.first + span - 1e-6; b += g, ++j)
+                fresh.push_back ({ b, juce::jmin (g, sp.first + span - b),
+                                   seq[(size_t) (j % seq.size())], vel });
+        }
+        if (kill.empty()) return;
+        armEdit();
+        std::sort (kill.begin(), kill.end(), std::greater<size_t>());
+        for (auto i : kill) t.notes.erase (t.notes.begin() + (long) i);
+        selection.clear();
+        for (auto& n : fresh)
+        {
+            selection.insert (t.notes.size());
+            t.notes.push_back (n);
+        }
+        selected = fresh.empty() ? -1 : (int) (t.notes.size() - 1);
+        if (onChanged) onChanged();
+        repaint();
+    }
     void opLegato()                          // each note reaches the next one's start
     {
         auto& t = song->tracks[(size_t) trackIndex];
@@ -3540,22 +3630,38 @@ public:
     void stampAt (double beat, double len, int rootPitch)   // the armed chord lands whole
     {
         if (armedStamp <= 0) return;
+        auto& t = song->tracks[(size_t) trackIndex];
+        auto land = [&] (int p)
+        {
+            if (p < 0 || p > 127) return;
+            for (auto& n : t.notes)
+                if (n.pitch == p && std::abs (n.start - beat) < 1e-4) return;
+            selection.insert (t.notes.size());
+            t.notes.push_back ({ beat, len, p, 0.8 });
+        };
+        if (armedStamp == 9)                 // #23a THE SPINE STAMP: the chord track lands
+        {                                    // VOICED under the hand (kernel law: bass root
+            auto* c = chordAtBeat (beat);    // a 5th+ below, tones closed beneath the click —
+            if (c == nullptr || c->mask == 0) return;   // the 7th/9th survive by construction)
+            int bass = rootPitch - 7;
+            while (bass >= 0 && (bass % 12) != c->rootPc) --bass;
+            if (bass >= 0) land (bass);
+            int used = 1 << c->rootPc, uppers = 0;
+            for (int q = rootPitch - 1; q > bass && uppers < 3; --q)
+            {
+                const int pc = ((q % 12) + 12) % 12;
+                if (((c->mask >> pc) & 1) && ! ((used >> pc) & 1))
+                    { land (q); used |= 1 << pc; ++uppers; }
+            }
+            return;
+        }
         static const int ivs[9][3] = { { 0, 0, 0 },
                                        { 4, 7, 0 }, { 3, 7, 0 }, { 4, 7, 10 }, { 3, 7, 10 },
                                        { 4, 7, 11 }, { 2, 7, 0 }, { 5, 7, 0 }, { 4, 7, 14 } };
-        auto& t = song->tracks[(size_t) trackIndex];
         for (int iv : ivs[juce::jlimit (0, 8, armedStamp)])
         {
             if (iv == 0) continue;
-            const int p = juce::jlimit (0, 127, snapPitchScale (rootPitch + iv));
-            bool exists = false;
-            for (auto& n : t.notes)
-                if (n.pitch == p && std::abs (n.start - beat) < 1e-4) { exists = true; break; }
-            if (! exists)
-            {
-                selection.insert (t.notes.size());
-                t.notes.push_back ({ beat, len, p, 0.8 });
-            }
+            land (juce::jlimit (0, 127, snapPitchScale (rootPitch + iv, beat)));
         }
     }
     void opsMenu (int idx)                   // ctrl+right-click: every verb, one door
@@ -3576,6 +3682,16 @@ public:
         m.addItem ("Stretch /2",         [this] { opStretch (0.5); });
         m.addItem ("Velocity ramp up",   [this] { opVelRamp (true); });
         m.addItem ("Velocity ramp down", [this] { opVelRamp (false); });
+        juce::PopupMenu gm;                  // #23c GESTURES: strum + arp (agent twins in surgical)
+        gm.addItem ("Strum up 15ms",    [this] { opStrum (15.0, true); });
+        gm.addItem ("Strum up 35ms",    [this] { opStrum (35.0, true); });
+        gm.addItem ("Strum down 15ms",  [this] { opStrum (15.0, false); });
+        gm.addItem ("Strum down 35ms",  [this] { opStrum (35.0, false); });
+        gm.addSeparator();
+        gm.addItem ("Arp up @ grid",      [this] { opArp (0); });
+        gm.addItem ("Arp down @ grid",    [this] { opArp (1); });
+        gm.addItem ("Arp up-down @ grid", [this] { opArp (2); });
+        m.addSubMenu ("Strum / Arp", gm);
         m.addSeparator();
         m.addItem ("Repeat right (ctrl+B)", [this] { opRepeatRight(); });
         m.addSeparator();
@@ -3592,6 +3708,9 @@ public:
                                             "maj7", "sus2", "sus4", "add9" };
         for (int s = 0; s < 9; ++s)
             sm.addItem (stampNames[s], true, armedStamp == s, [this, s] { armedStamp = s; });
+        sm.addItem ("spine (chord track, voiced)",           // #23a: the song's own harmony
+                    song != nullptr && ! song->chords.empty(),
+                    armedStamp == 9, [this] { armedStamp = 9; });
         m.addSubMenu ("Chord stamp (rides click + brush)", sm);
         m.showMenuAsync (juce::PopupMenu::Options());
     }
@@ -3612,7 +3731,7 @@ private:
                                           std::floor (beatOfX (e.x) / div) * div);
         if (row == lastBrush.first && std::abs (beat - lastBrush.second) < div * 0.5) return;
         lastBrush = { row, beat };
-        const int p = snapPitchScale (rows[(size_t) row]);
+        const int p = snapPitchScale (rows[(size_t) row], beat);
         bool exists = false;                   // the brush never doubles a cell
         for (auto& n : t.notes)
             if (n.pitch == p && std::abs (n.start - beat) < div * 0.5) { exists = true; break; }
@@ -9375,6 +9494,9 @@ public:
         }
         if (auto* top = getTopLevelComponent()) top->setName ("SOTA DAW - " + songName);
         setStatus (songName + "  |  " + juce::String ((int) song.tracks.size()) + " tracks");
+        songSeenMtime = songFile.existsAsFile()
+                          ? songFile.getLastModificationTime().toMilliseconds() : 0;
+        coEditWarned = false;                    // fresh open = fresh sync episode
         refreshEnergy();
         refreshChords();
     }
@@ -9389,6 +9511,7 @@ public:
         sotadaw::Song fresh;
         if (! sotadaw::parseSong (songFile, fresh)) { loadSong (songFile); return; }
         song = std::move (fresh);
+        songSeenMtime = songFile.getLastModificationTime().toMilliseconds();
         {
             double clipEnd = 0;
             for (auto& t : song.tracks)
@@ -12739,6 +12862,8 @@ private:
         if (songFile.existsAsFile() || songFile != juce::File())
         {
             sotadaw::saveSong (song, songFile);
+            songSeenMtime = songFile.getLastModificationTime().toMilliseconds();
+            coEditWarned = false;               // our own write starts a fresh episode
             factoryPort.poke();                 // the engine room re-rasters its floor
             // crash journal: ring of the last 15 saves per song
             auto jdir = sotadaw::sotadawRoot().getChildFile ("songs/.journal");
@@ -19417,22 +19542,54 @@ private:  // (restores the section the HANDS burst was in)
     {
         if (exporting) return;
         saveNow();
+        // THE EXPORT IS THE EARS (Chezy live 2026-07-12: "it exports everything
+        // including whats muted?!"): render the state the user is HEARING, not
+        // just the saved file — live/ephemeral mutes and SOLO (a session flag,
+        // never persisted) fold into EFFECTIVE mutes; a second window's autosave
+        // clobbering this window's muted flags can't reach the export either.
+        // When effective state differs from disk, a temp <name>_export.json
+        // carries it (swept at completion) — the real song file is untouched.
+        const auto root = sotadaw::sotadawRoot();
+        const bool anySolo = ! soloed.empty();
+        juce::String exportName = songName;
+        juce::File   exportSong = songFile;
+        {
+            bool differs = false;
+            auto eff = song;                             // Song copies whole
+            for (size_t i = 0; i < eff.tracks.size(); ++i)
+            {
+                const bool m = muted.count ((int) i) > 0 || eff.tracks[i].muted
+                               || (anySolo && soloed.count ((int) i) == 0);
+                if (m != eff.tracks[i].muted) differs = true;
+                eff.tracks[i].muted = m;
+            }
+            if (differs)
+            {
+                exportName = songName + "_export";
+                exportSong = root.getChildFile ("songs/" + exportName + ".json");
+                exportSong.replaceWithText (juce::JSON::toString (sotadaw::songToVar (eff)));
+                exportTempJson = exportSong;
+                appendActivity ("[ui] export honors your ears: live mutes"
+                                + juce::String (anySolo ? " + solo" : "") + " baked in");
+            }
+        }
         // W12: prefer the C2PA-signed master (render + provenance manifest) when the
         // python toolchain is present; fall back to a plain engine render otherwise.
-        const auto root = sotadaw::sotadawRoot();
         const auto py = root.getChildFile (".venv/bin/python");
         const auto signer = root.getChildFile ("tools/export_master.py");
+        const auto masterOut = root.getChildFile ("songs/" + songName + "_master.wav");
         juce::StringArray cmd;
         if (py.existsAsFile() && signer.existsAsFile())
         {
-            cmd = { py.getFullPathName(), signer.getFullPathName(), songName };
+            cmd = { py.getFullPathName(), signer.getFullPathName(), exportName,
+                    masterOut.getFullPathName() };
             appendActivity ("[ui] exporting C2PA-signed master -> songs/" + songName + "_master.wav ...");
         }
         else
         {
             const auto m1 = root.getChildFile ("app/build/m1_artefacts/Release/m1");
             const auto out = root.getChildFile ("songs/" + songName + ".wav");
-            cmd = { m1.getFullPathName(), "render", songFile.getFullPathName(), out.getFullPathName() };
+            cmd = { m1.getFullPathName(), "render", exportSong.getFullPathName(), out.getFullPathName() };
             appendActivity ("[ui] exporting " + songName + ".wav (unsigned - python toolchain not found) ...");
         }
         if (exportProc.start (cmd))
@@ -19716,6 +19873,11 @@ private:  // (restores the section the HANDS burst was in)
             exporting = false;
             exportButton.setEnabled (true);
             exportDrain.finish();              // release the reader; content not needed
+            if (exportTempJson != juce::File())
+            {   // the ears-true temp state served its render; sweep it
+                exportTempJson.deleteFile();
+                exportTempJson = juce::File();
+            }
             appendActivity ("[ui] export done -> songs/" + songName + ".wav");
             {   // show the export's sound tensor (prefer the signed master)
                 auto root = sotadaw::sotadawRoot();
@@ -19723,6 +19885,43 @@ private:  // (restores the section the HANDS burst was in)
                 auto plain = root.getChildFile ("songs/" + songName + ".wav");
                 hearStrip.loadWav (master.existsAsFile() ? master : plain,
                                    song.bpm, "EXPORT - " + songName, root);
+            }
+        }
+        // THE SESSION SYNC (Chezy live 2026-07-12: two windows on one song —
+        // the second window's autosave ATE the first's mutes): watch the song
+        // file; when another writer lands and this window is AT REST, adopt
+        // the disk truth through the accept door. With local edits pending,
+        // never clobber silently — say so once and let the human pick.
+        if (tick % 45 == 0 && songFile != juce::File() && songFile.existsAsFile())
+        {
+            const auto m = songFile.getLastModificationTime().toMilliseconds();
+            if (songSeenMtime == 0)
+                songSeenMtime = m;
+            else if (m != songSeenMtime)
+            {
+                const bool atRest = ! exporting && ! bridging && ! auditioningProposal
+                    && ! proposalStreaming && ! recButton.getToggleState()
+                    && (edit == nullptr || ! edit->getTransport().isPlaying())
+                    && ! juce::Desktop::getInstance().getMainMouseSource().isDragging();
+                if (saveCountdown >= 0)
+                {
+                    if (! coEditWarned)
+                    {
+                        coEditWarned = true;
+                        appendActivity ("[sync] '" + songName + "' changed in another "
+                                        "window while this one has edits pending - "
+                                        "your next save overwrites theirs");
+                        setStatus ("song changed in another window (edits pending here)");
+                    }
+                }
+                else if (atRest)
+                {
+                    songSeenMtime = m;
+                    coEditWarned = false;
+                    reloadAcceptedSong();
+                    appendActivity ("[sync] adopted changes from another window");
+                    setStatus ("synced from another window");
+                }
             }
         }
         if (bridging)
@@ -20774,6 +20973,9 @@ private:  // (restores the section the HANDS burst was in)
     bool bridgeWasStarted = false;
     juce::File bridgePendingLoad, bridgeReveal;
     bool bridgeMergeAudio = false;   // stems import JOINS the open song (Chezy 2026-07-12)
+    juce::File exportTempJson;       // ears-true export state (swept at completion)
+    juce::int64 songSeenMtime = 0;   // SESSION SYNC: last mtime THIS window wrote/read
+    bool coEditWarned = false;       // one warning per external-change episode
     juce::String personaId { "default" }; // agent behavioral contract (menu-selected)
     bool mockAgent = false;               // Agent menu: zero-token mock sidecar
     juce::ComboBox genreBox;            // one-button track: pick a genre, hit MAKE — zero tokens

@@ -4063,6 +4063,18 @@ def handle(req):
             _awrite(_fence, {"song": song, "rid": rid, "t": time.time()})
         except Exception:
             pass
+        # #22 THE Δ EAR: a revise take is judged against the take it replaces —
+        # keep the pending take's render for the one-sentence diff after the
+        # new render lands (COPY, not move: the deck may be auditioning it).
+        prev_wav = os.path.join(SONGS, f"_prop_{song}.prev.wav")
+        try:
+            _cur_wav = os.path.join(SONGS, f"_prop_{song}.wav")
+            if bool(req.get("revise")) and os.path.exists(_cur_wav):
+                shutil.copy(_cur_wav, prev_wav)
+            elif os.path.exists(prev_wav):
+                os.remove(prev_wav)              # fresh ask: no stale ruler
+        except Exception:
+            pass
         try:
             result = (mock_propose(rid, req.get("text", ""), song)
                       if MOCK else real_propose(rid, req.get("text", ""), song, ctx_block, req.get("persona", ""), req.get("model"),
@@ -4104,6 +4116,28 @@ def handle(req):
         a = clip_wall(rid, result, a)          # a CLIPPED take never ships untreated —
         a = loudness_recovery(rid, result, a,  # and walls FIRST so recovery can lift it
                               resolve_take_genre(result, song))   # W116 + genre truth
+        # #22 THE Δ EAR AUTO-ATTACH: every revise take answers "what changed?"
+        # with ONE measured sentence vs the take it replaced (tools/diff_ear.py,
+        # venv subprocess, zero tokens, fail-open — the Δ-card tail's rail half).
+        try:
+            _new_wav = os.path.join(SONGS, f"{result}.wav")
+            if a and os.path.exists(prev_wav) and os.path.exists(_new_wav):
+                _pyd = VENV_PY if os.path.exists(VENV_PY) else "python3"
+                _rcd, _outd, _ = run([_pyd, os.path.join(ROOT, "tools", "diff_ear.py"),
+                                      prev_wav, _new_wav, "--json"], timeout=180)
+                if _rcd == 0:
+                    _sent = str(json.loads(_outd).get("sentence", "")).strip()
+                    if _sent:
+                        emit(rid, "activity",
+                             text=f"[Δ ear] vs the previous take: {_sent}")
+                        chronicle.append(song, "event", f"Δ vs prior take: {_sent}")
+        except Exception:
+            pass
+        finally:
+            try:
+                os.path.exists(prev_wav) and os.remove(prev_wav)
+            except Exception:
+                pass
         # THE NOSEDIVE GUARD (f138, from Chezy's 'barely audible' accept): a take
         # moving loudness >6dB either way vs the CURRENT song gets called out
         # BEFORE the accept decision — his 3d0f743 accept would have been caught.

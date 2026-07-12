@@ -8,7 +8,7 @@ Everything here is symbolic and deterministic. Three jobs:
                  inside a song dict. TempoClock integrates the tempoMap so "1:23"
                  lands on the right beat even across tempo steps and ramps.
   2. CUT       — apply_ops mutates ONLY the resolved notes (set/shift/scale/quantize/
-                 humanize/stretch/velocity_ramp/delete/insert/replace/retrack) and
+                 humanize/stretch/velocity_ramp/split/strum/arp/delete/insert/replace/retrack) and
                  emits a RECEIPT: exact before/after note keys, counts, summary.
   3. PROVE     — semantic_diff(base, prop) + containment(diff, receipts) verifies a
                  proposal changed nothing beyond what the receipts declare. This is
@@ -626,7 +626,7 @@ def _clamp_note(n):
 def apply_ops(song, sel, ops, seed="scalpel"):
     """Resolve sel, apply ops IN ORDER to exactly the matched notes.
     Returns (receipt, resolution). Mutates song in place. Raises ValueError on bad ops.
-    Ops: set/shift/scale/quantize/humanize/stretch/velocity_ramp/delete/insert/replace/retrack."""
+    Ops: set/shift/scale/quantize/humanize/stretch/velocity_ramp/split/strum/arp/delete/insert/replace/retrack."""
     r = resolve(song, sel)
     tracks = song["tracks"]
     tname = lambda ti: tracks[ti].get("name", f"#{ti}")
@@ -798,9 +798,87 @@ def apply_ops(song, sel, ops, seed="scalpel"):
                 made += 1
             matched = out
             op_log.append(f"split {made}")
+        elif kind == "strum":
+            # #23c the roll's Strum twin: notes sharing a start (a STACK, 1e-3 beats)
+            # spread like a hand — k-th string +k*spread; releases HOLD (len shrinks
+            # so every string rings to the same end). Stacks of one are left alone.
+            ms = float(op.get("spread_ms", 15.0))
+            up = str(op.get("direction", "up")) != "down"
+            spread = ms * float(song.get("bpm", 120.0)) / 60000.0
+            stacks = []
+            for ti, n in matched:
+                for st in stacks:
+                    if abs(st[0] - float(n["start"])) < 1e-3:
+                        st[1].append((ti, n))
+                        break
+                else:
+                    stacks.append((float(n["start"]), [(ti, n)]))
+            hands = 0
+            for s0, grp in stacks:
+                if len(grp) < 2:
+                    continue
+                hands += 1
+                grp.sort(key=lambda tn: int(tn[1]["pitch"]), reverse=not up)
+                for k, (ti, n) in enumerate(grp):
+                    if k == 0:
+                        continue
+                    d = spread * k
+                    n["start"] = float(n["start"]) + d
+                    n["len"] = max(0.05, float(n.get("len", 0.25)) - d)
+                    _clamp_note(n)
+            op_log.append(f"strum {'up' if up else 'down'} {ms:g}ms on {hands} stacks")
+        elif kind == "arp":
+            # #23c the roll's Arp twin: each stack becomes a LINE at the grid —
+            # pattern up/down/updown cycles the stack's pitches across its span.
+            # New notes ride the receipt's added_keys (scope law, like split).
+            pattern = str(op.get("pattern", "up"))
+            grid = float(op.get("grid", 0.25))
+            if grid <= 0:
+                raise ValueError("arp grid must be > 0")
+            stacks = []
+            for ti, n in matched:
+                for st in stacks:
+                    if abs(st[0] - float(n["start"])) < 1e-3:
+                        st[1].append((ti, n))
+                        break
+                else:
+                    stacks.append((float(n["start"]), [(ti, n)]))
+            out, born = [], 0
+            for s0, grp in stacks:
+                if len(grp) < 2:
+                    out.extend(grp)
+                    continue
+                ti0 = grp[0][0]
+                span = max(float(n.get("len", 0.25)) for _, n in grp)
+                vel = sum(float(n.get("vel", 0.8)) for _, n in grp) / len(grp)
+                ps = sorted(int(n["pitch"]) for _, n in grp)
+                seq = list(ps)
+                if pattern == "down":
+                    seq.reverse()
+                elif pattern in ("updown", "up-down"):
+                    seq = ps + ps[-2:0:-1]
+                for ti, n in grp:
+                    try:
+                        tracks[ti]["notes"].remove(n)
+                    except ValueError:
+                        pass
+                j = 0
+                while s0 + j * grid < s0 + span - 1e-6:
+                    nn = {"start": round(s0 + j * grid, 6),
+                          "len": round(min(grid, span - j * grid), 6),
+                          "pitch": int(seq[j % len(seq)]),
+                          "vel": round(vel, 3)}
+                    _clamp_note(nn)
+                    tracks[ti0].setdefault("notes", []).append(nn)
+                    out.append((ti0, nn))
+                    born += 1
+                    j += 1
+            matched = out
+            op_log.append(f"arp {pattern} grid {grid:g} -> {born} notes")
         else:
             raise ValueError(f"unknown op '{kind}' (ops: set shift scale quantize humanize "
-                             f"stretch velocity_ramp split delete insert replace retrack)")
+                             f"stretch velocity_ramp split strum arp delete insert replace "
+                             f"retrack)")
 
     touched_tis = sorted(set(ti for ti, _ in matched) | set(ti for ti, _ in r.refs))
     for ti in touched_tis:

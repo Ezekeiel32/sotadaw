@@ -3632,7 +3632,7 @@ def t_surgical_edit(args):
             return f"ops is not valid JSON: {e}"
     if not isinstance(ops, list) or not ops:
         return ("ops must be a non-empty array of {op: set|shift|scale|quantize|humanize|"
-                "stretch|velocity_ramp|delete|insert|replace|retrack, ...}")
+                "stretch|velocity_ramp|split|strum|arp|delete|insert|replace|retrack, ...}")
     import copy as _copy
     work = _copy.deepcopy(song)
     try:

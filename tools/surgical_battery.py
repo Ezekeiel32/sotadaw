@@ -358,6 +358,45 @@ rep8 = S.scope_report(b6, p6, [{"tool": "old", "fields": ["*"], "track_wild": Tr
 check("bool track_wild coerced, full-write receipt still honored",
       rep8["clean"] and rep8["full_write"])
 
+# ---------------------------------------------------------------- strum / arp (#23c roll twins)
+bs = fixture(); sel_pad = {"tracks": ["Dream Pad"]}
+S.apply_ops(bs, sel_pad, [{"op": "strum", "spread_ms": 15}])
+pad = next(t for t in bs["tracks"] if t["name"] == "Dream Pad")
+n65 = next(n for n in pad["notes"] if n["pitch"] == 65)
+n68 = next(n for n in pad["notes"] if n["pitch"] == 68)
+n70 = next(n for n in pad["notes"] if n["pitch"] == 70)
+check("strum up: low string holds", approx(n65["start"], 32.0))
+check("strum up: 2nd string +15ms = 0.03b @120", approx(n68["start"], 32.03))
+check("strum: release holds (note end constant)", approx(n68["start"] + n68["len"], 40.0))
+check("strum: a single note is a finger, untouched",
+      approx(n70["start"], 40.0) and approx(n70["len"], 8.0))
+bs2 = fixture()
+S.apply_ops(bs2, sel_pad, [{"op": "strum", "spread_ms": 15, "direction": "down"}])
+pad2 = next(t for t in bs2["tracks"] if t["name"] == "Dream Pad")
+check("strum down: high string holds, low string moves",
+      approx(next(n for n in pad2["notes"] if n["pitch"] == 68)["start"], 32.0)
+      and approx(next(n for n in pad2["notes"] if n["pitch"] == 65)["start"], 32.03))
+ba = fixture()
+S.apply_ops(ba, sel_pad, [{"op": "arp", "pattern": "up", "grid": 2.0}])
+pad3 = next(t for t in ba["tracks"] if t["name"] == "Dream Pad")
+arpn = sorted((n for n in pad3["notes"] if n["start"] < 40.0 - 1e-6),
+              key=lambda n: n["start"])
+check("arp up: 8b span at grid 2 -> 4 notes", len(arpn) == 4, str(len(arpn)))
+check("arp up: pitches cycle 65,68,65,68",
+      [n["pitch"] for n in arpn] == [65, 68, 65, 68],
+      str([n["pitch"] for n in arpn]))
+check("arp: starts land on the grid",
+      all(approx(n["start"], 32.0 + i * 2.0) for i, n in enumerate(arpn)))
+check("arp: the single at 40 survives",
+      any(approx(n["start"], 40.0) and n["pitch"] == 70 for n in pad3["notes"]))
+bu = fixture()
+bu["tracks"][3]["notes"].append({"start": 32.0, "len": 8.0, "pitch": 72, "vel": 0.5})
+S.apply_ops(bu, sel_pad, [{"op": "arp", "pattern": "updown", "grid": 1.0}])
+pad4 = next(t for t in bu["tracks"] if t["name"] == "Dream Pad")
+sq = [n["pitch"] for n in sorted((n for n in pad4["notes"] if n["start"] < 40 - 1e-6),
+                                 key=lambda n: n["start"])]
+check("arp updown: palindrome cycle 65,68,72,68", sq[:4] == [65, 68, 72, 68], str(sq[:4]))
+
 # ---------------------------------------------------------------- verdict
 print(f"\n{N['pass']} passed, {N['fail']} failed")
 sys.exit(1 if N["fail"] else 0)

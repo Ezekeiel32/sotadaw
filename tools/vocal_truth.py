@@ -475,6 +475,13 @@ def merge(song_name, verify=True, stem_name="vocals"):
     engine's SpectralVoicePlugin. Every note payload is start-relative (merge =
     beat shift); noise env/phase matrices paste at frame offsets."""
     import base64
+    # #10 import-chain law: a big-deck fuse peaks ~4GB (aranyanyara 47w hit
+    # earlyoom at 3.95GB) — gate on the box and SKIP honestly rather than die
+    # mid-fuse; the landed wav is untouched and --merge re-runs any time.
+    if not _gate(4.5):
+        say(f"merge: box too tight (avail {_mem_avail_gb():.1f}GB < 4.5) — "
+            f"deck stays per-window; re-run --merge when the box frees up")
+        return None
     sp_ = os.path.join(SONGS, f"{song_name}.json")
     song = json.load(open(sp_))
     root = os.path.join(SONGS, f"{song_name}_spectral")
