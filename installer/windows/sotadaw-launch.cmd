@@ -18,5 +18,7 @@ where git >nul 2>nul && if not exist "%WS%\.git" (
 )
 if not exist "%WS%\app\build\m1_artefacts\Release" mkdir "%WS%\app\build\m1_artefacts\Release"
 copy /Y "%ENGINE%bin\m1.exe" "%WS%\app\build\m1_artefacts\Release\m1.exe" >nul
+rem bundled CPython (embeddable): the agent works with zero preinstalled Python
+if exist "%ENGINE%python\python.exe" set "PATH=%ENGINE%python;%PATH%"
 set "SOTADAW_ROOT=%WS%"
 start "" "%ENGINE%bin\SOTA DAW.exe" %*

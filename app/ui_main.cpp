@@ -8423,6 +8423,15 @@ public:
             assignSourceToTrack (row, section, id);
         };
         chat.onAudition = [this] { if (proposalPending) auditionButton.triggerClick(); };
+        chat.onPlayTake = [this]        // #17: the EARS card plays the render it measured
+        {
+            if (preview == nullptr) return;
+            auto prop = sotadaw::sotadawRoot().getChildFile ("songs/_prop_" + songName + ".wav");
+            auto base = sotadaw::sotadawRoot().getChildFile ("songs/" + songName + ".wav");
+            const auto f = prop.existsAsFile() ? prop : base;
+            if (f.existsAsFile()) { preview->play (f); setStatus ("playing " + f.getFileName()); }
+            else setStatus ("no rendered take to play yet");
+        };
         chat.onAccept   = [this] { if (proposalPending) decideProposal (true); };
         chat.onReject   = [this] { requestReject(); };   // the chat door leads to the WHY moment too
         chat.onSuggest  = [this] (const juce::String& t)   // starter chip -> editable prompt
@@ -17098,6 +17107,85 @@ private:  // (restores the section the HANDS burst was in)
     // (delta over the session baseline) flashes the chip for 8s — material,
     // never a banner; accumulated boot noise sets the baseline silently, and a
     // device restart (count drops) re-baselines without a false flash.
+    // THE DISAMBIGUATION CHIPS (BEST_DAW_30 #13d): locate()'s ambiguity gate
+    // drops agent/ipc/candidates.json instead of guessing — the chips render
+    // in the transcript and ONE CLICK answers ("the <lane> one" rides the
+    // normal prompt path, so the pending flow continues with a pinned target).
+    struct CandidateChips : public juce::Component
+    {
+        struct Opt { juce::String track, why; double score = 0; juce::Rectangle<float> r; };
+        std::vector<Opt> opts;
+        juce::String query;
+        std::function<void (const juce::String&)> onPick;
+        bool answered = false;
+        void paint (juce::Graphics& g) override
+        {
+            g.setColour (theme::textDim);
+            g.setFont (theme::ui (11.0f));
+            g.drawText ("which one? (\"" + query + "\" matched several)",
+                        getLocalBounds().removeFromTop (16), juce::Justification::centredLeft);
+            float x = 0.0f;
+            const float y = 20.0f;
+            for (auto& o : opts)
+            {
+                const auto label = o.track + juce::String::formatted ("  %.1f", o.score);
+                const float w = theme::ui (12.0f).getStringWidthFloat (label) + 22.0f;
+                o.r = { x, y, w, 22.0f };
+                const bool over = o.r.contains (getMouseXYRelative().toFloat());
+                g.setColour ((answered ? theme::panel : theme::agent)
+                                 .withAlpha (over && ! answered ? 0.35f : 0.18f));
+                g.fillRoundedRectangle (o.r, 11.0f);
+                g.setColour (answered ? theme::textMute : theme::agent);
+                g.drawRoundedRectangle (o.r.reduced (0.5f), 11.0f, 1.0f);
+                g.setColour (answered ? theme::textMute : theme::text);
+                g.setFont (theme::ui (12.0f));
+                g.drawText (label, o.r.toNearestInt(), juce::Justification::centred);
+                x += w + 8.0f;
+            }
+        }
+        void mouseMove (const juce::MouseEvent&) override { repaint(); }
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (answered) return;
+            for (auto& o : opts)
+                if (o.r.contains (e.position))
+                {
+                    answered = true;
+                    repaint();
+                    if (onPick) onPick (o.track);
+                    return;
+                }
+        }
+    };
+    juce::int64 lastCandMtime = 0;
+
+    void pollCandidates()
+    {
+        const auto f = sotadaw::sotadawRoot().getChildFile ("agent/ipc/candidates.json");
+        if (! f.existsAsFile()) return;
+        const auto mt = f.getLastModificationTime().toMilliseconds();
+        if (mt <= lastCandMtime) return;
+        lastCandMtime = mt;
+        const auto v = juce::JSON::parse (f.loadFileAsString());
+        if (v.getProperty ("song", "").toString() != songName) return;   // cross-song silence
+        auto chips = std::make_unique<CandidateChips>();
+        chips->query = v.getProperty ("query", "").toString();
+        if (auto* arr = v.getProperty ("options", juce::var()).getArray())
+            for (auto& ov : *arr)
+                chips->opts.push_back ({ ov.getProperty ("track", "").toString(),
+                                         ov.getProperty ("why", "").toString(),
+                                         (double) ov.getProperty ("score", 0.0), {} });
+        if (chips->opts.empty()) return;
+        chips->onPick = [this] (const juce::String& track)
+        {
+            promptBox.setText ("the '" + track + "' lane is the one I mean — continue.",
+                               juce::dontSendNotification);
+            sendPrompt();
+        };
+        chat.addLive (std::move (chips), 48);
+        f.deleteFile();                                    // one-shot: consumed into the transcript
+    }
+
     void pollEars()
     {
         const auto now = juce::Time::getMillisecondCounter();
@@ -19209,7 +19297,7 @@ private:  // (restores the section the HANDS burst was in)
             }
             lastPollBeat = b;
         }
-        if (++tick % 4 == 0) { pollEvents(); pollReceipts(); pollJamFeed(); pollEars(); }
+        if (++tick % 4 == 0) { pollEvents(); pollReceipts(); pollJamFeed(); pollEars(); pollCandidates(); }
         // V49 v1.5 THE HANG NAMER (BEST_DAW_30 #28): playing but the playhead
         // froze ~2s -> NAME the open plugin flight. A crash leaves the flight
         // file for boot promotion; a HANG leaves it open right now — before,

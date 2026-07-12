@@ -20,6 +20,7 @@ WizardStyle=modern
 Source: "..\..\app\build\sotadaw_artefacts\Release\SOTA DAW.exe"; DestDir: "{app}\bin"
 Source: "..\..\app\build\m1_artefacts\Release\m1.exe"; DestDir: "{app}\bin"
 Source: "payload\*"; DestDir: "{app}\payload"; Flags: recursesubdirs
+Source: "python-embed\*"; DestDir: "{app}\python"; Flags: recursesubdirs skipifsourcedoesntexist
 Source: "sotadaw-launch.cmd"; DestDir: "{app}"
 
 [Icons]

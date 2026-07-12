@@ -58,5 +58,9 @@ exec "$HERE/SOTA DAW" "$@"
 WRAP
 chmod +x "$APP/Contents/MacOS/sotadaw-launch"
 
+# deterministic ad-hoc signature (Apple Silicon requires at least ad-hoc;
+# linker-applied ones don't cover our added launcher/payload)
+codesign -s - --force --deep "$APP" 2>/dev/null || true
+
 hdiutil create -volname "SOTA DAW" -srcfolder "$APP" -ov -format UDZO dist/SOTA_DAW-macOS.dmg
 shasum -a 256 dist/SOTA_DAW-macOS.dmg | tee dist/SOTA_DAW-macOS.dmg.sha256

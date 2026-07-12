@@ -1820,6 +1820,39 @@ def voice_attr():
         return "Gahata Meiji from LUNAI Project"
 
 
+_coached = set()   # once per session per class — the coach teaches, never nags
+
+
+def coach_line(text):
+    """THE PROMPT COACH (BEST_DAW_30 #24c, knowledge-scaled prompting taught
+    in-product): a VAGUE make-something ask gets ONE line naming what a
+    producer would add — key, bpm, a groove/reference, an energy arc. Fires
+    once per session per class; specific asks (numbers, keys, genre-technical
+    words) never see it; it never blocks anything (persona #2: teach access,
+    not gates)."""
+    t = str(text or "").strip()
+    tl = t.lower()
+    if not t or len(t.split()) > 9 or t.startswith("/"):
+        return ""
+    if re.search(r"\d|[A-G][#b]?\s*(maj|min|m\b)|bpm|lufs|sidechain|swing|verse|"
+                 r"chorus|drop\b|bars?\b", t, re.I):
+        return ""                              # already knowledgeable — say nothing
+    # vibe outranks make: "make it better" is an IMPROVE ask, not a birth ask
+    cls = ("vibe" if re.search(r"\b(better|nicer|cooler|improve|fix|good)\b", tl)
+           else "make" if re.search(r"\b(make|create|new|start|gimme|give me)\b", tl)
+           else "")
+    if not cls or cls in _coached:
+        return ""
+    _coached.add(cls)
+    if cls == "make":
+        return ("coach: the more you name, the deeper the skills fire — try adding "
+                "a key (F minor), a tempo (142 bpm), a groove reference "
+                "('swung like UK garage') or an arc ('slow build, one big drop').")
+    return ("coach: name WHAT to move and WHERE — a lane ('the hats'), a place "
+            "('in the second drop'), a direction ('darker', '-2 dB') turns a "
+            "wish into a surgical edit.")
+
+
 def recent_edits_block(song, k=5, max_age_s=1800):
 
     """THE EDIT DIGEST (BEST_DAW_30 #13c, CC4 P2's last missing context organ):
@@ -3828,6 +3861,9 @@ def handle(req):
         ctx_block = (selection_block(req.get("context"), base_json)
                      + transport_block(req.get("context"), base_json)
                      + recent_edits_block(song))
+        _coach = coach_line(req.get("text", ""))
+        if _coach:
+            emit(rid, "status", text=_coach)
         if os.path.isdir(os.path.join(SONGS, song + "_stems")):
             # IMPORT AWARENESS: route the agent to the import-mix journey + the
             # banked Reference DNA ("like the original" is a tool call, not a vibe)

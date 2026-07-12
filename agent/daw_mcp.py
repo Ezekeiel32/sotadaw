@@ -2350,6 +2350,51 @@ def t_song_structure(args):
     rc, o, e = run(cmd, timeout=300)
     return o.strip() if rc == 0 else f"segment failed:\n{(o + e)[-500:]}"
 
+def t_comp_take(args):
+    """V47b THE COMP (BEST_DAW_30 #20): copy a take's bar-span into the LIVE
+    notes[] (replacing what overlaps). takes[] is the parallel history —
+    loop-record passes land there; the comp IS the track's notes[], so the
+    base-song shape never changes and every engine/tool keeps working.
+    Receipted like every mutator; one call = one comp gesture."""
+    name = resolve_song_name(args["song"])
+    path = os.path.join(SONGS, f"{name}.json")
+    _ensure_prop(name, path)
+    if not os.path.exists(path):
+        return f"no such song '{name}'"
+    song = json.load(open(path))
+    tname = str(args["track"])
+    tr = next((t for t in song.get("tracks", []) if t.get("name") == tname), None)
+    if tr is None:
+        return f"no track '{tname}' (have: {[t.get('name') for t in song.get('tracks', [])]})"
+    takes = tr.get("takes") or []
+    if not takes:
+        return (f"track '{tname}' has no takes[] — loop-record passes land there "
+                f"(or stage one via update_track)")
+    sel = args.get("take", 1)
+    ti = None
+    if isinstance(sel, int) or (isinstance(sel, str) and sel.isdigit()):
+        ti = int(sel) - 1
+    else:
+        ti = next((i for i, tk in enumerate(takes)
+                   if str(tk.get("name", "")).lower() == str(sel).lower()), None)
+    if ti is None or not (0 <= ti < len(takes)):
+        return f"no take '{sel}' (have: {[tk.get('name', f'take {i+1}') for i, tk in enumerate(takes)]})"
+    b0 = float(args.get("from_bar", 0))
+    b1 = float(args.get("to_bar", song.get("lengthBars", 4)))
+    if b1 <= b0:
+        return "to_bar must be > from_bar"
+    s0, s1 = b0 * 4.0, b1 * 4.0            # quarter-beat bars (meterMap UI leg later)
+    take_notes = [n for n in takes[ti].get("notes", []) if s0 <= float(n["start"]) < s1]
+    kept = [n for n in tr.get("notes", []) if not (s0 <= float(n["start"]) < s1)]
+    tr["notes"] = sorted(kept + take_notes, key=lambda n: float(n["start"]))
+    _awrite(path, song)
+    _rc(name, "comp_take", fields=[f"track:{tname}:notes"], track_wild=[tname],
+        summary=f"comp take '{takes[ti].get('name', ti + 1)}' bars {b0:g}-{b1:g} into {tname}")
+    return (f"comped take '{takes[ti].get('name', f'take {ti + 1}')}' bars {b0:g}-{b1:g} "
+            f"into '{tname}': {len(take_notes)} notes in, {len(tr['notes'])} live "
+            f"(takes[] history untouched — comp again any time)")
+
+
 def t_set_chords(args):
     """THE CHORD TRACK write half (BEST_DAW_30 #2): land/replace the song's
     declared harmonic spine. The engine's live retune grid now READS chords[]
@@ -3839,6 +3884,8 @@ TOOLS = {
                      "bpm": {"type": "number", "description": "snap boundaries to bars at this tempo"},
                      "vocal": {"type": "string", "description": "vocal stem wav path — unlocks verse/hook labels"}},
                      "required": ["audio_path"]}),
+    "comp_take": (t_comp_take, "V47b THE COMP: copy a take's bar-span into the track's LIVE notes[] (replacing what overlaps in that span). takes[] = the parallel recorded history ([{name, notes[]}] on the track — round-trips verbatim); the comp IS notes[], so nothing downstream changes shape. take: 1-based index or name; from_bar/to_bar: the span. Receipted.",
+                    {"type": "object", "properties": {"song": {"type": "string"}, "track": {"type": "string"}, "take": {"type": ["integer", "string"]}, "from_bar": {"type": "number"}, "to_bar": {"type": "number"}}, "required": ["song", "track"]}),
     "set_chords": (t_set_chords, "THE CHORD TRACK write half: land/replace the song's declared harmonic spine — chords[] {bar (1-based), chord ('Am7'/'F#m7b5'/'Cmaj9'...), conf?}. The engine's LIVE retune grid reads declared spans cell-for-cell (they outrank note inference); harmonize/reharm/suggest_chords/doctor consume the same lane. Receipted.",
                     {"type": "object", "properties": {"song": {"type": "string"}, "chords": {"type": "array", "items": {"type": "object", "properties": {"bar": {"type": "number"}, "chord": {"type": "string"}, "conf": {"type": "number"}}, "required": ["bar", "chord"]}}}, "required": ["song", "chords"]}),
     "suggest_chords": (t_suggest_chords, "HARMONY ADVISOR (Scaler-class, symbolic): ranked per-slot substitutions + whole-progression rewrites for the song's own chord lane, each with the theory WHY — function flow T→S→D, secondary dominants (V7 of next), tritone subs, mode mixture, backdoor cadences — scored by voice-leading cost through the same kernel real parts use, optional KG genre prior. Rewrites ship a ready reharm --to line. Read-only. Args: song, genre?, k? (alts per slot, default 4).",

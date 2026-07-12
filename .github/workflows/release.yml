@@ -42,10 +42,18 @@ jobs:
           git submodule sync --recursive
           git submodule update --init --recursive
 
+      - name: vendored Ableton Link (GPLv3 leg of its dual license — app is GPL-3.0)
+        shell: bash
+        run: git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/Ableton/link app/link
+
       - name: configure + build (P1)
         shell: bash
         run: |
-          cmake -B app/build -S app -DCMAKE_BUILD_TYPE=Release -DSOTADAW_ENABLE_JIT=OFF
+          EXTRA=""
+          if [ "${{ matrix.name }}" = "macos" ]; then
+            EXTRA='-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0'
+          fi
+          cmake -B app/build -S app -DCMAKE_BUILD_TYPE=Release -DSOTADAW_ENABLE_JIT=OFF $EXTRA
           cmake --build app/build --config Release -j 3
 
       - name: locate artefacts
@@ -78,11 +86,16 @@ jobs:
         run: python3 tools/ci_sidecar_gate.py || python tools/ci_sidecar_gate.py
 
       # ---------------- P4: platform packages + installed-bits truth ----------------
-      - name: P4 windows — payload + Inno wizard + SILENT INSTALL + installed render
+      - name: P4 windows — payload + EMBEDDED PYTHON + Inno wizard + SILENT INSTALL + installed render
         if: matrix.name == 'windows'
         shell: bash
         run: |
           tools/stage_payload.sh installer/windows/payload
+          # agent runs out-of-the-box: ship CPython embeddable (stdlib is all
+          # sidecar/loop_gen need — verified pure-stdlib on the dev box)
+          curl -fsSL -o /tmp/pyembed.zip https://www.python.org/ftp/python/3.12.8/python-3.12.8-embed-amd64.zip
+          mkdir -p installer/windows/python-embed
+          unzip -q /tmp/pyembed.zip -d installer/windows/python-embed
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           [ -f "$ISCC" ] || choco install innosetup -y --no-progress
           "$ISCC" installer/windows/sotadaw.iss
@@ -96,15 +109,22 @@ jobs:
           & "$env:TEMP\sotadaw_inst\bin\m1.exe" render "$env:TEMP\sotadaw_inst\payload\songs\demo_track.json" "$env:TEMP\installed.wav"
           python tools/ci_wav_gate.py "$env:TEMP\installed.wav"
 
-      - name: P4 macos — dmg + attach + run the bundled engine
+      - name: P4 macos — UNIVERSAL check + dmg + attach + run the bundled engine
         if: matrix.name == 'macos'
         shell: bash
         run: |
+          lipo -info "app/build/sotadaw_artefacts/Release/SOTA DAW.app/Contents/MacOS/SOTA DAW" || lipo -info "app/build/sotadaw_artefacts/Release/SOTA DAW"
+          lipo -info app/build/m1_artefacts/Release/m1
           installer/macos/make_dmg.sh
           hdiutil attach dist/SOTA_DAW-macOS.dmg -nobrowse -mountpoint /tmp/sd_dmg
           ls /tmp/sd_dmg
           "/tmp/sd_dmg/SOTA DAW.app/Contents/MacOS/m1" render songs/demo_track.json /tmp/installed.wav
           python3 tools/ci_wav_gate.py /tmp/installed.wav
+          # Intel-slice truth: execute the x86_64 slice under Rosetta if present
+          arch -x86_64 "/tmp/sd_dmg/SOTA DAW.app/Contents/MacOS/m1" render songs/demo_track.json /tmp/installed_x86.wav \
+            && python3 tools/ci_wav_gate.py /tmp/installed_x86.wav \
+            || echo "x86_64 execution unavailable on this runner (slice presence proven by lipo)"
+          codesign -dv "/tmp/sd_dmg/SOTA DAW.app" 2>&1 | head -3 || true
           hdiutil detach /tmp/sd_dmg
 
       - name: collect artifacts

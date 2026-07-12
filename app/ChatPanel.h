@@ -22,6 +22,7 @@ public:
                  // pointer to retarget/freeze it and hears onLiveGone when pruned.
                  std::unique_ptr<juce::Component> live; int liveH = 0; };
     std::function<void()> onAudition, onAccept, onReject;   // proposal-card buttons
+    std::function<void()> onPlayTake;                       // #17: EARS card ▶ = hear what it measured
     std::function<void (const juce::String&)> onSuggest;    // empty-state starter chips -> prompt box
 
     ChatPanel()
@@ -469,6 +470,7 @@ private:
                     if (h.action == 0 && owner->onAudition) owner->onAudition();
                     if (h.action == 1 && owner->onAccept)   owner->onAccept();
                     if (h.action == 2 && owner->onReject)   owner->onReject();
+                    if (h.action == 3 && owner->onPlayTake) owner->onPlayTake();   // #17 ▶
                     static const char* starters[] = { "make the drop hit harder and darker",
                                                       "hum a topline over the lead",
                                                       "tighten the mix - kick and bass are fighting",
@@ -726,6 +728,22 @@ private:
                             g.setColour (theme::accent);
                             g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * (v + 24.0f) / 24.0f), 2.0f);
                         }
+                    }
+                    // #17 THE TRANSCRIPT PLAYS: the EARS card plays the render
+                    // it measured — a ▶ pill top-right, riding the preview rail
+                    if (owner->onPlayTake)
+                    {
+                        auto pb = juce::Rectangle<float> (card.getRight() - 32.0f,
+                                                          card.getY() + 5.0f, 24.0f, 16.0f);
+                        g.setColour (edge.withAlpha (0.22f));
+                        g.fillRoundedRectangle (pb, 8.0f);
+                        g.setColour (edge);
+                        juce::Path tri;
+                        tri.addTriangle (pb.getX() + 8.0f, pb.getY() + 3.5f,
+                                         pb.getX() + 8.0f, pb.getBottom() - 3.5f,
+                                         pb.getRight() - 7.0f, pb.getCentreY());
+                        g.fillPath (tri);
+                        hits.push_back ({ pb, 3 });
                     }
                     hits.push_back ({ card, 100 + (int) (&m - &owner->msgs[0]) });
                     drawCopied (g, card, (int) (&m - &owner->msgs[0]));

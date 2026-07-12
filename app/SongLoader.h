@@ -63,6 +63,7 @@ struct SongAudioClip { juce::String file; double startBeat = 0, lengthBeats = 0,
                        juce::String stretch;  // V46: "" = hq (signalsmith when patched in), "fast" = SoundTouch
                        double fadeInBeats = 0, fadeOutBeats = 0;   // V46: edge fades (0 = none)
                        juce::String fadeCurve;                     // linear (default) | convex | concave | s
+                       bool crossfade = true;                      // B3: auto-crossfade overlaps (opt-out)
                        juce::var tuning; };// CONTEXT-TUNE provenance {style,source,report} — OPAQUE round-trip
 struct SongAutoPoint { double beat = 0, v = 0, curve = 0; };
 struct SongAuto  { juce::String target; std::vector<SongAutoPoint> points; };
@@ -108,6 +109,9 @@ struct SongTrack
     std::vector<SongSlot> slots;       // launcher column cells (index = scene)
     juce::String grooveName;           // provenance tag from apply_groove (feel is baked in notes)
     double grooveAmount = 0;
+    juce::var extras;                  // TRACK-LEVEL UNDROPPABLE (#20): takes[] and any
+                                       // python-side track field round-trip verbatim —
+                                       // a C++ resave must never destroy another layer's work
 };
 struct SongSection { juce::String name; double startBar = 0; };
 struct SongMidiMap { int cc = -1; juce::String track, param; };   // W7: CC -> named param on a track ("master" = master chain)
@@ -118,7 +122,7 @@ struct SongTempoPoint { double bar = 0, bpm = 120, curve = 1; };  // tempo map: 
 // now zero engine READERS — the retune grid re-inferred harmony from notes
 // while the declared truth rode along unread. Parsed here; serialization stays
 // the passthrough (extras) — this build never rewrites another layer's field.
-struct SongChord { double bar = 1; int rootPc = 0; int mask = 0; };
+struct SongChord { double bar = 1; int rootPc = 0; int mask = 0; juce::String label; };
 
 // THE WORLD GRID (BEST_DAW_30 #1): meterMap[] {bar, num, den} — the tempoMap's
 // twin. Until now the entire world was HARD 4/4 (a carnatic tala, a waltz, a
@@ -332,7 +336,8 @@ inline bool parseSong (const juce::File& f, Song& s)
         {
             SongChord c;
             c.bar = (double) cv.getProperty ("bar", 1.0);
-            if (parseChordSymbol (cv.getProperty ("chord", "").toString(), c.rootPc, c.mask))
+            c.label = cv.getProperty ("chord", "").toString();
+            if (parseChordSymbol (c.label, c.rootPc, c.mask))
                 s.chords.push_back (c);
         }
 
@@ -455,6 +460,7 @@ inline bool parseSong (const juce::File& f, Song& s)
                     ac.gainDb = (double) cv.getProperty ("gainDb", 0.0);
                     ac.sourceBpm = (double) cv.getProperty ("sourceBpm", 0.0);
                     ac.stretch = cv.getProperty ("stretch", "").toString();
+                    ac.crossfade = (bool) cv.getProperty ("crossfade", true);
                     ac.fadeInBeats = (double) cv.getProperty ("fadeInBeats", 0.0);
                     ac.fadeOutBeats = (double) cv.getProperty ("fadeOutBeats", 0.0);
                     ac.fadeCurve = cv.getProperty ("fadeCurve", "").toString();
@@ -515,6 +521,25 @@ inline bool parseSong (const juce::File& f, Song& s)
                     }
                     t.slots.push_back (std::move (sl));
                 }
+            // TRACK-LEVEL UNDROPPABLE (#20): keep every unmodeled track key
+            // (takes[], future python fields) for verbatim re-emission
+            {
+                static const char* tmodeled[] = { "name", "source", "gainDb", "pan",
+                    "muted", "locked", "color", "fx", "sends", "automation",
+                    "notes", "audioClips", "slots", "groove" };
+                auto* tex = new juce::DynamicObject();
+                if (auto* tvo = tv.getDynamicObject())
+                    for (auto& prop : tvo->getProperties())
+                    {
+                        bool known = false;
+                        for (auto* mk : tmodeled)
+                            if (prop.name.toString() == mk) { known = true; break; }
+                        if (! known)
+                            tex->setProperty (prop.name, prop.value);
+                    }
+                juce::var texv (tex);
+                t.extras = tex->getProperties().isEmpty() ? juce::var() : texv;
+            }
             s.tracks.push_back (std::move (t));
         }
     }
@@ -1290,8 +1315,32 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
         pfMidi += pfMs (pfM);
 
         const auto pfC = juce::Time::getHighResolutionTicks();
+        // B3 THE OVERLAP CROSSFADE (BEST_DAW_30 #20): two clips overlapping on
+        // one lane auto-crossfade over the overlap (equal-power convex) — the
+        // seam a producer expects instead of a +6 dB doubling. Derived, never
+        // stored; "crossfade": false on either clip opts the pair out.
+        std::vector<std::pair<double, double>> xfade (t.audioClips.size(), { 0.0, 0.0 });
+        {
+            std::vector<size_t> xord (t.audioClips.size());
+            for (size_t k = 0; k < xord.size(); ++k) xord[k] = k;
+            std::sort (xord.begin(), xord.end(), [&] (size_t a, size_t b)
+                       { return t.audioClips[a].startBeat < t.audioClips[b].startBeat; });
+            for (size_t k = 0; k + 1 < xord.size(); ++k)
+            {
+                auto& A = t.audioClips[xord[k]];
+                auto& B = t.audioClips[xord[k + 1]];
+                const double ov = (A.startBeat + A.lengthBeats) - B.startBeat;
+                if (ov > 0.01 && A.crossfade && B.crossfade && B.lengthBeats > ov)
+                {
+                    xfade[xord[k]].second    = juce::jmax (xfade[xord[k]].second, ov);
+                    xfade[xord[k + 1]].first = juce::jmax (xfade[xord[k + 1]].first, ov);
+                }
+            }
+        }
+        int acIdx = -1;
         for (auto& ac : t.audioClips)
         {
+            ++acIdx;
             auto f = juce::File::isAbsolutePath (ac.file) ? juce::File (ac.file)
                                                           : sotadawRoot().getChildFile (ac.file);
             if (! f.existsAsFile()) { errors << t.name << ": missing audio file " << ac.file << "\n"; continue; }
@@ -1318,24 +1367,28 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
                 clip->setPosition ({ { tStart, tStart + te::TimeDuration::fromSeconds (juce::jmax (0.1, lenS)) },
                                      te::TimeDuration::fromSeconds (ac.offsetSec) });
                 clip->setGainDB ((float) ac.gainDb);
-                if (ac.fadeInBeats > 0 || ac.fadeOutBeats > 0)   // V46: clip dignity — edge fades
+                const double effFadeIn  = juce::jmax (ac.fadeInBeats,  xfade[(size_t) acIdx].first);
+                const double effFadeOut = juce::jmax (ac.fadeOutBeats, xfade[(size_t) acIdx].second);
+                if (effFadeIn > 0 || effFadeOut > 0)             // V46 fades + B3 crossfades
                 {
                     const auto curve = ac.fadeCurve == "convex"  ? te::AudioFadeCurve::convex
                                      : ac.fadeCurve == "concave" ? te::AudioFadeCurve::concave
                                      : ac.fadeCurve == "s"       ? te::AudioFadeCurve::sCurve
                                                                  : te::AudioFadeCurve::linear;
                     const auto clipEnd = tStart + te::TimeDuration::fromSeconds (juce::jmax (0.1, lenS));
-                    if (ac.fadeInBeats > 0)
+                    if (effFadeIn > 0)
                     {
                         clip->setFadeIn (edit->tempoSequence.toTime (edit->tempoSequence.toBeats (tStart)
-                                             + te::BeatDuration::fromBeats (ac.fadeInBeats)) - tStart);
-                        clip->setFadeInType (curve);
+                                             + te::BeatDuration::fromBeats (effFadeIn)) - tStart);
+                        clip->setFadeInType (xfade[(size_t) acIdx].first > ac.fadeInBeats
+                                                 ? te::AudioFadeCurve::convex : curve);
                     }
-                    if (ac.fadeOutBeats > 0)
+                    if (effFadeOut > 0)
                     {
                         clip->setFadeOut (clipEnd - edit->tempoSequence.toTime (edit->tempoSequence.toBeats (clipEnd)
-                                              - te::BeatDuration::fromBeats (ac.fadeOutBeats)));
-                        clip->setFadeOutType (curve);
+                                              - te::BeatDuration::fromBeats (effFadeOut)));
+                        clip->setFadeOutType (xfade[(size_t) acIdx].second > ac.fadeOutBeats
+                                                  ? te::AudioFadeCurve::convex : curve);
                     }
                 }
                 if (ac.sourceBpm > 0)   // WARP: the clip follows the song tempo (Ableton-style)
@@ -1831,6 +1884,10 @@ inline juce::var songToVar (const Song& s)
             go->setProperty ("amount", t.grooveAmount);
             o->setProperty ("groove", juce::var (go));
         }
+        // TRACK-LEVEL UNDROPPABLE (#20): re-emit what the parse didn't model
+        if (auto* tex = t.extras.getDynamicObject())
+            for (auto& prop : tex->getProperties())
+                o->setProperty (prop.name, prop.value);
         tracks.add (juce::var (o));
     }
     root->setProperty ("tracks", tracks);
