@@ -154,7 +154,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: fetch faust dist (mac: both arches, lipo the static lib universal)
+      - name: fetch faust dist (mac gets both arches, lipo'd universal static lib)
         shell: bash
         run: |
           if [ "${{ matrix.name }}" = "windows" ]; then
