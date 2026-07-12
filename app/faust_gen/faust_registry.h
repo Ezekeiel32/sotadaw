@@ -69,12 +69,24 @@ namespace fg_clap_909 {
 #include "clap_909.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_clave {
+#include "clave.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_clav_funk {
 #include "clav_funk.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_clean_chime_guitar {
 #include "clean_chime_guitar.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_conga {
+#include "conga.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_cowbell {
+#include "cowbell.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_crash_noise {
@@ -103,6 +115,10 @@ namespace fg_fiddle {
 #undef FAUSTCLASS
 namespace fg_flute_lead {
 #include "flute_lead.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_fm4_keys {
+#include "fm4_keys.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_fmbell {
@@ -337,8 +353,16 @@ namespace fg_sax_section {
 #include "sax_section.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_shaker {
+#include "shaker.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_shakuhachi {
 #include "shakuhachi.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_sine_siren {
+#include "sine_siren.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_snare {
@@ -405,6 +429,10 @@ namespace fg_wobble {
 #include "wobble.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_wt_morph {
+#include "wt_morph.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_zurna {
 #include "zurna.hpp"
 }
@@ -427,8 +455,11 @@ inline ::dsp* createFaustDsp (const std::string& name)
     if (name == "chiptune_pulse") return new fg_chiptune_pulse::ChiptunePulse();
     if (name == "cine_brass") return new fg_cine_brass::CineBrass();
     if (name == "clap_909") return new fg_clap_909::Clap909();
+    if (name == "clave") return new fg_clave::Clave();
     if (name == "clav_funk") return new fg_clav_funk::ClavFunk();
     if (name == "clean_chime_guitar") return new fg_clean_chime_guitar::CleanChimeGuitar();
+    if (name == "conga") return new fg_conga::Conga();
+    if (name == "cowbell") return new fg_cowbell::Cowbell();
     if (name == "crash_noise") return new fg_crash_noise::CrashNoise();
     if (name == "dhol") return new fg_dhol::Dhol();
     if (name == "duduk") return new fg_duduk::Duduk();
@@ -436,6 +467,7 @@ inline ::dsp* createFaustDsp (const std::string& name)
     if (name == "erhu") return new fg_erhu::Erhu();
     if (name == "fiddle") return new fg_fiddle::Fiddle();
     if (name == "flute_lead") return new fg_flute_lead::FluteLead();
+    if (name == "fm4_keys") return new fg_fm4_keys::Fm4Keys();
     if (name == "fmbell") return new fg_fmbell::Fmbell();
     if (name == "formant_vox") return new fg_formant_vox::FormantVox();
     if (name == "fuzz_guitar") return new fg_fuzz_guitar::FuzzGuitar();
@@ -494,7 +526,9 @@ inline ::dsp* createFaustDsp (const std::string& name)
     if (name == "riser") return new fg_riser::Riser();
     if (name == "sax_reed") return new fg_sax_reed::SaxReed();
     if (name == "sax_section") return new fg_sax_section::SaxSection();
+    if (name == "shaker") return new fg_shaker::Shaker();
     if (name == "shakuhachi") return new fg_shakuhachi::Shakuhachi();
+    if (name == "sine_siren") return new fg_sine_siren::SineSiren();
     if (name == "snare") return new fg_snare::Snare();
     if (name == "steel_pan") return new fg_steel_pan::SteelPan();
     if (name == "strings_disco") return new fg_strings_disco::StringsDisco();
@@ -511,6 +545,7 @@ inline ::dsp* createFaustDsp (const std::string& name)
     if (name == "vibraphone") return new fg_vibraphone::Vibraphone();
     if (name == "vox_pad") return new fg_vox_pad::VoxPad();
     if (name == "wobble") return new fg_wobble::Wobble();
+    if (name == "wt_morph") return new fg_wt_morph::WtMorph();
     if (name == "zurna") return new fg_zurna::Zurna();
     return nullptr;
 }
@@ -533,8 +568,11 @@ inline const std::vector<std::string>& faustDspNames()
     "chiptune_pulse",
     "cine_brass",
     "clap_909",
+    "clave",
     "clav_funk",
     "clean_chime_guitar",
+    "conga",
+    "cowbell",
     "crash_noise",
     "dhol",
     "duduk",
@@ -542,6 +580,7 @@ inline const std::vector<std::string>& faustDspNames()
     "erhu",
     "fiddle",
     "flute_lead",
+    "fm4_keys",
     "fmbell",
     "formant_vox",
     "fuzz_guitar",
@@ -600,7 +639,9 @@ inline const std::vector<std::string>& faustDspNames()
     "riser",
     "sax_reed",
     "sax_section",
+    "shaker",
     "shakuhachi",
+    "sine_siren",
     "snare",
     "steel_pan",
     "strings_disco",
@@ -617,6 +658,7 @@ inline const std::vector<std::string>& faustDspNames()
     "vibraphone",
     "vox_pad",
     "wobble",
+    "wt_morph",
     "zurna",
     };
     return names;

@@ -49,6 +49,48 @@ def manifest(bank=None):
         return dict(_FALLBACK_MANIFEST)
 
 
+def find_hook_gaps(song, track_name, max_per_hook=2, min_gap=1.5, seed=0):
+    """THE ADLIB RAIL kernel (ledger dr21 tail, 2026-07-12): the room an
+    answer belongs in — ONSET gaps (IOI >= min_gap beats) inside hook
+    sections. IOI, not silence: held/legato tails eat the rests on paper,
+    but records answer OVER the held note (the audible receipt caught the
+    silence-based detector starved by a loop that breathes 1.5 beats at the
+    onset level). The answer enters just after the call word lands and must
+    leave 0.2 beats before the next onset. pitch = the call note (the answer
+    echoes it). Pure + seeded. Cost receipt: a 2-word phrase sings in ~8s."""
+    import random as _r
+    secs = song.get("sections") or []
+    mel = next((t for t in song.get("tracks", [])
+                if t.get("name") == track_name), None)
+    if not secs or not mel or not mel.get("notes"):
+        return []
+    notes = sorted(mel["notes"], key=lambda n: float(n.get("start", 0)))
+    total = float(song.get("lengthBars", 0)) * 4.0
+    hooks = []
+    for i, sc in enumerate(secs):
+        if str(sc.get("name", "")).rstrip("0123456789") in ("chorus", "drop", "hook", "theme"):
+            b0 = float(sc.get("startBar", 0)) * 4.0
+            b1 = (float(secs[i + 1].get("startBar", 0)) * 4.0
+                  if i + 1 < len(secs) else total)
+            hooks.append((b0, b1))
+    rng = _r.Random(f"adlib/{seed}")
+    out = []
+    for b0, b1 in hooks:
+        span = [n for n in notes if b0 <= float(n["start"]) < b1]
+        gaps = []
+        for a, b in zip(span, span[1:]):
+            ioi = float(b["start"]) - float(a["start"])
+            if ioi >= min_gap:
+                enter = float(a["start"]) + min(float(a.get("len", 0.5)), 0.6)
+                room = float(b["start"]) - enter - 0.2
+                if room >= 0.5:
+                    gaps.append((round(enter, 4), round(min(room, 2.0), 4),
+                                 int(a.get("pitch", 62))))
+        rng.shuffle(gaps)
+        out += sorted(gaps[:max_per_hook])
+    return sorted(out)
+
+
 def attribution(bank=None):
     return manifest(bank).get("attribution", _FALLBACK_MANIFEST["attribution"])
 
@@ -576,9 +618,19 @@ def render(song_name, track_name, embed="standard", steps=30):
                                     for c in (cand.get("audioClips") or [])):
             # 'vocals' holds the RECORD's own stem — never land on it; mint
             # the vocals_sung lane the import would have pre-created.
+            # dr19 (2026-07-12): this mint landed with ZERO fx while the
+            # fresh-song path always carried comp+delay(+verb send) — the
+            # import re-sing was the driest vocal in the product. Same chain.
             vt = {"name": "vocals_sung",
                   "source": {"kind": "audio", "id": "vocals_sung"},
-                  "gainDb": -1.5, "notes": []}
+                  "gainDb": -1.5, "notes": [],
+                  "fx": [{"type": "comp", "params": {"threshold": -18, "ratio": 2.5,
+                                                     "attack": 8, "release": 120,
+                                                     "outputDb": 3}},
+                         {"id": "fx_delay", "params": {"time": 0.28, "feedback": 0.22,
+                                                       "mix": 0.12}}]}
+            if any(b.get("id") == "verb" for b in song.get("buses", [])):
+                vt["sends"] = [{"bus": "verb", "gainDb": -14}]
             song["tracks"].append(vt)
         else:
             vt = cand
@@ -650,6 +702,107 @@ def render(song_name, track_name, embed="standard", steps=30):
         print(f"[sing] VOICE HANDOVER: '{track_name}' is a vox proxy "
               f"(formant_vox) — eased to {_mel['gainDb']}dB whisper double",
               flush=True)
+    # THE VOCAL DOUBLE (ledger dr21, 2026-07-12): pro hooks are DOUBLED — the
+    # same take layered under itself. Zero new synthesis: the double track
+    # re-clips the SAME rendered wav onto the HOOK spans only (chorus/drop/
+    # hook/theme), lagged 0.02 beats (the ADT feel), -6 dB, centered
+    # (mono-safe thickening). Constant-bpm songs only (tempoMap would break
+    # the offsetSec math — fail open); verses stay single (the contrast IS
+    # the lift). SOTADAW_VOCAL_DOUBLE=0 kills. Idempotent by track name.
+    try:
+        _secs = song.get("sections") or []
+        _bpm = float(song.get("bpm") or 0)
+        _hooks = []
+        for _i, _s in enumerate(_secs):
+            if str(_s.get("name", "")).rstrip("0123456789") in ("chorus", "drop", "hook", "theme"):
+                _b0 = float(_s.get("startBar", 0)) * 4.0
+                _b1 = (float(_secs[_i + 1].get("startBar", 0)) * 4.0
+                       if _i + 1 < len(_secs)
+                       else float(song.get("lengthBars", 0)) * 4.0)
+                if _b1 > _b0:
+                    _hooks.append((_b0, _b1))
+        if (_hooks and _bpm > 0 and not song.get("tempoMap")
+                and os.environ.get("SOTADAW_VOCAL_DOUBLE", "1") != "0"
+                and not any(t.get("name") == f"{vt['name']}_dbl"
+                            for t in song["tracks"])):
+            _spb = 60.0 / _bpm
+            _dbl = {"name": f"{vt['name']}_dbl",
+                    "source": {"kind": "audio", "id": f"{vt['name']}_dbl"},
+                    "gainDb": round(float(vt.get("gainDb", -4.0)) - 6.0, 2),
+                    "notes": [], "muted": bool(vt.get("muted")),
+                    "comment": "hook double of the sung take (same wav, re-clipped)",
+                    "audioClips": [{"file": os.path.relpath(out, ROOT),
+                                    "startBeat": round(_b0 + 0.02, 4),
+                                    "lengthBeats": round(_b1 - _b0, 4),
+                                    "offsetSec": round(_b0 * _spb, 4)}
+                                   for _b0, _b1 in _hooks]}
+            song["tracks"].append(_dbl)
+            print(f"[sing] THE VOCAL DOUBLE: {len(_hooks)} hook span(s) doubled "
+                  f"at {_dbl['gainDb']}dB (same take, 0.02-beat lag)", flush=True)
+    except Exception as _de:
+        print(f"[sing] vocal double skipped ({type(_de).__name__}: {_de})", flush=True)
+    # THE ADLIB RAIL (ledger dr21 tail, 2026-07-12): records ANSWER their
+    # hooks — 1-word interjections in the gaps ("yeah", "oh", the echo).
+    # A child sing renders ONLY the answers on the same timeline (silence
+    # between phrases costs nothing — phrase windows), landing an adlibs
+    # track at -8 dB panned right. Words takes only, constant bpm only,
+    # never recursive (SOTADAW_ADLIB_CHILD), idempotent by track name.
+    # SOTADAW_ADLIBS=0 kills. Measured cost: ~8s per answer pair.
+    try:
+        import subprocess as _sp
+        _base = os.path.splitext(os.path.basename(song_path))[0]
+        if (os.environ.get("SOTADAW_ADLIBS", "1") != "0"
+                and not os.environ.get("SOTADAW_ADLIB_CHILD")
+                and song.get("lyrics") and not song.get("tempoMap")
+                and not _base.startswith("_adlib_")
+                and not any(t.get("name") == f"{vt['name']}_adlibs"
+                            for t in song["tracks"])):
+            _gaps = find_hook_gaps(song, track_name,
+                                   seed=len(song.get("lyrics") or []))[:6]
+            if _gaps:
+                _aw = ["yeah", "oh", "hey", "uh"]
+                _tmp = f"_adlib_{_base}"
+                _tsong = {"bpm": song.get("bpm"), "lengthBars": song.get("lengthBars"),
+                          "key": song.get("key", "A minor"),
+                          "tracks": [{"name": "lead",
+                                      "source": {"kind": "faust", "id": "pluck2"},
+                                      "gainDb": -60.0,
+                                      "notes": [{"start": g0, "len": gl,
+                                                 "pitch": pp, "vel": 0.72}
+                                                for g0, gl, pp in _gaps]}],
+                          "lyrics": [{"beat": g0, "text": _aw[_i % len(_aw)]}
+                                     for _i, (g0, gl, pp) in enumerate(_gaps)]}
+                _tj = os.path.join(ROOT, "songs", f"{_tmp}.json")
+                json.dump(_tsong, open(_tj, "w"), indent=1)
+                _env = dict(os.environ)
+                _env["SOTADAW_ADLIB_CHILD"] = "1"
+                _sp.run([sys.executable, os.path.abspath(__file__),
+                         "render", _tmp, "lead"],
+                        capture_output=True, text=True, timeout=900, env=_env)
+                _aw_wav = os.path.join(ROOT, "songs", f"{_tmp}_vocal.wav")
+                if os.path.exists(_aw_wav):
+                    _dest = os.path.join(ROOT, "songs", f"{_base}_adlibs.wav")
+                    os.replace(_aw_wav, _dest)
+                    song["tracks"].append({
+                        "name": f"{vt['name']}_adlibs",
+                        "source": {"kind": "audio", "id": f"{vt['name']}_adlibs"},
+                        "gainDb": round(float(vt.get("gainDb", -4.0)) - 8.0, 2),
+                        "pan": 0.3, "notes": [], "muted": bool(vt.get("muted")),
+                        "comment": "hook-gap answers (voice: " + attribution() + ")",
+                        "audioClips": [{"file": os.path.relpath(_dest, ROOT),
+                                        "startBeat": 0}]})
+                    print(f"[sing] THE ADLIB RAIL: {len(_gaps)} answer(s) in the "
+                          f"hook gaps at {round(float(vt.get('gainDb', -4.0)) - 8.0, 2)}dB",
+                          flush=True)
+                import shutil as _sh
+                for _pp in (_tj, os.path.join(ROOT, "songs", f"{_tmp}.wav")):
+                    if os.path.exists(_pp):
+                        os.remove(_pp)
+                _fdir = os.path.join(ROOT, "songs", f"{_tmp}_vocals")
+                if os.path.isdir(_fdir):
+                    _sh.rmtree(_fdir)
+    except Exception as _ae:
+        print(f"[sing] adlib rail skipped ({type(_ae).__name__}: {_ae})", flush=True)
     json.dump(song, open(song_path, "w"), indent=1)
     try:
         # THE FOLLOWING VOICE: bind the sung take to its melody track — when

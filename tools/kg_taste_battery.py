@@ -127,6 +127,16 @@ def main():
         os.unlink(tmp2.name)
     got2 = kg.q("MATCH (g:Genre {name: '_taste_test'}) RETURN g.verdicts_n, g.complaints")
     ok(got2 and got2[0][0] == 4 and got2[0][1] == "bright:1;groove:1", "ingest idempotent")
+    # --- dr18 (2026-07-12): corrective-prompt mining (the typed-correction leak) ---
+    import kg_ingest_telemetry as _K
+    _c = _K.corrective_buckets
+    ok(_c("make it less bright please") == ["bright"], "corrective: less bright")
+    ok(_c("this is too muddy down low") == ["dark"], "corrective: too muddy")
+    ok(_c("way too much going on") == ["busy"], "corrective: too much = busy")
+    ok(_c("not so stiff on the hats") == ["groove"], "corrective: not so stiff")
+    ok(_c("make a bright synthpop banger") == [], "a REQUEST never buckets (toward, not against)")
+    ok(_c("") == [] and _c(None) == [], "empty/None corrective safe")
+
     # cleanup: the scratch genre + today's test snapshots never pollute the graph
     kg.g.query("MATCH (g:Genre {name: '_taste_test'}) DETACH DELETE g")
     ok(not kg.q("MATCH (g:Genre {name: '_taste_test'}) RETURN g.name"), "scratch genre scrubbed")

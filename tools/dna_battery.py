@@ -86,6 +86,25 @@ def check_genre(genre, grid, do_render):
             if vid and not eligible_recipe_voice(vid):
                 fails.append(f"TASTE({t['name']}={vid})")
                 break
+    # THE BREATHING BAR law (dr01, 2026-07-12): at 4 bars a present feel lane
+    # must not clone bar 1 into bar 2 (onset+velocity fingerprint) — the
+    # one-bar-cloned-4x loop was the #1 preset-demo tell. The KICK stays the
+    # ANCHOR: bars 0 and 2 carry identical onsets (fill bar excluded;
+    # 2-bar patterns compare same-phase bars by construction).
+    for lane in ("hat", "openhat", "ride", "ghost"):
+        tr = tracks.get(lane)
+        if tr and tr.get("notes"):
+            fp = lambda b: sorted((round(n["start"] % 4, 3), n["vel"])
+                                  for n in tr["notes"] if b * 4 <= n["start"] < b * 4 + 4)
+            if fp(1) and fp(2) and fp(1) == fp(2):
+                fails.append(f"CLONE({lane})")
+            break
+    ktr = tracks.get("kick")
+    if ktr and ktr.get("notes"):
+        ko = lambda b: sorted(round(n["start"] % 4, 3)
+                              for n in ktr["notes"] if b * 4 <= n["start"] < b * 4 + 4)
+        if ko(0) and ko(2) and ko(0) != ko(2):
+            fails.append("ANCHOR")
     if grid.get("fill"):
         # a fill passes if ANY filled lane differs in the final bar (adding a
         # lane counts; keeping kick identical while snare rolls is valid design)

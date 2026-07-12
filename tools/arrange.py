@@ -22,21 +22,33 @@ from scene_strips import classify_track
 HAT_PITCHES = {42, 44, 46}
 SNARE_PITCHES = {38, 40}
 
-def vary_rep(notes, rep, cls, loop_beats):
-    """Production values: no two repeats identical. Drums: odd reps thin the
-    weakest hats + lean on backbeats; melodic: a slow velocity phrase arc."""
+def vary_rep(notes, rep, cls, loop_beats, inst=0, vkey=""):
+    """Production values: no two repeats identical — WITHIN a section (rep =
+    tile index) and ACROSS section instances (inst: drop2/chorus2 = 1, ...).
+    Drums: odd passes thin the weakest hats + lean on backbeats; INSTANCE
+    passes re-breathe the off-hats from a seeded rng (REPEAT CRIME, ledger
+    dr07 2026-07-12: drop2 was onset-identical to drop with +5.6% velocity
+    as the only difference). Melodic: a slow velocity phrase arc, phase-
+    shifted per instance. Deterministic per (vkey, cls, inst, rep)."""
+    import random as _rnd
     out = []
+    prng = _rnd.Random(f"{vkey}/{cls}/{inst}/{rep}")
     for n in notes:
         v = n.get("vel", 0.8)
         p = n.get("pitch", 60)
-        if cls == "drums" and rep % 2 == 1 and p in HAT_PITCHES:
+        if cls == "drums" and (rep + inst) % 2 == 1 and p in HAT_PITCHES:
             if v < 0.5 and (int(n["start"] * 4) % 4) in (1, 3):
                 continue                       # thin the weak off-hats every other pass
             if (n["start"] * 2) % 2 == 0:
                 v = min(1.0, v + 0.05)         # lean on the strong eighths
+        if cls == "drums" and inst >= 1 and p in HAT_PITCHES:
+            if v < 0.55 and prng.random() < 0.18:
+                continue                       # later instances breathe DIFFERENTLY
+            v = max(0.05, v * prng.uniform(0.94, 1.08))
         if cls in ("other", "vox") and loop_beats > 0:
             import math
-            v *= 0.94 + 0.08 * math.sin (2 * math.pi * (n["start"] / loop_beats + rep * 0.25))
+            v *= 0.94 + 0.08 * math.sin (2 * math.pi * (n["start"] / loop_beats
+                                                        + rep * 0.25 + inst * 0.4))
         nn = dict(n); nn["vel"] = round(min(1.0, max(0.05, v)), 3)
         out.append(nn)
     return out
@@ -46,8 +58,12 @@ FORM = [("intro", 8), ("build", 8), ("drop", 16), ("break", 8), ("drop2", 8), ("
 # 16-bar outro, twin drops — the extended-mix convention DJs can actually play.
 CLUB_FORM = [("intro", 16), ("build", 8), ("drop", 16), ("break", 8),
              ("build2", 8), ("drop2", 16), ("outro", 16)]
-SONG_FORM = [("intro", 4), ("verse", 8), ("chorus", 8), ("verse2", 8),
-             ("chorus2", 8), ("bridge", 4), ("chorus3", 8), ("outro", 4)]
+# dr25 (2026-07-12): the PRE-CHORUS — 4 bars of rising tension before each
+# of the first two choruses (the pop grammar's one missing organ; the third
+# chorus arrives straight off the bridge, the classic payoff).
+SONG_FORM = [("intro", 4), ("verse", 8), ("prechorus", 4), ("chorus", 8),
+             ("verse2", 8), ("prechorus2", 4), ("chorus2", 8),
+             ("bridge", 4), ("chorus3", 8), ("outro", 4)]
 # genres that live in verse/chorus land, not drop land
 SONG_FORM_GENRES = {"gospel", "soul", "country", "blues", "rock", "indie_rock",
                     "jazz", "reggae", "rocksteady", "ska", "bossanova", "citypop",
@@ -82,6 +98,7 @@ KEEP = {                     # section -> which classes play
     "break": {"bass", "vox", "other"},
     "outro": {"drums", "bass"},
     "verse": {"drums", "bass"},          # the hook rests in verses
+    "prechorus": {"drums", "bass", "other"},   # tension: full band minus the hook
     "chorus": {"drums", "bass", "vox", "other"},
     "bridge": {"bass", "vox", "other"},  # the no-drums moment
     # through-composed: the ensemble ACCUMULATES and never sheds
@@ -107,6 +124,7 @@ BED_NAMES = ("color", "pad")
 # ramp INSIDE their own bounds (the old ramp normalized by the first two
 # sections' span — already 1.0 by the time any classic-form build started).
 SECTION_ENERGY = {"intro": 0.62, "verse": 0.82, "break": 0.74, "bridge": 0.72,
+                  "prechorus": 0.88,      # dr25: above the verse, under the chorus
                   "outro": 0.85,
                   # through-composed: MONOTONIC growth to the climax, then release.
                   # (no drop tier here — "climax" is the peak and takes the source's
@@ -300,9 +318,19 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                 reps = int(sec_beats // loop_beats) or 1
                 sec_end = (cursor_bar + bars) * 4.0
                 song_end = total_bars * 4.0
+                # REPEAT CRIME (dr07): which INSTANCE of this section base is
+                # this (drop=0, drop2=1, chorus3=2)? Later instances vary.
+                _inst = 0
+                if sec != secbase:
+                    try:
+                        _inst = int(sec[len(secbase):]) - 1
+                    except ValueError:
+                        _inst = 0
+                _rv_on = os.environ.get("SOTADAW_REPEATVAR", "1") != "0"
                 for r in range(reps):
                     base = cursor_bar * 4.0 + r * loop_beats
-                    rep_notes = vary_rep(src_notes, r, cls, loop_beats)
+                    rep_notes = vary_rep(src_notes, r, cls, loop_beats,
+                                         inst=_inst if _rv_on else 0, vkey=sec)
                     for n in rep_notes:
                         if n["start"] >= loop_beats:
                             continue
@@ -332,7 +360,15 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                                 continue               # thin hats: drop odd 16ths
                             if base + n["start"] < bars * 2.0:
                                 continue               # staircase: hats join at the midpoint
-                        if secbase == "build":
+                        # REPEAT CRIME (dr07): verse2+ SUBTRACTS — the bed
+                        # thins for the section's first half ("we have been
+                        # here before, listen closer"); lead/bass/drums carry.
+                        if (_rv_on and _inst >= 1 and secbase == "verse"
+                                and cls == "other"
+                                and any(w in name_l for w in ("color", "arp", "pad"))
+                                and base + n["start"] < cursor_bar * 4.0 + bars * 2.0):
+                            continue
+                        if secbase in ("build", "prechorus"):
                             # ramp INSIDE this section's own bounds (any buildN; the old
                             # form normalized by plan[:2] = already 1.0 at build's start)
                             prog = (base + n["start"] - cursor_bar * 4.0) / max(1.0, bars * 4.0)
@@ -1056,6 +1092,29 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                                            "pitch": 49, "vel": 0.9} for ds in drop_starts]
                                        + [{"start": round(bs, 4), "len": 3.0,
                                            "pitch": 49, "vel": 0.5} for bs in _soft_marks]})
+    # THE FINAL CHORUS LIFT (REPEAT CRIME dr07/dr25, 2026-07-12): the LAST
+    # chorus of a >=3-chorus form earns the classic escalation — the lead
+    # doubled an octave up at reduced velocity (a new layer arriving reads
+    # as intent; a byte-copied third chorus reads as a loop). Deterministic,
+    # additive-only, and the base hook notes stay untouched (hook-sacred).
+    if os.environ.get("SOTADAW_REPEATVAR", "1") != "0":
+        _cur, _chorspans = 0, []
+        for _nm, _b in plan:               # sections land in out[] later (1638);
+            if _nm.rstrip("0123456789") == "chorus":   # the plan IS the truth here
+                _chorspans.append((_cur * 4.0, (_cur + _b) * 4.0))
+            _cur += _b
+        if len(_chorspans) >= 3:
+            _c0, _c1 = _chorspans[-1]
+            _ld = next((t for t in out["tracks"]
+                        if t.get("name", "").lower() == "lead" and t.get("notes")), None)
+            if _ld is not None:
+                _dbl = [dict(n, pitch=n["pitch"] + 12,
+                             vel=round(max(0.05, n["vel"] * 0.55), 3))
+                        for n in _ld["notes"]
+                        if _c0 <= n["start"] < _c1 and n["pitch"] + 12 <= 103]
+                if _dbl:
+                    _ld["notes"] = sorted(_ld["notes"] + _dbl,
+                                          key=lambda n: (n["start"], n["pitch"]))
     # fill default by FAMILY (wave 43, ledger HIGH): club/pop/unknown keep the
     # classic roll; rap defaults to its stutter culture; unmapped song genres
     # get the brush drag EXCEPT kit-less folk (a machine snare roll on a

@@ -46,6 +46,14 @@ LEADS = {
                        [8, 5, 2], [10, 5, 2], [12, 4, 2], [14, 4, 2]]},
     "shoegaze": {"voice": "clean_chime_guitar", "octave": 5,
                  "steps": [[0, 5, 4], [4, 3, 4], [8, 4, 4], [12, 1, 4]]},
+    # wave 46b (preset-bridge A/B side discovery): italo_disco and electro
+    # carried NO lead lane at all — arp-only births. Italo's identity is the
+    # sync-saw octave hook; electro's is the robotic square line.
+    "italo_disco": {"voice": "supersaw", "octave": 5,
+                    "steps": [[0, 1, 2], [2, 8, 2], [4, 1, 2], [6, 8, 2],
+                              [8, 6, 2], [10, 8, 2], [12, 5, 2], [14, 8, 2]]},
+    "electro": {"voice": "chiptune_pulse", "octave": 5,
+                "steps": [[0, 1, 2], [3, 5, 1], [4, 1, 2], [8, 4, 2], [11, 5, 1], [12, 1, 2]]},
 }
 
 if __name__ == "__main__":

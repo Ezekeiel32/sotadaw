@@ -54,6 +54,24 @@ def complaint_bucket(why):
     return "other"
 
 
+CORRECTIVE = re.compile(
+    r"\b(?:less|too|way too|not so|stop being|quit being)\s+(?:so\s+|very\s+)?(\w{3,})")
+
+
+def corrective_buckets(prompt):
+    """dr18 (2026-07-12): the DOMINANT taste signal — corrections typed as
+    the NEXT PROMPT ('make it less bright', 'too muddy in the low end') —
+    leaked entirely; only reject notes bucketed. Mine CORRECTIVE phrasing
+    only (a request FOR 'bright synthpop' is taste toward, not a complaint)
+    and bucket the whole matched window through the same stable buckets."""
+    out = []
+    for m in CORRECTIVE.finditer((prompt or "").lower()):
+        b = complaint_bucket(m.group(0))
+        if b and b != "other":
+            out.append(b)
+    return out
+
+
 def _norm(s):
     return re.sub(r"\s+", " ", re.sub(r"[-_]+", " ", (s or "").lower())).strip()
 
@@ -165,6 +183,12 @@ def ingest():
             if b:
                 s["c"][b] = s["c"].get(b, 0) + 1
                 s["whys"] = (s["whys"] + [str(row.get("note", ""))[:80]])[-3:]
+        # dr18: corrective language in the PROMPT is taste signal regardless
+        # of the eventual verdict (a revise that says 'less bright' teaches
+        # even when its take is later accepted)
+        for b in corrective_buckets(row.get("prompt", "")):
+            s["c"][b] = s["c"].get(b, 0) + 1
+            s["whys"] = (s["whys"] + [str(row.get("prompt", ""))[:80]])[-3:]
 
     kg.upsert("Genre", "_untagged", "telemetry:ingest", bpm_lo=0, bpm_hi=0)
     for genre, s in stats.items():

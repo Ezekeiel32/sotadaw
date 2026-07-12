@@ -76,9 +76,38 @@ def _lead(pcs, prev, lo, hi, third_pc=None):
     return sorted(best)
 
 
+STYLE_ALIASES = {"rootless_chromatic": "shell", "gospel_block": "smooth",
+                 "quartal_open": "open", "quartal_pedal_pentatonic": "open",
+                 "modal_vibraphone": "open", "bright_extended": "drop2",
+                 "lush_extended": "drop2", "open_arpeggio": "open",
+                 "glassy_gospel": "smooth", "streetcorner_stack": "smooth"}
+
+def resolve_style(style):
+    """THE STYLE TRUTH (ledger dr08/dr27, 2026-07-12): ~73 curated voicing
+    style strings from the genre-expansion waves were DEAD — voice_pcs knew
+    five words and silently smoothed everything else, discarding the curation
+    intent of a third of the taxonomy. Named aliases map the explicit
+    intents; the keyword ladder catches the poetic tail; smooth remains the
+    honest default (it IS the voice-led core)."""
+    s = str(style or "smooth").lower()
+    if s in ("triad", "open", "drop2", "shell", "smooth"):
+        return s
+    if s in STYLE_ALIASES:
+        return STYLE_ALIASES[s]
+    for kw, real in (("rootless", "shell"), ("quartal", "open"),
+                     ("extended", "drop2"), ("lush", "drop2"),
+                     ("block", "smooth"), ("stack", "smooth"),
+                     ("powerchord", "triad"), ("chug", "triad"),
+                     ("riff", "triad"), ("arpeggio", "open"),
+                     ("open", "open")):
+        if kw in s:
+            return real
+    return "smooth"
+
 def voice_pcs(pcs_seq, style="smooth", lo=48, hi=76, thirds=None, roots=None):
     """Raw lane: pcs_seq = list of pc-lists (per chord). thirds/roots parallel lists
     of the third/root pc per chord (register law + shell need them; None = best effort)."""
+    style = resolve_style(style)
     out, prev = [], None
     for i, pcs in enumerate(pcs_seq):
         third = thirds[i] if thirds else None
@@ -94,6 +123,15 @@ def voice_pcs(pcs_seq, style="smooth", lo=48, hi=76, thirds=None, roots=None):
             # register floor pushed r within 3 semitones of hi -> IndexError)
             v = sorted({r, (_realize(fifth, r + 1, hi) or _realize(fifth, r + 1, hi + 12))[0],
                         (_realize(tenth, r + 13, hi + 12) or _realize(tenth, r + 13, hi + 24))[0]})
+            # THE EXTENSION KEEP (dr08): pcs beyond root/third/fifth — the 7th/
+            # 9th the genre asked for — were silently DISCARDED here. Realize
+            # them into the upper span: an open-voiced 9th stays a 9th.
+            _core = {root % 12, fifth % 12, tenth % 12}
+            for _ext in pcs:
+                if _ext % 12 not in _core:
+                    _e = _realize(_ext, r + 13, hi + 12) or _realize(_ext, r + 13, hi + 24)
+                    if _e and _e[0] not in v:
+                        v = sorted(v + [_e[0]])
         elif style == "drop2":
             close = _lead(pcs if len(pcs) >= 4 else pcs + [root], prev, lo, hi, third)
             dropped = close[-2] - 12
@@ -109,6 +147,7 @@ def voice_pcs(pcs_seq, style="smooth", lo=48, hi=76, thirds=None, roots=None):
 
 
 def voice_progression(labels, style="smooth", lo=48, hi=76):
+    style = resolve_style(style)
     seqs, thirds, roots = [], [], []
     for lb in labels:
         pcs, third = chord_pcs(lb)

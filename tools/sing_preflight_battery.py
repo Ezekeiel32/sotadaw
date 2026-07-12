@@ -149,6 +149,32 @@ def main():
        and body.index("try:") < body.index("ac.run(None, feed)"),
        "W99/W100: self-healing windows armed (OOM splits + retries; 1-note floor guarded)")
 
+    # THE VOCAL DOUBLE (dr21, 2026-07-12): the landing carries the hook-double
+    # block — same wav re-clipped onto hook spans, kill-switch + idempotence.
+    _src = open(os.path.join(ROOT, "tools", "sing.py")).read()
+    ok("SOTADAW_VOCAL_DOUBLE" in _src and "_dbl" in _src
+       and '"chorus", "drop", "hook", "theme"' in _src,
+       "vocal double block present (hook spans + kill-switch)")
+    ok('_hooks and _bpm > 0 and not song.get("tempoMap")' in _src,
+       "vocal double fails open on tempoMap songs")
+    # THE ADLIB RAIL (dr21 tail): kernel pure + rail guarded (child flag,
+    # words-only, idempotent, kill-switch)
+    import sing as _sg
+    _gp = _sg.find_hook_gaps(
+        {"lengthBars": 8, "sections": [{"name": "chorus", "startBar": 0}],
+         "tracks": [{"name": "lead", "notes": [
+             {"start": 0.0, "len": 1.0, "pitch": 60},
+             {"start": 6.0, "len": 1.0, "pitch": 62}]}]}, "lead")
+    ok(len(_gp) == 1 and 0.4 < _gp[0][0] < 6.0 and _gp[0][2] == 60,
+       "adlib kernel finds the onset gap, echoes the call pitch")
+    ok("SOTADAW_ADLIB_CHILD" in _src and "SOTADAW_ADLIBS" in _src
+       and '_adlibs"' in _src, "adlib rail guarded (child flag + kill-switch)")
+    # dr19: the vocals_sung mint (import path) carries the SAME fx chain as
+    # the fresh path — comp + delay; zero-fx re-sings were the driest vocal.
+    _mint = _src[_src.index('"name": "vocals_sung"'):][:600]
+    ok('"type": "comp"' in _mint and '"id": "fx_delay"' in _mint,
+       "import-path vocals_sung mint carries comp+delay (dr19)")
+
     print(f"sing-preflight battery: {PASS}/{PASS + len(FAIL)} "
           + ("clean" if not FAIL else "RED"))
     for f in FAIL:

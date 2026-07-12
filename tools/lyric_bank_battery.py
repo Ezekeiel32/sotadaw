@@ -65,6 +65,27 @@ ok(lb.lyrics_for("pop", None, 0) == [], "None notes -> no lyrics, never raises")
 ok(lb.lyrics_for("pop", [{"start": 2.0}, "junk", {"start": 1.0}], 0)[0]["beat"] == 1.0,
    "non-dict notes skipped; earliest beat first")
 
+# THE HOOK LINE LAW (dr20/dr21, 2026-07-12): repeated hook sections REUSE
+# the first hook's words (lexical identity); verses keep walking the stream.
+_SECS = [{"name": "verse", "startBar": 0}, {"name": "chorus", "startBar": 2},
+         {"name": "verse2", "startBar": 4}, {"name": "chorus2", "startBar": 6}]
+_NS = [{"start": float(b)} for b in
+       (0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27)]
+_W = [x["text"] for x in lb.lyrics_for("pop", _NS, 7, sections=_SECS)]
+ok(_W[4:8] == _W[12:16], "HOOK LAW: chorus2 sings the chorus's words")
+ok(_W[0:4] != _W[8:12], "STORY LAW: verse2 walks on (new words)")
+ok(lb.lyrics_for("pop", _NS, 7, sections=_SECS)
+   == lb.lyrics_for("pop", _NS, 7, sections=_SECS),
+   "sectioned lyrics deterministic")
+ok(len(lb.lyrics_for("pop", _NS, 7)) == 16
+   and [x["text"] for x in lb.lyrics_for("pop", _NS, 7)][0:4] != [None] * 4,
+   "sections=None keeps the legacy path")
+_DBL = sorted(_NS[4:8] + [{"start": 8.0}], key=lambda n: n["start"])
+_L2 = lb.lyrics_for("pop", _DBL, 7, sections=[{"name": "chorus", "startBar": 2}])
+_SB = [x["text"] for x in _L2 if x["beat"] == 8.0]
+ok(len(_SB) == 2 and _SB[0] == _SB[1],
+   "octave double shares ONE word (never two words at once)")
+
 total = PASS + len(FAIL)
 print(f"LYRIC BANK battery: {PASS}/{total} " + ("ALL GREEN" if not FAIL else "RED"))
 for m in FAIL:

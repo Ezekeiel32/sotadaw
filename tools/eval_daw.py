@@ -100,9 +100,28 @@ def check_song(name, genre):
         checks["spectral_floor_ok"] = (
             a["band_energy_pct"]["mid_500_2k"] >= tgt["mid_floor"]
             and a["band_energy_pct"]["himid_2k_6k"] >= (tgt.get("himid_floor") or 0))
+    # THE GENRE-TRUTH GATE (ledger dr30, 2026-07-12): clap_genre_sim was
+    # measured everywhere and GATED nowhere — a take embedding nowhere near
+    # its genre scored 1.0. This is a DISASTER GATE, not a quality bar
+    # (weakest legit take measured 0.359; wrong-genre embeddings land
+    # ~0.1-0.2) — ab_closeness stays the quality axis. CLAP is heavy:
+    # SOTADAW_EVAL_CLAP=0 skips (the check drops out of the denominator,
+    # never a free pass), and unavailability fails open the same way.
+    _gs = None
+    if os.environ.get("SOTADAW_EVAL_CLAP", "1") != "0":
+        _gs = clap_genre_sims([wav], genre)[0]
+        if _gs is not None:
+            # DATA PASS (16 rotation rows, 2026-07-12): raw births measure
+            # min 0.073 / med 0.223 — the 0.25 calibration came from
+            # LOUDNESS-PASSED briefs (0.36-0.49) and flags half of all raw
+            # world-genre rows (label sensitivity + level correlation).
+            # Rotation context gates at the true disaster floor.
+            _floor = 0.10 if os.environ.get("SOTADAW_EVAL_RAW") == "1" else 0.25
+            checks["genre_sim_ok"] = _gs >= _floor
     score = sum(checks.values()) / len(checks)
     return {"song": name, "genre": genre, "score": round(score, 3), "checks": checks,
             "metrics": {"bpm": song.get("bpm"), "key": song.get("key"),
+                        "clap_genre_sim": _gs,
                         "lufs": a["lufs_integrated"], "peak": a["peak_dbfs"],
                         "dbtp": a["true_peak_dbtp"], "clipped": a["clipped_samples"],
                         "bands": a["band_energy_pct"]}}

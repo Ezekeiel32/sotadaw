@@ -33,4 +33,14 @@ else
   applied=$((applied+1))
 fi
 
+# 0003 — MSVC: CachedValue<String> = var function-style cast is rejected by MSVC
+# (PORT_SPEC round-1 CI truth). Marker = the is_same_v dispatch line.
+if grep -q "is_same_v<ValueType, juce::String>" "$TE/modules/tracktion_engine/utilities/tracktion_ValueTreeUtilities.h" 2>/dev/null; then
+  skipped=$((skipped+1))
+else
+  git -C "$TE" apply "$ROOT/app/patches/0003-msvc-cachedvalue-var-cast.patch" 2>/dev/null \
+    || patch -p1 -N -d "$TE" < "$ROOT/app/patches/0003-msvc-cachedvalue-var-cast.patch"
+  applied=$((applied+1))
+fi
+
 echo "[engine-patches] applied=$applied skipped=$skipped"

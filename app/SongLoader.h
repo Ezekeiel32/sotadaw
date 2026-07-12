@@ -113,6 +113,77 @@ struct SongSection { juce::String name; double startBar = 0; };
 struct SongMidiMap { int cc = -1; juce::String track, param; };   // W7: CC -> named param on a track ("master" = master chain)
 struct SongTempoPoint { double bar = 0, bpm = 120, curve = 1; };  // tempo map: curve shapes the span FROM this point:
                                                                   // 1 = hold then step at the next point (default), 0 = linear ramp, <0 = early jump
+// THE CHORD TRACK (BEST_DAW_30 #2): chords[] {bar 1-based, chord "Am7", conf}
+// has NINE python writers (chordvote/suggest/reharm/finish/import) and until
+// now zero engine READERS — the retune grid re-inferred harmony from notes
+// while the declared truth rode along unread. Parsed here; serialization stays
+// the passthrough (extras) — this build never rewrites another layer's field.
+struct SongChord { double bar = 1; int rootPc = 0; int mask = 0; };
+
+// THE WORLD GRID (BEST_DAW_30 #1): meterMap[] {bar, num, den} — the tempoMap's
+// twin. Until now the entire world was HARD 4/4 (a carnatic tala, a waltz, a
+// 7/8 prog riff were unrepresentable). Notes stay QUARTER-BEAT absolute (zero
+// migration; absent map = exactly yesterday); the map redefines what a BAR is:
+// ruler/roll bars, engine time-signatures (click, MIDI/DAW exports), and every
+// bar->beat conversion route through barStartBeat()/beatsInBar().
+struct SongMeterPoint { double bar = 0; int num = 4, den = 4; };
+
+// THE MODULATION GRAPH (BEST_DAW_30 #3): motion/keying as song objects. The
+// vendored engine always had the machinery (LFOModifier / EnvelopeFollower-
+// Modifier + AutomatableParameter::addModifier) — nothing in the schema could
+// reach it: fx_pump faked sidechain as a beat-clock duck and no track could
+// key another's dynamics. modulators[] rides the automation target DSL:
+//   {"kind":"lfo","target":"tracks.pads.fx[0].cutoff","rateHz":0.5|"sync":"1/4",
+//    "depth":0.4,"shape":0,"phase":0,"bipolar":1}
+//   {"kind":"follower","source":"kick","target":"tracks.bass.gainDb",
+//    "attackMs":4,"releaseMs":110,"depth":-0.6}   // negative depth = the DUCK
+struct SongModulator
+{
+    juce::String kind { "lfo" }, target, source, sync;
+    double rateHz = 1.0, depth = 0.5, phase = 0.0, shape = 0.0;
+    double attackMs = 10.0, releaseMs = 150.0;
+    bool bipolar = true;
+};
+
+// "Am7" / "F#m7b5" / "Cmaj9" / "Gsus4" -> root pc + pitch-class mask. Tolerant:
+// an unknown suffix lands on the major triad (never drops a declared chord).
+inline bool parseChordSymbol (const juce::String& sym, int& rootPc, int& mask)
+{
+    static const int base[7] = { 9, 11, 0, 2, 4, 5, 7 };        // A B C D E F G
+    const auto s = sym.trim();
+    if (s.isEmpty()) return false;
+    const auto c0 = (juce::juce_wchar) juce::CharacterFunctions::toUpperCase (s[0]);
+    if (c0 < 'A' || c0 > 'G') return false;
+    rootPc = base[c0 - 'A'];
+    int i = 1;
+    while (i < s.length() && (s[i] == '#' || s[i] == 'b'))
+        { rootPc = (rootPc + (s[i] == '#' ? 1 : 11)) % 12; ++i; }
+    const auto q = s.substring (i).trim().toLowerCase().removeCharacters (" ()");
+    const int r = rootPc;
+    auto pcs = [r] (std::initializer_list<int> iv)
+    { int m = 0; for (int v : iv) m |= (1 << ((r + v) % 12)); return m; };
+    if      (q.startsWith ("m7b5"))                          mask = pcs ({0, 3, 6, 10});
+    else if (q.startsWith ("dim7"))                          mask = pcs ({0, 3, 6, 9});
+    else if (q.startsWith ("dim"))                           mask = pcs ({0, 3, 6});
+    else if (q.startsWith ("aug"))                           mask = pcs ({0, 4, 8});
+    else if (q.startsWith ("sus2"))                          mask = pcs ({0, 2, 7});
+    else if (q.startsWith ("sus"))                           mask = pcs ({0, 5, 7});
+    else if (q.startsWith ("maj9"))                          mask = pcs ({0, 4, 7, 11, 2});
+    else if (q.startsWith ("maj7"))                          mask = pcs ({0, 4, 7, 11});
+    else if (q.startsWith ("madd9"))                         mask = pcs ({0, 3, 7, 2});
+    else if (q.startsWith ("m9") || q.startsWith ("min9"))   mask = pcs ({0, 3, 7, 10, 2});
+    else if (q.startsWith ("m7") || q.startsWith ("min7"))   mask = pcs ({0, 3, 7, 10});
+    else if (q.startsWith ("m6") || q.startsWith ("min6"))   mask = pcs ({0, 3, 7, 9});
+    else if (q.startsWith ("m") || q.startsWith ("min"))     mask = pcs ({0, 3, 7});
+    else if (q.startsWith ("add9"))                          mask = pcs ({0, 4, 7, 2});
+    else if (q.startsWith ("9"))                             mask = pcs ({0, 4, 7, 10, 2});
+    else if (q.startsWith ("7"))                             mask = pcs ({0, 4, 7, 10});
+    else if (q.startsWith ("6"))                             mask = pcs ({0, 4, 7, 9});
+    else if (q.startsWith ("5"))                             mask = pcs ({0, 7});
+    else                                                     mask = pcs ({0, 4, 7});
+    return true;
+}
+
 struct Song
 {
     int version = 1;
@@ -120,6 +191,9 @@ struct Song
     juce::String key, swingGrid { "16th" };
     double swingAmount = 0.5;
     std::vector<SongTempoPoint> tempoMap;   // extra tempo points after the base bpm (bar 0)
+    std::vector<SongChord> chords;          // the harmonic spine (read-only here; extras serializes)
+    std::vector<SongModulator> modulators;  // LFO/follower motion + keyed sidechain (#3)
+    std::vector<SongMeterPoint> meterMap;   // THE WORLD GRID (#1): sorted at parse
     std::vector<SongSection> sections;
     std::vector<SongMidiMap> midiMap;   // hardware bindings (learned in-app or agent-written)
     std::vector<SongFx> master;
@@ -132,7 +206,41 @@ struct Song
                                         // future python annotations) — round-trips verbatim
     juce::StringArray sceneNames;       // performance view scenes (launcher columns)
     std::vector<SongTrack> tracks;
-    double totalBeats() const { return lengthBars * 4.0; }
+    // quarter-note beats in the bar CONTAINING `bar` (4.0 forever when no map)
+    double beatsInBar (double bar) const
+    {
+        double per = 4.0;
+        for (auto& mp : meterMap)
+            if (mp.bar <= bar + 1e-9)
+                per = mp.num * (4.0 / mp.den);
+            else
+                break;                       // meterMap is sorted at parse
+        return per;
+    }
+
+    // quarter-beat position where bar N starts, under the meter map
+    double barStartBeat (double bar) const
+    {
+        if (meterMap.empty())
+            return bar * 4.0;
+        double beat = 0.0, prevBar = 0.0, per = 4.0;
+        for (auto& mp : meterMap)
+        {
+            if (mp.bar >= bar) break;
+            if (mp.bar > prevBar)
+            {
+                beat += (mp.bar - prevBar) * per;
+                prevBar = mp.bar;
+            }
+            per = mp.num * (4.0 / mp.den);
+        }
+        return beat + (bar - prevBar) * per;
+    }
+
+    double totalBeats() const
+    {
+        return meterMap.empty() ? lengthBars * 4.0 : barStartBeat (lengthBars);
+    }
 };
 
 inline std::map<juce::String, float> parseParams (const juce::var& v)
@@ -217,6 +325,54 @@ inline bool parseSong (const juce::File& f, Song& s)
         for (auto& sv : *secs)
             s.sections.push_back ({ sv.getProperty ("name", "").toString(),
                                     (double) sv.getProperty ("startBar", 0.0) });
+
+    s.chords.clear();                       // THE CHORD TRACK: declared harmony, parsed
+    if (auto* chs = v.getProperty ("chords", juce::var()).getArray())
+        for (auto& cv : *chs)
+        {
+            SongChord c;
+            c.bar = (double) cv.getProperty ("bar", 1.0);
+            if (parseChordSymbol (cv.getProperty ("chord", "").toString(), c.rootPc, c.mask))
+                s.chords.push_back (c);
+        }
+
+    s.meterMap.clear();                     // THE WORLD GRID (#1)
+    if (auto* mm = v.getProperty ("meterMap", juce::var()).getArray())
+    {
+        for (auto& mv : *mm)
+        {
+            SongMeterPoint mp;
+            mp.bar = (double) mv.getProperty ("bar", 0.0);
+            mp.num = juce::jlimit (1, 32, (int) mv.getProperty ("num", 4));
+            mp.den = (int) mv.getProperty ("den", 4);
+            if (mp.den != 1 && mp.den != 2 && mp.den != 4 && mp.den != 8 && mp.den != 16)
+                mp.den = 4;
+            if (mp.bar >= 0)
+                s.meterMap.push_back (mp);
+        }
+        std::sort (s.meterMap.begin(), s.meterMap.end(),
+                   [] (const SongMeterPoint& a, const SongMeterPoint& b) { return a.bar < b.bar; });
+    }
+
+    s.modulators.clear();                   // THE MODULATION GRAPH (#3)
+    if (auto* mods = v.getProperty ("modulators", juce::var()).getArray())
+        for (auto& mv : *mods)
+        {
+            SongModulator m;
+            m.kind      = mv.getProperty ("kind", "lfo").toString().toLowerCase();
+            m.target    = mv.getProperty ("target", "").toString();
+            m.source    = mv.getProperty ("source", "").toString();
+            m.sync      = mv.getProperty ("sync", "").toString();
+            m.rateHz    = (double) mv.getProperty ("rateHz", 1.0);
+            m.depth     = (double) mv.getProperty ("depth", 0.5);
+            m.phase     = (double) mv.getProperty ("phase", 0.0);
+            m.shape     = (double) mv.getProperty ("shape", 0.0);
+            m.attackMs  = (double) mv.getProperty ("attackMs", 10.0);
+            m.releaseMs = (double) mv.getProperty ("releaseMs", 150.0);
+            m.bipolar   = (bool) mv.getProperty ("bipolar", true);
+            if (m.target.isNotEmpty())
+                s.modulators.push_back (m);
+        }
 
     s.provenance = v.getProperty ("provenance", juce::var());
     s.loopMeta   = v.getProperty ("_loop", juce::var());
@@ -870,16 +1026,46 @@ inline juce::String computeRetuneGrid (const Song& s, const juce::String& hostTr
             }
         }
     }
-    juce::StringArray out;
-    for (auto& c : w)
+    // THE SPINE OUTRANKS INFERENCE (BEST_DAW_30 #2): declared chords[] own
+    // their spans cell-for-cell; note inference covers only undeclared spans
+    // and remains the whole story when no chord track exists (never removed).
+    std::vector<int> declared ((size_t) cells, 0);
+    if (! s.chords.empty())
     {
-        double mx = 0; for (double v : c) mx = juce::jmax (mx, v);
-        int mask = 0;
-        if (mx > 0)
-            for (int pc = 0; pc < 12; ++pc)
-                if (c[(size_t) pc] >= 0.25 * mx) mask |= (1 << pc);
+        auto sorted = s.chords;
+        std::sort (sorted.begin(), sorted.end(),
+                   [] (const SongChord& a, const SongChord& b) { return a.bar < b.bar; });
+        for (size_t ci = 0; ci < sorted.size(); ++ci)
+        {
+            const double b0 = (sorted[ci].bar - 1.0) * 4.0;      // the wire is 1-based bars
+            const double b1 = ci + 1 < sorted.size() ? (sorted[ci + 1].bar - 1.0) * 4.0
+                                                     : (double) cells * 0.5;
+            const int i0 = juce::jlimit (0, cells, (int) (b0 / 0.5));
+            const int i1 = juce::jlimit (0, cells, (int) std::ceil (b1 / 0.5));
+            for (int i = i0; i < i1; ++i)
+                declared[(size_t) i] = sorted[ci].mask;
+        }
+    }
+    juce::StringArray out;
+    for (int ci = 0; ci < cells; ++ci)
+    {
+        auto& c = w[(size_t) ci];
+        int mask = declared[(size_t) ci];
+        if (mask == 0)
+        {
+            double mx = 0; for (double v : c) mx = juce::jmax (mx, v);
+            if (mx > 0)
+                for (int pc = 0; pc < 12; ++pc)
+                    if (c[(size_t) pc] >= 0.25 * mx) mask |= (1 << pc);
+        }
         out.add (juce::String (mask));
     }
+    if (std::getenv ("SOTADAW_RETUNE_GRID_DEBUG") != nullptr)
+        std::fprintf (stderr, "[retunegrid] %s cells=%d declared=%d first8=%s\n",
+                      hostTrack.toRawUTF8(), cells,
+                      (int) std::count_if (declared.begin(), declared.end(),
+                                           [] (int m) { return m != 0; }),
+                      out.joinIntoString (",").substring (0, 40).toRawUTF8());
     return out.joinIntoString (",");
 }
 
@@ -896,12 +1082,49 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
     double pfSetup = 0, pfSource = 0, pfFx = 0, pfAutom = 0, pfMidi = 0, pfClips = 0, pfSlots = 0, pfBuses = 0;
     auto edit = te::Edit::createSingleTrackEdit (engine, role);
     edit->ensureNumberOfAudioTracks ((int) (s.tracks.size() + s.buses.size()));
+    juce::String errors;                   // collected build warnings (meter/mod/fx)
     edit->tempoSequence.getTempo (0)->setBpm (s.bpm);
     for (auto& tp : s.tempoMap)            // TEMPO IS A CURVE: ramps/switches; everything
         if (tp.bar > 0 && tp.bpm >= 20 && tp.bpm <= 400)   // downstream places in beats, so
             edit->tempoSequence.insertTempo (               // notes/clips/automation follow;
-                te::BeatPosition::fromBeats (tp.bar * 4.0), // warped audio follows via autoTempo
-                tp.bpm, (float) juce::jlimit (-1.0, 1.0, tp.curve));
+                te::BeatPosition::fromBeats (s.barStartBeat (tp.bar)), // #1: bar->beat rides the
+                tp.bpm, (float) juce::jlimit (-1.0, 1.0, tp.curve));   // meter map (4/4 = old math)
+    // THE WORLD GRID (#1): meterMap -> engine time signatures. Bars stop lying:
+    // the click, MIDI/DAWproject exports and every bar boundary the engine
+    // reports now speak the real meter. Notes stay quarter-beat absolute.
+    for (auto& mp : s.meterMap)
+    {
+        // v1 boundary (measured 2026-07-12): engine BeatPositions are
+        // DENOMINATOR-beats — a 7/8 timesig re-denominates every note/clip/
+        // automation position this build feeds in quarter-beats (an 18-beat
+        // song rendered 4.5s: 0.25s eighth-beats). den==4 meters (3/4, 5/4,
+        // 7/4...) are exact with zero conversion; den 8/16 keep OUR bar math
+        // (ruler/roll truth) and enter the engine with the quarter<->engine
+        // conversion boundary leg. Loud, never silent.
+        if (mp.den != 4)
+        {
+            errors << "meterMap: " << mp.num << "/" << mp.den
+                   << " shapes bars in-app; engine time-signature lands with "
+                      "the conversion-boundary leg (den==4 meters are live)\n";
+            continue;
+        }
+        te::TimeSigSetting::Ptr tsg;
+        if (mp.bar <= 0)
+            tsg = edit->tempoSequence.getTimeSig (0);
+        else
+            tsg = edit->tempoSequence.insertTimeSig (
+                      te::BeatPosition::fromBeats (s.barStartBeat (mp.bar)));
+        if (tsg != nullptr)
+        {
+            tsg->numerator = mp.num;
+            tsg->denominator = mp.den;
+        }
+    }
+    if (! s.meterMap.empty() && std::getenv ("SOTADAW_GRID_DEBUG") != nullptr)
+        for (auto ts : edit->tempoSequence.getTimeSigs())
+            std::fprintf (stderr, "[worldgrid] timesig %d/%d at beat %.2f\n",
+                          (int) ts->numerator, (int) ts->denominator,
+                          ts->startBeatNumber.get().inBeats());
     edit->getMasterVolumePlugin()->setVolumeDb ((float) s.masterGainDb);
 
     // master chain in array order. APPEND (-1) each one: explicit indices past the list's
@@ -971,12 +1194,16 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
         }
     }
     const auto songEnd = edit->tempoSequence.toTime (te::BeatPosition::fromBeats (s.totalBeats() + 4.0));
-    juce::String errors;
 
     // bus numbers are 1-based; assigned before tracks so sends can reference them
     std::map<juce::String, int> busNum;
     for (size_t b = 0; b < s.buses.size(); ++b)
         busNum[s.buses[b].id] = (int) b + 1;
+
+    // #3 modulator resolution context, collected while tracks build
+    struct ModCtx { te::AudioTrack* track = nullptr; te::VolumeAndPanPlugin* vol = nullptr;
+                    te::Plugin* source = nullptr; std::vector<te::Plugin*> fxPlugs; };
+    std::map<juce::String, ModCtx> modCtx;
 
     pfSetup = pfMs (pfT0);
     int i = 0;
@@ -1043,6 +1270,9 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
                 errors << t.name << ": automation: " << aerr << "\n";
         }
         pfAutom += pfMs (pfA);
+
+        if (! s.modulators.empty())          // #3: keep the resolution context
+            modCtx[t.name] = { track, vol, sourcePlug, fxPlugs };
 
         const auto pfM = juce::Time::getHighResolutionTicks();
         if (! t.notes.empty())
@@ -1246,6 +1476,80 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
             vol->setVolumeDb ((float) b.gainDb);
     }
     pfBuses = pfMs (pfB);
+
+    // ---- THE MODULATION GRAPH (#3): wire after every track exists ----
+    // LFOs live on the TARGET's track; followers live on their SOURCE track
+    // (a modifier eats its own track's audio — kick keys bass = follower on
+    // the kick, assigned to the bass's parameter, negative depth = the duck).
+    for (auto& m : s.modulators)
+    {
+        if (! m.target.startsWith ("tracks."))
+        { errors << "modulator: v1 targets are tracks.<name>.<param>: " << m.target << "\n"; continue; }
+        const auto rest = m.target.fromFirstOccurrenceOf ("tracks.", false, false);
+        const auto tname = rest.upToFirstOccurrenceOf (".", false, false);
+        const auto ptarget = rest.fromFirstOccurrenceOf (".", false, false);
+        auto it = modCtx.find (tname);
+        if (it == modCtx.end() || ptarget.isEmpty())
+        { errors << "modulator: unknown target track '" << tname << "'\n"; continue; }
+        bool isVolDb = false;
+        juce::String merr;
+        auto* param = resolveAutoTarget (ptarget, it->second.vol, it->second.source,
+                                         it->second.fxPlugs, isVolDb, merr);
+        if (param == nullptr)
+        { errors << "modulator " << m.target << ": " << merr << "\n"; continue; }
+        te::AudioTrack* home = it->second.track;
+        if (m.kind == "follower")
+        {
+            auto sit = modCtx.find (m.source);
+            if (sit == modCtx.end())
+            { errors << "modulator: follower needs source=<track name>, got '" << m.source << "'\n"; continue; }
+            home = sit->second.track;
+        }
+        auto* ml = home->getModifierList();
+        if (ml == nullptr)
+        { errors << "modulator: no modifier list on " << home->getName() << "\n"; continue; }
+        if (m.kind == "follower")
+        {
+            auto mod = ml->insertModifier (juce::ValueTree (te::IDs::ENVELOPEFOLLOWER), -1, nullptr);
+            if (auto* ef = dynamic_cast<te::EnvelopeFollowerModifier*> (mod.get()))
+            {
+                ef->attack  = (float) juce::jmax (0.3, m.attackMs);
+                ef->release = (float) juce::jmax (1.0, m.releaseMs);
+                // the SIGN rides the modifier's own depth (-1..1): assignment
+                // values do not carry negatives (measured: a -0.9 duck ADDED
+                // +10.5 dB) — depth<0 inverts the envelope = the duck.
+                ef->depth   = (float) juce::jlimit (-1.0, 1.0, m.depth);
+                param->addModifier (*ef, 1.0f);
+                if (std::getenv ("SOTADAW_MOD_DEBUG") != nullptr)
+                    std::fprintf (stderr, "[modgraph] follower %s -> %s depth=%.2f\n",
+                                  m.source.toRawUTF8(), m.target.toRawUTF8(), m.depth);
+            }
+        }
+        else
+        {
+            auto mod = ml->insertModifier (juce::ValueTree (te::IDs::LFO), -1, nullptr);
+            if (auto* lfo = dynamic_cast<te::LFOModifier*> (mod.get()))
+            {
+                double hz = m.rateHz;
+                if (m.sync.isNotEmpty())       // "1/4" = one LFO cycle per beat
+                {
+                    const double den = m.sync.fromFirstOccurrenceOf ("/", false, false).getDoubleValue();
+                    if (den > 0)
+                        hz = (s.bpm / 60.0) * (den / 4.0);
+                }
+                lfo->wave     = (float) m.shape;
+                lfo->rateType = (float) te::ModifierCommon::hertz;   // default is BAR-synced
+                lfo->rate     = (float) juce::jlimit (0.01, 50.0, hz);
+                lfo->depth    = 1.0f;
+                lfo->bipolar  = m.bipolar ? 1.0f : 0.0f;
+                lfo->phase    = (float) m.phase;
+                param->addModifier (*lfo, (float) m.depth);
+                if (std::getenv ("SOTADAW_MOD_DEBUG") != nullptr)
+                    std::fprintf (stderr, "[modgraph] lfo %.2fHz -> %s depth=%.2f\n",
+                                  hz, m.target.toRawUTF8(), m.depth);
+            }
+        }
+    }
 
     // song-level automation: masterGainDb | master[i].<param>
     for (auto& a : s.automation)

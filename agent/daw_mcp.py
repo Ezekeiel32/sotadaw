@@ -196,6 +196,67 @@ def validate_scoped(song, touched_names):
     return blocking, notes
 
 
+def sanitize_song(song):
+    """SANITIZE-AT-WRITE (worldclass ledger dr16, 2026-07-12): heal the garbage
+    a weak model can emit BEFORE it lands. json.loads happily accepts NaN/
+    Infinity (the engine then corpses the whole song: "cannot parse"); exact
+    duplicate stacked notes ship as +6 dB phase-coherent doubling; negative
+    starts and vel>1 parse fine and sound broken. Pure heal, returns
+    (song, receipts[]) — validation still rejects what healing cannot fix."""
+    import math
+    rec = []
+    def fin(x, d=0.0):
+        try:
+            return x if isinstance(x, (int, float)) and math.isfinite(x) else d
+        except Exception:
+            return d
+    for t in song.get("tracks", []) if isinstance(song.get("tracks"), list) else []:
+        if not isinstance(t, dict):
+            continue
+        for k, dflt in (("gainDb", 0.0), ("pan", 0.0)):
+            if k in t and fin(t[k], None) is None:
+                t[k] = dflt
+                rec.append(f"{t.get('name','?')}.{k}: non-finite -> {dflt}")
+        ns = t.get("notes")
+        if not isinstance(ns, list):
+            continue
+        clean, seen, dropped, dup, clamped = [], {}, 0, 0, 0
+        for n in ns:
+            if not isinstance(n, dict):
+                dropped += 1
+                continue
+            st, ln = fin(n.get("start"), None), fin(n.get("len"), None)
+            pi, ve = fin(n.get("pitch"), None), fin(n.get("vel"), None)
+            if st is None or pi is None:
+                dropped += 1
+                continue
+            n2 = dict(n)
+            if st < 0:
+                n2["start"], clamped = 0.0, clamped + 1
+            if ln is None or ln <= 0:
+                n2["len"], clamped = 0.1, clamped + 1
+            p_int = int(round(pi))
+            if not 0 <= p_int <= 127:
+                n2["pitch"], clamped = max(0, min(127, p_int)), clamped + 1
+            if ve is None or not 0 < ve <= 1.0:
+                n2["vel"], clamped = max(0.05, min(1.0, ve if ve is not None else 0.8)), clamped + 1
+            key = (round(float(n2.get("start", 0.0)), 4), int(round(fin(n2.get("pitch"), 60))))
+            if key in seen:                     # exact stack = +6 dB phase double
+                if fin(n2.get("vel"), 0) > fin(clean[seen[key]].get("vel"), 0):
+                    clean[seen[key]] = n2       # keep the louder
+                dup += 1
+                continue
+            seen[key] = len(clean)
+            clean.append(n2)
+        if dropped or dup or clamped:
+            t["notes"] = clean
+            bits = [b for b, c in (("%d non-finite dropped" % dropped, dropped),
+                                   ("%d stacked duplicates merged" % dup, dup),
+                                   ("%d fields clamped" % clamped, clamped)) if c]
+            rec.append(f"{t.get('name','?')}: " + ", ".join(bits))
+    return song, rec
+
+
 def validate_song(song):
     errs = []
     if not isinstance(song.get("bpm"), (int, float)) or not 40 <= song["bpm"] <= 220:
@@ -482,6 +543,7 @@ def t_write_song(args):
             song = json.loads(song)
         except json.JSONDecodeError as e:
             return f"song is not valid JSON: {e}"
+    song, _san = sanitize_song(song)
     errs = validate_song(song)
     if errs:
         return "SONG INVALID — fix and resubmit:\n- " + "\n- ".join(errs) + f"\n{SONG_SCHEMA_HINT}"
@@ -489,8 +551,9 @@ def t_write_song(args):
     _awrite(path, song)
     n = sum(len(t["notes"]) for t in song["tracks"])
     _rc(name, "write_song", fields=["*"], summary=f"FULL WRITE: {len(song['tracks'])} tracks, {n} notes")
+    _sline = ("\nsanitized: " + "; ".join(_san)) if _san else ""
     return (f"OK: songs/{name}.json written ({len(song['tracks'])} tracks, {n} notes). "
-            f"Next: render_song." + _doctor_verdict(song))
+            f"Next: render_song." + _sline + _doctor_verdict(song))
 
 def t_update_track(args):
     """Surgically replace fields of ONE track in a song — no need to resend the whole song."""
@@ -521,6 +584,7 @@ def t_update_track(args):
             except json.JSONDecodeError as e:
                 return f"notes is not valid JSON: {e}"
         t["notes"] = notes
+        _, _san_ut = sanitize_song({"tracks": [t]})   # dr16: heal the one track
     for k in ("gainDb", "pan"):
         if k in args and args[k] is not None:
             t[k] = args[k]
@@ -2286,6 +2350,42 @@ def t_song_structure(args):
     rc, o, e = run(cmd, timeout=300)
     return o.strip() if rc == 0 else f"segment failed:\n{(o + e)[-500:]}"
 
+def t_set_chords(args):
+    """THE CHORD TRACK write half (BEST_DAW_30 #2): land/replace the song's
+    declared harmonic spine. The engine's live retune grid now READS chords[]
+    (declared spans outrank note inference); harmonize/reharm/doctor already
+    consume it. Receipted like every mutator."""
+    name = resolve_song_name(args["song"])
+    path = os.path.join(SONGS, f"{name}.json")
+    _ensure_prop(name, path)
+    if not os.path.exists(path):
+        return f"no such song '{name}'"
+    rows = args.get("chords")
+    if not isinstance(rows, list) or not rows:
+        return "chords must be a non-empty list of {bar, chord[, conf]}"
+    clean = []
+    for r in rows:
+        try:
+            bar = float(r["bar"])
+            ch = str(r["chord"]).strip()
+            if not ch or bar < 1:
+                return f"bad row {r}: bar is 1-based, chord non-empty"
+            clean.append({"bar": bar, "chord": ch,
+                          "conf": round(float(r.get("conf", 1.0)), 3),
+                          "src": "agent"})
+        except (KeyError, TypeError, ValueError) as e:
+            return f"bad row {r}: {e}"
+    song = json.load(open(path))
+    song["chords"] = sorted(clean, key=lambda r: r["bar"])
+    _awrite(path, song)
+    _rc(name, "set_chords", fields=["meta:chords"],
+        summary=f"set_chords {len(clean)} chords "
+                f"({clean[0]['chord']}..{clean[-1]['chord']})")
+    return (f"chord track set: {len(clean)} chords, bars "
+            f"{clean[0]['bar']:g}..{clean[-1]['bar']:g}. The live retune grid, "
+            f"harmonize/reharm and the doctor all follow this spine now.")
+
+
 def t_suggest_chords(args):
     """HARMONY ADVISOR: ranked substitutions + rewrites with theory WHYs."""
     name = resolve_song_name(args["song"])
@@ -3739,6 +3839,8 @@ TOOLS = {
                      "bpm": {"type": "number", "description": "snap boundaries to bars at this tempo"},
                      "vocal": {"type": "string", "description": "vocal stem wav path — unlocks verse/hook labels"}},
                      "required": ["audio_path"]}),
+    "set_chords": (t_set_chords, "THE CHORD TRACK write half: land/replace the song's declared harmonic spine — chords[] {bar (1-based), chord ('Am7'/'F#m7b5'/'Cmaj9'...), conf?}. The engine's LIVE retune grid reads declared spans cell-for-cell (they outrank note inference); harmonize/reharm/suggest_chords/doctor consume the same lane. Receipted.",
+                    {"type": "object", "properties": {"song": {"type": "string"}, "chords": {"type": "array", "items": {"type": "object", "properties": {"bar": {"type": "number"}, "chord": {"type": "string"}, "conf": {"type": "number"}}, "required": ["bar", "chord"]}}}, "required": ["song", "chords"]}),
     "suggest_chords": (t_suggest_chords, "HARMONY ADVISOR (Scaler-class, symbolic): ranked per-slot substitutions + whole-progression rewrites for the song's own chord lane, each with the theory WHY — function flow T→S→D, secondary dominants (V7 of next), tritone subs, mode mixture, backdoor cadences — scored by voice-leading cost through the same kernel real parts use, optional KG genre prior. Rewrites ship a ready reharm --to line. Read-only. Args: song, genre?, k? (alts per slot, default 4).",
                     {"type": "object", "properties": {"song": {"type": "string"},
                      "genre": {"type": "string", "description": "genre prior from the KG's chord DNA"},

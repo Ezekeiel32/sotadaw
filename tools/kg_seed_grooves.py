@@ -113,7 +113,11 @@ STRAIGHT_ON_PURPOSE = {
     "ambient", "drone", "berlin_school", "dungeon_synth", "orchestral_cinematic",
     "post_rock", "post_metal", "shoegaze", "idm", "glitchcore", "breakcore",
     "dariacore", "minimal_techno", "black_metal", "death_metal", "djent",
-    "math_rock", "gqom", "jpop", "pop", "chillwave",
+    "math_rock", "jpop", "pop", "chillwave",
+    # gqom LEFT this set 2026-07-12 (wave49): dr28's genre marker + the hat-
+    # slot truth (gqom hats live ON the triplet thirds) outweigh the earlier
+    # straight call — gqom_triplet pulls e/a slots toward 1/3 positions while
+    # the broken KICK CELL stays exact (the atlas anchor law).
     # non-4/4 or non-grid idioms a 16-slot 4/4 template would falsify:
     "flamenco", "maloya", "sega", "gnawa", "celtic", "klezmer", "tango",
     "fado", "morna", "rebetiko", "qawwali", "carnatic", "hindustani",

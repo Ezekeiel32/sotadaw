@@ -72,7 +72,11 @@ public:
 
         for (auto& zp : zoneParams)
             if (auto it = ui.zones.find (zp.second); it != ui.zones.end())
+            {
+                if (zp.first->hasActiveModifierAssignments())   // #3: fx zones follow
+                    zp.first->updateFromAutomationSources (fc.editTime.getStart());
                 *it->second = (FAUSTFLOAT) zp.first->getCurrentValue();
+            }
 
         const int n = fc.bufferNumSamples;
         if (inBuf.getNumSamples() < n)  { inBuf.setSize (2, n, false, false, true); outBuf.setSize (2, n, false, false, true); }

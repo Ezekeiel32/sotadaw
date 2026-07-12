@@ -1,0 +1,19 @@
+diff --git a/modules/tracktion_engine/utilities/tracktion_ValueTreeUtilities.h b/modules/tracktion_engine/utilities/tracktion_ValueTreeUtilities.h
+index 6017f54..5f65246 100644
+--- a/modules/tracktion_engine/utilities/tracktion_ValueTreeUtilities.h
++++ b/modules/tracktion_engine/utilities/tracktion_ValueTreeUtilities.h
+@@ -671,7 +671,13 @@ template<typename ValueType, typename... CachedValues>
+ static void copyPropertiesToCachedValues (const juce::ValueTree& v, juce::CachedValue<ValueType>& cachedValue, CachedValues&&... cachedValues)
+ {
+     if (auto p = v.getPropertyPointer (cachedValue.getPropertyID()))
+-        cachedValue = ValueType (*p);
++    {
++        // sotadaw patch 0003: MSVC rejects the function-style var->String cast
++        if constexpr (std::is_same_v<ValueType, juce::String>)
++            cachedValue = p->toString();
++        else
++            cachedValue = ValueType (*p);
++    }
+     else
+         cachedValue.resetToDefault();
+ 

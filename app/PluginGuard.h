@@ -52,6 +52,20 @@ struct PluginGuard
         flightFile().deleteFile();
     }
 
+    /** V49 v1.5 THE HANG NAMER: the flight that is OPEN right now ("" = none).
+        A crash leaves the file for boot promotion; a HANG leaves it while the
+        transport stalls — the UI watchdog reads this to NAME the offender. */
+    static juce::String currentFlight()
+    {
+        auto f = flightFile();
+        if (! f.existsAsFile())
+            return {};
+        const auto v = juce::JSON::parse (f.loadFileAsString());
+        const auto name = v.getProperty ("plugin", juce::var()).toString();
+        const auto phase = v.getProperty ("phase", juce::var()).toString();
+        return name.isEmpty() ? juce::String() : name + " (" + phase + ")";
+    }
+
     /** Boot-time: a stale flight file means the last session died inside a plugin
         operation. Promote that plugin to quarantine. Returns its name ("" = clean boot). */
     static juce::String promoteStaleFlight()

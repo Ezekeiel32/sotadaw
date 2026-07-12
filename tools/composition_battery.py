@@ -473,6 +473,208 @@ def main():
           any(s.startswith("verse") for s in _mtl) and any(s.startswith("chorus") for s in _mtl)
           and not any(s.rstrip("0123456789") == "drop" for s in _mtl), str(_mtl))
 
+    # ---- THE REPEAT CRIME (dr07, 2026-07-12): no section instance is a
+    # byte-copy of its first occurrence — drop2 re-breathes the hats, verse2
+    # sheds its bed for the first half, the final chorus lifts an octave
+    # layer. SOTADAW_REPEATVAR=0 restores the clone (kill-switch law).
+    _dsp = spans(ho, "drop")
+    _hat = lane(ho, "hat")
+    _fph = lambda tr, sp: sorted(round((n["start"] - sp[0]) % 16, 3)
+                                 for n in tr["notes"] if sp[0] <= n["start"] < sp[1])
+    check("dr07 drop2 breathes (hat onsets differ from drop)",
+          len(_dsp) >= 2 and _fph(_hat, _dsp[0]) != _fph(_hat, _dsp[1]),
+          f"({len(_fph(_hat, _dsp[0]))} vs {len(_fph(_hat, _dsp[1]))} onsets)")
+    # kill-switch: flag-off restores the old behaviors on the moves this flag
+    # OWNS — verse2 keeps its bed and the last chorus stays undoubled. (Hats
+    # differ across drops even flag-off: W21's fabric law owns that, by design.)
+    g_rv = arr("_cmp_gospel", "_cmp_gospel_rvoff", {"SOTADAW_REPEATVAR": "0"})
+    _vspo, _colo = spans(g_rv, "verse"), lane(g_rv, "color")
+    _fho = lambda sp: [n for n in (_colo["notes"] if _colo else [])
+                       if sp[0] <= n["start"] < (sp[0] + sp[1]) / 2]
+    _cspo = spans(g_rv, "chorus")
+    _ldno = [n for n in lane(g_rv, "lead")["notes"]
+             if _cspo[-1][0] <= n["start"] < _cspo[-1][1]]
+    check("dr07 kill-switch restores the clone (bed back, no octave layer)",
+          len(_fho(_vspo[1])) > 0 and not any(
+              abs(a["start"] - b["start"]) < 1e-6 and a["pitch"] - b["pitch"] == 12
+              for a in _ldno for b in _ldno if a is not b))
+    _vsp = spans(go, "verse")
+    _col = lane(go, "color")
+    _fh = lambda sp: [n for n in (_col["notes"] if _col else [])
+                      if sp[0] <= n["start"] < (sp[0] + sp[1]) / 2]
+    check("dr07 verse2 sheds the bed for its first half",
+          len(_vsp) >= 2 and _col is not None
+          and len(_fh(_vsp[1])) == 0 < len(_fh(_vsp[0])),
+          f"(v1 {len(_fh(_vsp[0]))} -> v2 {len(_fh(_vsp[1]))})")
+    _csps = spans(go, "chorus")
+    _ldn = [n for n in lane(go, "lead")["notes"]
+            if _csps[-1][0] <= n["start"] < _csps[-1][1]]
+    _ld1 = [n for n in lane(go, "lead")["notes"]
+            if _csps[0][0] <= n["start"] < _csps[0][1]]
+    _has_dbl = lambda ns: any(abs(a["start"] - b["start"]) < 1e-6
+                              and a["pitch"] - b["pitch"] == 12
+                              for a in ns for b in ns if a is not b)
+    check("dr07 final chorus lifts an octave layer (first chorus clean)",
+          len(_csps) >= 3 and _has_dbl(_ldn) and not _has_dbl(_ld1),
+          f"(last {len(_ldn)} notes vs first {len(_ld1)})")
+
+    # ---- THE WORLD KIT (dr28, 2026-07-12): the signature cells are LAW —
+    # a wrong clave is not a variation, it is a wrong genre.
+    birth("salsa", 3, "_cmp_sal")
+    _sal = json.load(open(os.path.join(SONGS, "_cmp_sal.json")))
+    _slane = {t["name"]: t for t in _sal["tracks"]}
+    _clv = _slane.get("clave")
+    _slots = sorted({int(round((n["start"] % 8) * 4)) % 32
+                     for n in _clv["notes"]}) if _clv else []
+    check("dr28 salsa clave = son 3-2", _slots == [0, 6, 12, 20, 24], str(_slots))
+    _sb = _slane.get("bass")
+    check("dr28 tumbao never hits the downbeat",
+          _sb is not None and all((n["start"] % 4) > 0.2 for n in _sb["notes"]))
+    check("dr28 salsa carries no machine snare (abanico rides a high drum)",
+          all((t.get("source") or {}).get("id") != "snare"
+              for t in _sal["tracks"] if t["name"] == "snare"),
+          str([(t["name"], t["source"].get("id")) for t in _sal["tracks"]
+               if "snare" in str(t.get("source", {}).get("id"))]))
+    birth("moombahton", 3, "_cmp_moo")
+    _moo = json.load(open(os.path.join(SONGS, "_cmp_moo.json")))
+    _msn = next(t for t in _moo["tracks"] if t["name"] == "snare")
+    _mslots = sorted({int(round((n["start"] % 4) * 4))
+                      for n in _msn["notes"] if n["start"] < 4})
+    check("dr28 moombahton dembow = tresillo", _mslots == [3, 6, 11, 14], str(_mslots))
+    birth("amapiano", 3, "_cmp_ama")
+    _ama = json.load(open(os.path.join(SONGS, "_cmp_ama.json")))
+    check("dr28 amapiano shaker carpet",
+          any(t["name"] == "shaker" and len(t["notes"]) >= 24 for t in _ama["tracks"]))
+
+    # ---- SWING & EXTENSIONS (dr27/dr08, 2026-07-12) ----
+    # Kernel: `open` voicing once DISCARDED the 7th/9th; ~73 curated style
+    # strings were dead words falling to smooth. And the bop family was
+    # missing from its own seventh-law (blues with no dominant 7 isn't blues).
+    import voicing as _vo
+    _op = _vo.voice_pcs([[0, 4, 7, 10]], "open", 48, 76, thirds=[4], roots=[0])
+    check("dr08 open voicing keeps the seventh", 10 in {p % 12 for p in _op[0]},
+          str(_op[0]))
+    check("dr08 dead style strings resolve (rootless->shell, tail->smooth)",
+          _vo.resolve_style("rootless_chromatic") == "shell"
+          and _vo.resolve_style("chug_powerchord") == "triad"
+          and _vo.resolve_style("zzz_unknown") == "smooth")
+    birth("bebop", 3, "_cmp_bop")
+    _bop = json.load(open(os.path.join(SONGS, "_cmp_bop.json")))
+    _bcol = next((t for t in _bop["tracks"] if t["name"].startswith("color")), None)
+    check("dr27 bebop color carries the 7th (>=4 pcs)",
+          _bcol is not None and len({n["pitch"] % 12 for n in _bcol["notes"]
+                                     if n["start"] < 4}) >= 4)
+    # dr27's "bop renders dead straight" REFUTED by measurement: the ride's
+    # odd-8ths ride +0.119 beats off grid (the jazz_swing groove bakes the
+    # feel at birth). Keep the receipt as a law: bebop must stay SWUNG.
+    _ride = next((t for t in _bop["tracks"] if t["name"] == "ride"), None) or \
+            next((t for t in _bop["tracks"] if t["name"] == "hat"), None)
+    _offs = [n["start"] - round(n["start"] * 2) / 2 for n in (_ride or {}).get("notes", [])
+             if abs(round(n["start"] * 2) % 2) == 1]
+    check("dr27 bebop stays swung (odd-8ths ride late)",
+          bool(_offs) and sum(_offs) / len(_offs) > 0.06,
+          f"mean {sum(_offs)/len(_offs):+.3f}" if _offs else "no offbeats")
+
+    # ---- THE DRUM TAKE (dr01-d, 2026-07-12): syncopated kicks differ by
+    # seed (bounded, downbeat-anchored); four-on-floor identities are SACRED.
+    def _kick_of(name):
+        _d = json.load(open(os.path.join(SONGS, name + ".json")))
+        _k = next(t for t in _d["tracks"] if t["name"] == "kick")
+        return tuple(sorted(round(n["start"] * 4) for n in _k["notes"] if n["start"] < 4))
+    birth("trap", 42, "_cmp_dt42"); birth("trap", 99, "_cmp_dt99")
+    _tsets = {_kick_of("_cmp_trap"), _kick_of("_cmp_dt42"), _kick_of("_cmp_dt99")}
+    check("dr01d trap kick takes vary by seed", len(_tsets) >= 2, str(_tsets))
+    check("dr01d every take anchors the downbeat", all(0 in s for s in _tsets))
+    birth("house", 42, "_cmp_dh42")
+    check("dr01d four-on-floor kick SACRED across seeds",
+          _kick_of("_cmp_house") == _kick_of("_cmp_dh42"))
+
+    # ---- THE WOBBLE (dr29, 2026-07-12): dubstep bass rides the LFO voice,
+    # tempo-synced (rate = bpm/60 * cycles-per-beat; measured 4.61 Hz vs
+    # 4.63 commanded on the solo render). A static reese on dubstep was the
+    # 'defining sound is a drone' crit.
+    birth("dubstep", 3, "_cmp_wob")
+    _wd = json.load(open(os.path.join(SONGS, "_cmp_wob.json")))
+    _wb = next(t for t in _wd["tracks"] if t["name"] == "bass")
+    _wrate = (_wb["source"].get("params") or {}).get("rate")
+    check("dr29 dubstep bass = wobble, tempo-synced 1/8",
+          _wb["source"]["id"] == "wobble"
+          and _wrate == round(_wd["bpm"] / 60.0 * 2.0, 2),
+          f"(rate {_wrate} @ {_wd['bpm']} bpm)")
+
+    # ---- WORLD KIT 2 (wave 49, dr28): the cells are law.
+    def _slots(tracks, lane, span=4.0, mod=16):
+        tr = next((t for t in tracks if t["name"] == lane), None)
+        return sorted({int(round(n["start"] * 4)) % mod
+                       for n in (tr["notes"] if tr else []) if n["start"] < span})
+    birth("cumbia", 3, "_cmp_cum")
+    _cum = json.load(open(os.path.join(SONGS, "_cmp_cum.json")))["tracks"]
+    check("wk2 cumbia llamador on the offbeats", _slots(_cum, "conga") == [2, 6, 10, 14],
+          str(_slots(_cum, "conga")))
+    check("wk2 cumbia carries no machine snare",
+          all((t.get("source") or {}).get("id") != "snare"
+              for t in _cum if t["name"] == "snare"))
+    birth("samba", 3, "_cmp_sam")
+    _sam = json.load(open(os.path.join(SONGS, "_cmp_sam.json")))["tracks"]
+    _surdo = next((t for t in _sam if t["name"] == "conga"), None)
+    check("wk2 samba surdo answers LOW on 2 and 4",
+          _surdo is not None and _slots(_sam, "conga") == [4, 12]
+          and all(n["pitch"] == 48 for n in _surdo["notes"]))
+    birth("bossanova", 3, "_cmp_bsa")
+    _bsa = json.load(open(os.path.join(SONGS, "_cmp_bsa.json")))["tracks"]
+    check("wk2 bossa rim = the Jobim cell (steady, never breathes)",
+          _slots(_bsa, "rim", span=7.9, mod=32) == [0, 6, 12, 22, 26],
+          str(_slots(_bsa, "rim", span=7.9, mod=32)))
+    birth("gqom", 3, "_cmp_gq")
+    _gq = json.load(open(os.path.join(SONGS, "_cmp_gq.json")))["tracks"]
+    _gh = next((t for t in _gq if t["name"] == "hat"), None)
+    _pulls = [round((n["start"] * 4) % 1, 2) for n in (_gh["notes"] if _gh else [])]
+    check("wk2 gqom hats ride the triplet pull (off the 16th grid)",
+          bool(_pulls) and all(0.30 <= p <= 0.72 for p in _pulls),
+          str(_pulls[:5]))
+
+    # ---- THE CHOP TAKE (dr23, 2026-07-12): breaks-family snares re-chop per
+    # bar; the 2&4 backbeat anchors stay sacred in EVERY bar.
+    # ---- THE BREATH LAW (dr03 + the adlib court, 2026-07-12): a chattering
+    # cell's phrase tail thins to anchor + one pickup (pure hook_notes case;
+    # curated cells that already rest, like pop's, no-op by construction).
+    import random as _rd
+    _chatter = [[st, 1 + (st % 5), 1] for st in range(16)]      # wall-to-wall
+    _bn = LG.hook_notes(_chatter, 1, [0, 2, 4, 5, 7, 9, 11], 0, 60,
+                        lambda b: 1, 4, _rd.Random(7))
+    _tail0 = [n for n in _bn if 3.0 <= n["start"] < 4.0]
+    # the cell puts 4 events in the last beat; anchors (strong beat + the
+    # cadence) are sacred, so the lawful floor is anchors + one pickup = 3
+    check("dr03 breath law: a chattering cell's tail thins (< the cell's 4)",
+          len(_tail0) < 4, f"({len(_tail0)} tail notes)")
+
+    # ---- THE PRE-CHORUS (dr25, 2026-07-12): SONG_FORM's missing organ —
+    # tension between verse and chorus, words repeated like a hook.
+    _pcs = [s["name"] for s in go["sections"]]
+    check("dr25 song form carries the pre-chorus (x2, third chorus straight off the bridge)",
+          _pcs.count("prechorus") + _pcs.count("prechorus2") == 2
+          and "prechorus3" not in _pcs, str(_pcs))
+    def _mv(sp):
+        vs = [n["vel"] for t in go["tracks"] for n in t.get("notes", [])
+              if sp[0] <= n["start"] < sp[1]]
+        return sum(vs) / len(vs) if vs else 0
+    _vsp0, _pcsp = spans(go, "verse")[0], spans(go, "prechorus")[0]
+    _chsp = spans(go, "chorus")[0]
+    check("dr25 the tension tier: verse < prechorus < chorus",
+          _mv(_vsp0) < _mv(_pcsp) < _mv(_chsp),
+          f"({_mv(_vsp0):.2f} < {_mv(_pcsp):.2f} < {_mv(_chsp):.2f})")
+
+    sh(["python3", "tools/loop_gen.py", "jungle", "_cmp_chop", "--bars", "8",
+        "--seed", "3"])
+    _ch = json.load(open(os.path.join(SONGS, "_cmp_chop.json")))
+    _csn = next(t for t in _ch["tracks"] if t["name"] == "snare")
+    _cfp = [tuple(sorted(round((n["start"] - b * 4) * 4) for n in _csn["notes"]
+                         if b * 4 <= n["start"] < b * 4 + 4)) for b in range(6)]
+    check("dr23 jungle snare re-chops (>=3 distinct bars of 6)",
+          len(set(_cfp)) >= 3, str([list(p) for p in _cfp]))
+    check("dr23 the 2&4 anchors are sacred in every bar",
+          all(4 in p and 12 in p for p in _cfp if p))
+
     # ---- WAVE 43: THE RAP FORM + the fail-closed router (2026-07-12, dr24) ----
     # Rap arranged EDM club drops with risers; lofi got crash impacts; a torn
     # dna_cache silently handed EVERY genre the drop form. Laws: rap = verse/

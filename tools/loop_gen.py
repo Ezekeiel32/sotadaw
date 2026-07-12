@@ -184,7 +184,13 @@ EXT_SEVENTH = {"house", "deep_house", "deephouse", "tech_house", "lofi", "lofi_h
                "neo_soul", "neosoul", "jazz", "jazz_fusion", "gospel", "soul", "funk",
                "disco", "nu_disco", "nudisco", "rnb", "citypop", "bossanova", "bossa",
                "ukgarage", "garage", "2step", "amapiano", "future_funk", "futurefunk",
-               "acid_jazz", "boogie", "motown", "philly_soul", "yacht_rock"}
+               "acid_jazz", "boogie", "motown", "philly_soul", "yacht_rock",
+               # dr27 (2026-07-12): the BOP FAMILY was missing from its own
+               # law — bebop/blues rendered plain triads (blues with no
+               # dominant 7th is not blues). "jazzfusion" is the cache
+               # spelling; "jazz_fusion" above never matched it.
+               "bebop", "hard_bop", "modal_jazz", "spiritual_jazz", "free_jazz",
+               "jazzfusion", "blues", "swing_bigband", "ethio_jazz", "swing"}
 EXT_ADD9 = {"synthwave", "trance", "ambient", "chillwave", "dreampop", "synthpop",
             "berlin_school", "italo", "italo_disco", "progressive_house", "chillout",
             "downtempo", "shoegaze", "vaporwave", "melodic_techno", "hypnagogic"}
@@ -397,10 +403,25 @@ def hook_notes(cell, lead_bars, iv, root, base_oct, deg_at, bars, rng,
                 ev[i][1] = max(lo_d, min(hi_d, anchors[prv] + rng.choice((-1, 1))))
         for i in anchors:
             ev[i][1] = anchors[i]
+        # THE BREATH LAW (ledger dr03 + the adlib court, 2026-07-12): dense
+        # cells sang WALL-TO-WALL (54 notes over a drop, biggest rest 1.0
+        # beat — the audible receipt caught the adlib rail starved; 262
+        # relentless words is the robotic tell). A real phrase ENDS: its
+        # tail keeps the ANCHOR (the cadence the engine aimed) plus at most
+        # ONE pickup — the other trailing passing notes become the singer's
+        # breath. Dense cells only; the window scales with the phrase
+        # (1 beat for 1-bar cells, 1.5 for longer). Skip-set, not deletion:
+        # anchors stay index-true. SOTADAW_BREATH=0 kills.
+        _breath_skip = set()
+        if len(ev) >= 8 and os.environ.get("SOTADAW_BREATH", "1") != "0":
+            _win = phrase16 - (4 if lead_bars == 1 else 6)
+            _tail = [i for i, e in enumerate(ev)
+                     if e[0] >= _win and i not in anchors]
+            _breath_skip = set(_tail[:-1])
         # emit through the PERFORMANCE layer
         for i, (st, dg, ln) in enumerate(ev):
             beat = bar0 * 4 + st * 0.25
-            if beat >= bars * 4.0:
+            if beat >= bars * 4.0 or i in _breath_skip:
                 continue
             h = contour(plan_pos(st))
             if kind == "B":
@@ -525,7 +546,13 @@ def stereo_double(tr, bpm, spread=0.8):
 LANES = {"kick": ("kick_punch_tight", 36, 0.95, 0.2), "snare": ("snare", 38, 0.9, 0.2),
          "clap": ("clap_909", 39, 0.85, 0.2), "rim": ("snare", 37, 0.6, 0.12),
          "hat": ("hat", 42, 0.55, 0.1), "openhat": ("hat_metal", 46, 0.6, 0.3),
-         "ride": ("hat_metal", 51, 0.5, 0.2), "ghost": ("snare", 38, 0.3, 0.12)}
+         "ride": ("hat_metal", 51, 0.5, 0.2), "ghost": ("snare", 38, 0.3, 0.12),
+         # THE WORLD KIT (ledger dr01/dr28, 2026-07-12): the latin/afro family
+         # collapsed to kick+snare+hat — no clave, no congas, no shakers. New
+         # lanes activate only when a genre's grid carries their steps; GM
+         # pitches (75 claves, 56 cowbell, 70 maracas) so MIDI export is true.
+         "shaker": ("shaker", 70, 0.5, 0.1), "clave": ("clave", 75, 0.75, 0.1),
+         "conga": ("conga", 63, 0.7, 0.15), "cowbell": ("cowbell", 56, 0.65, 0.15)}
 # W93: the bright families whose records carry the air band (never the
 # dark-identity cultures — trap/amapiano/gqom taught that lesson)
 AIR_GENRES = {"pop", "house", "deephouse", "kpop", "jpop", "eurodance",
@@ -719,6 +746,17 @@ def bass_notes(style, root, pcs, bars, rng, kick_steps, spb16=0.25, bar_degrees=
                     rng.choice([nb + 1, nb - 1, nb + 2])]
             for i, p_ in enumerate(walk):
                 notes.append(n(b + i * 4, 3.6, p_, 0.8 if i else 0.85))
+    elif style == "tumbao":                    # THE TUMBAO (ledger dr28: salsa
+        # bass hit the DOWNBEAT — the exact opposite of the culture). The bass
+        # lands on the AND-OF-2 (the fifth) and BEAT 4 (the NEXT bar's root,
+        # anticipated, ringing over the barline). The downbeat stays empty —
+        # that is where the clave lives.
+        for bar in range(bars):
+            b = bar * 16
+            b_, f_, q_, s_ = harm(b)
+            nb = harm(((bar + 1) % bars) * 16)[0]
+            notes.append(n(b + 6, 5.5, f_, 0.82))
+            notes.append(n(b + 12, 7.5, nb, 0.88))
     elif style == "log":                       # log drum answers in the kick's holes
         holes = [3, 9, 14]
         for bar in range(bars):
@@ -743,7 +781,8 @@ def bass_notes(style, root, pcs, bars, rng, kick_steps, spb16=0.25, bar_degrees=
                    if os.environ.get("SOTADAW_SLIDE808", "1") != "0" else SLIDING_KICK)
     voice = {"offbeat": "sub_clean", "roots": "bass_warm", "sliding": slide_voice, "walking": "bass_warm",
              "psy_rolling": "sub_clean", "sustained": "reese", "log": "log_drum",
-             "wub": "reese", "sub": slide_voice}.get(style, "bass_warm")
+             "wub": "reese", "sub": slide_voice,
+             "tumbao": "upright_bass"}.get(style, "bass_warm")
     return voice, notes
 
 def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
@@ -774,6 +813,36 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
         if _pt != [list(c) for c in _prog0]:
             grid = dict(grid)
             grid["chords"] = [tuple(c) for c in _pt]
+    # THE DRUM TAKE (ledger dr01-d, 2026-07-12): the kick backbone was 100%
+    # seed-invariant — every take of a genre shared ONE drum programming
+    # forever. A take may now make ONE bounded kick move (add a syncopation
+    # hit / shift or drop a non-anchor hit), riding the PATTERN so bars stay
+    # consistent (per-bar life is the breathing bar's job). NEVER: slot 0
+    # (the downbeat), a pure four-on-floor identity (house's kick IS
+    # [0,4,8,12]), or an exact-cell world genre (clave/cowbell/conga in the
+    # grid = the cell is law). SOTADAW_DRUMTAKE=0 kills.
+    _ks0 = list(grid.get("kick") or [])
+    if (_ks0 and os.environ.get("SOTADAW_DRUMTAKE", "1") != "0"
+            and not set(_ks0) <= {0, 4, 8, 12}
+            and not any(k in grid for k in ("clave", "cowbell", "conga"))
+            and rng.random() < 0.55):
+        _ks = list(_ks0)
+        _kk = [s for s in _ks if s % 16 != 0]
+        _move = rng.random()
+        if _move < 0.45:
+            _free = [s for s in (3, 6, 7, 10, 11, 14) if s not in _ks]
+            if _free and len(_ks) <= 6:
+                _ks = sorted(_ks + [rng.choice(_free)])
+        elif _move < 0.75 and _kk:
+            _v = rng.choice(_kk)
+            _cand = _v + rng.choice((-1, 1))
+            if 0 < _cand < 16 and _cand not in _ks:
+                _ks = sorted([s for s in _ks if s != _v] + [_cand])
+        elif len(_kk) >= 2:
+            _ks = [s for s in _ks if s != rng.choice(_kk)]
+        if _ks != _ks0:
+            grid = dict(grid)
+            grid["kick"] = _ks
     # the take lives SOMEWHERE in the genre's honest tempo range — the frozen
     # midpoint made every unseeded techno loop exactly the same BPM forever
     lo_b, hi_b = float(dna["bpm_lo"] or 120), float(dna["bpm_hi"] or 120)
@@ -806,16 +875,87 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
                 v = float(vmap.get(str(s), bvel * ACCENT.get(s % 4, 0.7) / ACCENT[0]))
                 v = max(0.15, min(1.0, v * rng.uniform(0.94, 1.06)))   # human hands
                 notes.append({"start": round(beat, 4), "len": ln, "pitch": pitch, "vel": round(v, 3)})
-        # THE FILL post-pass: replace this lane's FINAL BAR with the fill variant
-        # (16-step, pat_bars-agnostic) — the turnaround that makes loops breathe.
+        # THE FILL post-pass: replace this lane's turnaround bars with the fill
+        # variant (16-step, pat_bars-agnostic). dr01 (2026-07-12): the comment
+        # promised "the LAST bar of every 4" but stamped only the absolute
+        # final bar — an 8/16-bar birth never breathed mid-phrase. Now every
+        # 4th bar turns around; mid-phrase fills sit back (0.85x), the final
+        # one announces at full weight.
+        _fill_bars = set()
         if fsteps is not None and bars >= 2:
-            fill_start = (bars - 1) * 4.0
-            notes = [nt for nt in notes if nt["start"] < fill_start]
-            for s in fsteps:
-                beat = fill_start + s * 0.25
-                v = float(fmap.get(str(s), bvel * ACCENT.get(s % 4, 0.7) / ACCENT[0]))
-                v = max(0.15, min(1.0, v * rng.uniform(0.94, 1.06)))
-                notes.append({"start": round(beat, 4), "len": ln, "pitch": pitch, "vel": round(v, 3)})
+            _fill_bars = {b for b in range(3, bars, 4)} | {bars - 1}
+            notes = [nt for nt in notes if int(nt["start"] // 4) not in _fill_bars]
+            for fb in sorted(_fill_bars):
+                damp = 1.0 if fb == bars - 1 else 0.85
+                for s in fsteps:
+                    beat = fb * 4.0 + s * 0.25
+                    if beat >= bars * 4:
+                        continue
+                    v = float(fmap.get(str(s), bvel * ACCENT.get(s % 4, 0.7) / ACCENT[0]))
+                    v = max(0.15, min(1.0, v * damp * rng.uniform(0.94, 1.06)))
+                    notes.append({"start": round(beat, 4), "len": ln, "pitch": pitch, "vel": round(v, 3)})
+        # THE BREATHING BAR (worldclass ledger dr01, 2026-07-12): a 4-bar loop
+        # was ONE bar cloned — pattern, velocity AND count identical bar to
+        # bar, the #1 preset-demo tell on all 204 genres. Feel lanes breathe:
+        # per-bar velocity re-roll + at most ONE onset dropped or gained per
+        # bar (never the bar's first hit). Bar 0 is the identity bar, the
+        # fill bar owns its own shape, kick/snare/clap stay the backbone.
+        # Deterministic per (genre, seed, lane, bar) — takes reproduce, and
+        # seeds now differ on feel lanes too (the seed-invariance finding).
+        _chop_set = set(grid.get("chop_lanes") or ())
+        if ((lane in ("hat", "openhat", "ride", "ghost", "rim", "shaker")
+                or lane in _chop_set) and notes
+                and lane not in (grid.get("steady_lanes") or ())
+                and os.environ.get("SOTADAW_BARVARY", "1") != "0"):
+            # (clave/cowbell/conga stay STEADY always; steady_lanes lets a
+            # grid pin MORE — bossa's rim IS the clave. A varied clave is a
+            # wrong clave, not a human one. chop_lanes is the OPPOSITE gate:
+            # THE CHOP TAKE (ledger dr23, 2026-07-12) — breaks-family snares
+            # re-chop per bar, backbeat anchors (2&4) sacred.)
+            for _bar in range(1, bars):
+                _b0 = _bar * 4.0
+                if _bar in _fill_bars:
+                    continue                     # every fill bar owns its shape
+                _brng = random.Random(f"{genre}/{seed}/{lane}/bar{_bar}")
+                _bn = [n for n in notes if _b0 <= n["start"] < _b0 + 4.0]
+                if not _bn:
+                    continue
+                for n in _bn:
+                    n["vel"] = round(max(0.15, min(1.0, n["vel"] * _brng.uniform(0.9, 1.1))), 3)
+                if lane in _chop_set:
+                    # the chop move-set: never a backbeat anchor (2&4 = slot
+                    # s%8==4 in 16ths-of-bar terms: beat offsets 1.0/3.0)
+                    _free = [n for n in _bn
+                             if abs((n["start"] - _b0) - 1.0) > 1e-6
+                             and abs((n["start"] - _b0) - 3.0) > 1e-6]
+                    _roll = _brng.random()
+                    if _roll < 0.40 and _free:
+                        _v = _brng.choice(_free)            # re-CHOP: shift one
+                        _cand = round(_v["start"] + _brng.choice((-0.25, 0.25)), 4)
+                        if (_b0 <= _cand < _b0 + 4.0
+                                and all(abs(n["start"] - _cand) > 1e-6 for n in _bn)):
+                            _v["start"] = _cand
+                    elif _roll < 0.70 and _free:
+                        _src = _brng.choice(_free)          # chop STUTTER double
+                        _cand = round(_src["start"] + 0.25, 4)
+                        if (_cand < _b0 + 4.0
+                                and all(abs(n["start"] - _cand) > 1e-6 for n in _bn)):
+                            notes.append(dict(_src, start=_cand,
+                                              vel=round(max(0.15, _src["vel"] * 0.55), 3)))
+                    elif len(_free) >= 2:
+                        notes.remove(_brng.choice(_free))   # chop OUT
+                    continue
+                _roll = _brng.random()
+                if _roll < 0.45 and len(_bn) >= 3:
+                    notes.remove(_brng.choice(_bn[1:]))     # breathe OUT
+                elif _roll < 0.80:
+                    _src = _brng.choice(_bn)                # breathe IN
+                    _cand = round(_src["start"] + _brng.choice((-0.25, 0.25)), 4)
+                    if (_b0 <= _cand < _b0 + 4.0
+                            and all(abs(n["start"] - _cand) > 1e-6 for n in _bn)):
+                        notes.append(dict(_src, start=_cand,
+                                          vel=round(max(0.15, _src["vel"] * 0.7), 3)))
+            notes.sort(key=lambda n: n["start"])
         if notes:
             # THE AIR NUDGE (band balance law): real records carry ~3x our energy
             # above 6kHz; hats/rides are the air organ — sub-dominant genres lift
@@ -827,8 +967,9 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
             # KG paths by construction; curated per genre, never blanket).
             _v49 = grid.get(f"{lane}_voice") or voice
             _g49 = {"kick": -2, "snare": -5, "clap": -6, "hat": -13,
-                    "openhat": -12, "ride": -12, "rim": -9,
-                    "ghost": -8}.get(lane, -8) + _air
+                    "openhat": -12, "ride": -12, "rim": -9, "ghost": -8,
+                    "shaker": -15, "clave": -10, "conga": -8,
+                    "cowbell": -13}.get(lane, -8) + _air
             if grid.get(f"{lane}_gain_db") is not None:
                 _g49 = float(grid[f"{lane}_gain_db"])
             if grid.get(f"{lane}_pitch") is not None:   # W62: pitched percs
@@ -917,6 +1058,14 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
             _bsrc = {"kind": "faust", "id": bvoice}
             if isinstance(grid.get("bass_params"), dict):   # W75: curated zone
                 _bsrc["params"] = dict(grid["bass_params"])  # truth (303 squeal)
+            # THE WOBBLE SYNC LAW (ledger dr29, 2026-07-12): wobble.dsp carries
+            # its own LFO but a Hz rate can't know the take's tempo — an
+            # unsynced wobble is the bedroom tell. cycles-per-beat rides the
+            # grid (dubstep 2 = the 1/8 wobble; halve for the riddim lope);
+            # an explicit curated rate always wins.
+            if _bsrc["id"] == "wobble" and "rate" not in _bsrc.get("params", {}):
+                _cpb = float(grid.get("wobble_cpb") or 2.0)
+                _bsrc.setdefault("params", {})["rate"] = round(bpm / 60.0 * _cpb, 2)
             tracks.append({"name": "bass", "source": _bsrc,
                            "gainDb": (float(_bg) if _bg is not None else -5), "notes": bnotes})
     # color layer: the genre's first recipe voice holds root-chord pads

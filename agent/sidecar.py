@@ -3751,7 +3751,8 @@ def handle(req):
                 _d = json.load(open(_pj))
                 _lead = next((t for t in _d.get("tracks", [])
                               if t.get("name") == "lead" and t.get("notes")), None)
-                _ly = lyric_bank.lyrics_for(genre, (_lead or {}).get("notes"), seed)
+                _ly = lyric_bank.lyrics_for(genre, (_lead or {}).get("notes"), seed,
+                                            sections=_d.get("sections"))   # HOOK LINE LAW
                 if _ly:
                     _d["lyrics"] = _ly
                     _awrite(_pj, _d)

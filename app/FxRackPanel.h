@@ -10,6 +10,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 #include "SongLoader.h"
 #include "UiTheme.h"
+#include "PluginGuard.h"
 
 class FxRackPanel : public juce::Component, private juce::Timer
 {
@@ -597,6 +598,10 @@ private:
             auto& f = (*ch)[(size_t) index];
             isVst = f.id.startsWith ("vst3:");
             title = isVst ? f.id.substring (5) : (f.id.isNotEmpty() ? f.id : f.type);
+            // THE RACK CHIP (V49 v1.5, BEST_DAW_30 #28): a plugin that died last
+            // session was SKIPPED at build — before, the slot just sat silently
+            // knobless. Now it declares itself and the click is the retry door.
+            quarantined = isVst && sotadaw::PluginGuard::isQuarantined (title);
             if (title.startsWith ("fx_")) title = title.substring (3);
             auto* plug = owner.resolvePlugin ? owner.resolvePlugin (index) : nullptr;
             if (plug != nullptr && ! isVst)                // vst3: face-only (natural-units law)
@@ -705,10 +710,28 @@ private:
                 g.drawText ("BYPASSED", getLocalBounds().removeFromBottom (11),
                             juce::Justification::centred);
             }
+            if (quarantined)                          // V49 v1.5: the crash chip
+            {
+                g.setColour (juce::Colour (0xffc9822e).withAlpha (0.16f));
+                g.fillRoundedRectangle (r, 8.0f);
+                g.setColour (juce::Colour (0xffc9822e));
+                g.setFont (theme::caps (8.0f));
+                g.drawFittedText ("CRASHED LAST SESSION\nclick to retry",
+                                  getLocalBounds().reduced (8).withTrimmedTop (16),
+                                  juce::Justification::centred, 2);
+            }
         }
 
         void mouseDown (const juce::MouseEvent& e) override
         {
+            if (quarantined)                          // the retry door: lift + rebuild
+            {
+                sotadaw::PluginGuard::unquarantine (title);
+                quarantined = false;
+                if (owner.onStructure) owner.onStructure();   // snapshot+save+engine rebuild
+                repaint();
+                return;
+            }
             if (powerRect.contains (e.position))      { owner.toggleBypass (index); return; }
             if (closeRect.contains (e.position))      { owner.removeFx (index); return; }
             if (leftRect.contains (e.position))       { owner.moveFx (index, -1); return; }
@@ -773,6 +796,7 @@ private:
         FxRackPanel& owner;
         int index = 0;
         bool isVst = false;
+        bool quarantined = false;   // V49 v1.5 crash chip
         juce::String title;
         juce::OwnedArray<RackKnob> knobs;
         juce::Rectangle<float> powerRect, closeRect, leftRect, rightRect, titleRect;

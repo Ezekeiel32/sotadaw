@@ -61,19 +61,81 @@ def bank_for(genre):
     return BANKS["drift"]
 
 
-def lyrics_for(genre, notes, seed=0):
+# prechorus joined 2026-07-12 (dr25): real records repeat the pre-chorus
+# words each time just like the hook.
+HOOK_BASES = {"chorus", "drop", "hook", "theme", "prechorus"}
+
+
+def lyrics_for(genre, notes, seed=0, sections=None):
     """One word per melody note (sing.py's exact contract), beats = the
     notes' own starts, seeded rotation through the family's phrase stream.
-    Deterministic: same (genre, notes, seed) -> same lyrics, always."""
+    Deterministic: same (genre, notes, seed, sections) -> same lyrics.
+
+    THE HOOK LINE LAW (ledger dr20/dr21, 2026-07-12): the rotation used to
+    run CONTINUOUSLY across the whole track, so chorus2 sang different words
+    than chorus — the hook had no lexical identity. With sections given,
+    repeated HOOK-class sections (chorus/drop/hook/theme) REUSE the first
+    instance's words note-for-note; verses keep walking the stream (verses
+    tell the story — new words there are correct). Same-beat notes (the
+    final-chorus octave double) share ONE word — never two words at once.
+    sections=None keeps the exact legacy behavior."""
     words = bank_for(genre)
     ns = sorted((n for n in notes or [] if isinstance(n, dict)),
                 key=lambda n: float(n.get("start", 0)))
     if not ns:
         return []
     rot = int(seed or 0) % len(words)
-    return [{"beat": float(n.get("start", 0)),
-             "text": words[(rot + i) % len(words)]}
-            for i, n in enumerate(ns)]
+    spans = []
+    if sections:
+        try:
+            secs = sorted((s for s in sections if isinstance(s, dict)),
+                          key=lambda s: float(s.get("startBar", 0)))
+            for i, s in enumerate(secs):
+                b0 = float(s.get("startBar", 0)) * 4.0
+                b1 = (float(secs[i + 1].get("startBar", 0)) * 4.0
+                      if i + 1 < len(secs) else float("inf"))
+                spans.append((str(s.get("name", "")), b0, b1))
+        except Exception:
+            spans = []
+    if not spans:
+        return [{"beat": float(n.get("start", 0)),
+                 "text": words[(rot + i) % len(words)]}
+                for i, n in enumerate(ns)]
+
+    def sec_of(beat):
+        for nm, b0, b1 in spans:
+            if b0 <= beat < b1:
+                return nm
+        return ""
+
+    from itertools import groupby
+    out, idx, hook_words = [], 0, {}
+    for secname, grp in groupby(ns, key=lambda n: sec_of(float(n.get("start", 0)))):
+        grp = list(grp)
+        base = secname.rstrip("0123456789")
+        texts, last_b = [], None
+        if base in HOOK_BASES and base in hook_words:
+            ws, j = hook_words[base], 0
+            for n in grp:
+                b = float(n.get("start", 0))
+                if last_b is not None and abs(b - last_b) < 1e-6:
+                    texts.append(texts[-1])
+                    continue
+                texts.append(ws[j % len(ws)])
+                j, last_b = j + 1, b
+        else:
+            for n in grp:
+                b = float(n.get("start", 0))
+                if last_b is not None and abs(b - last_b) < 1e-6:
+                    texts.append(texts[-1])
+                    continue
+                texts.append(words[(rot + idx) % len(words)])
+                idx, last_b = idx + 1, b
+            if base in HOOK_BASES and base not in hook_words:
+                hook_words[base] = texts
+        out += [{"beat": float(n.get("start", 0)), "text": t}
+                for n, t in zip(grp, texts)]
+    return out
 
 
 if __name__ == "__main__":

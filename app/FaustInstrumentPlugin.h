@@ -101,10 +101,25 @@ public:
                         zp.first->setParameter (pv, juce::dontSendNotification);
         }
 
-        // automation/params -> zones (freq/gain/gate stay MIDI-owned)
+        // automation/params -> zones (freq/gain/gate stay MIDI-owned).
+        // MODULATION GRAPH (#3): a param carrying modifier assignments pulls its
+        // modulated value HERE — the engine's stream update only services params
+        // it marked active at graph build, and zone params assigned modifiers at
+        // buildEdit time were left static (measured: volume tremolo moved, the
+        // faust cutoff did not). One pull per block, only when assignments exist.
         for (auto& zp : zoneParams)
             if (auto it = ui.zones.find (zp.second); it != ui.zones.end())
+            {
+                if (zp.first->hasActiveModifierAssignments())
+                    zp.first->updateFromAutomationSources (fc.editTime.getStart());
                 *it->second = (FAUSTFLOAT) zp.first->getCurrentValue();
+                if (std::getenv ("SOTADAW_MOD_DEBUG") != nullptr && (modDbg++ % 256) == 0)
+                    std::fprintf (stderr, "[modpoll] %s zone=%s active=%d val=%f t=%.2f\n",
+                                  dspName.get().toRawUTF8(), zp.second.c_str(),
+                                  (int) zp.first->hasActiveModifierAssignments(),
+                                  zp.first->getCurrentValue(),
+                                  fc.editTime.getStart().inSeconds());
+            }
 
         const int n = fc.bufferNumSamples;
         if (scratch.getNumSamples() < n)
@@ -247,6 +262,7 @@ private:
     std::map<juce::String, float> pendingParams;
     bool paramsReasserted = false;
     std::vector<std::pair<tracktion::AutomatableParameter*, std::string>> zoneParams;
+    int modDbg = 0;   // #3 debug cadence
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FaustInstrumentPlugin)
 };

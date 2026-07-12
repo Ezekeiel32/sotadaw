@@ -29,6 +29,8 @@
 #ifndef _WIN32
  #include <execinfo.h>
  #include <sys/time.h>
+#else
+ using ssize_t = std::ptrdiff_t;   // POSIX type used by a few stream reads
 #endif
 #include <sys/stat.h>
 
@@ -9108,6 +9110,7 @@ public:
             auto pidf = ipcDir.getChildFile ("sidecar.pid");
             const int spid = pidf.existsAsFile()
                                ? pidf.loadFileAsString().trim().getIntValue() : 0;
+           #ifndef _WIN32
             if (spid > 0)
             {
                 const auto cmd = juce::File ("/proc/" + juce::String (spid)
@@ -9115,6 +9118,7 @@ public:
                 if (cmd.contains ("sidecar.py"))
                     ::kill ((pid_t) spid, SIGTERM);
             }
+           #endif // Windows: sidecar.kill() below is the whole story (no /proc, no SIGTERM)
             if (sidecar.isRunning())
                 sidecar.waitForProcessToFinish (1500);   // let it reap, then backstop
         }
@@ -19206,6 +19210,34 @@ private:  // (restores the section the HANDS burst was in)
             lastPollBeat = b;
         }
         if (++tick % 4 == 0) { pollEvents(); pollReceipts(); pollJamFeed(); pollEars(); }
+        // V49 v1.5 THE HANG NAMER (BEST_DAW_30 #28): playing but the playhead
+        // froze ~2s -> NAME the open plugin flight. A crash leaves the flight
+        // file for boot promotion; a HANG leaves it open right now — before,
+        // a hung third-party plugin was an anonymous frozen transport.
+        if ((tick % 8) == 0 && edit != nullptr)
+        {
+            auto& hwtp = edit->getTransport();
+            const double hp = hwtp.getPosition().inSeconds();
+            if (hwtp.isPlaying() && std::abs (hp - stallLastPos) < 1e-9)
+            {
+                if (++stallTicks >= 8 && ! stallNamed)      // ~2.1s frozen
+                {
+                    stallNamed = true;
+                    const auto fl = sotadaw::PluginGuard::currentFlight();
+                    appendActivity ("[guard] transport STALLED while playing"
+                                    + (fl.isNotEmpty() ? " - open plugin flight: " + fl
+                                                       : juce::String (" - no plugin flight open")));
+                    std::fprintf (stderr, "[guard] transport stalled; flight=%s\n",
+                                  fl.isNotEmpty() ? fl.toRawUTF8() : "(none)");
+                }
+            }
+            else
+            {
+                stallTicks = 0;
+                stallNamed = false;
+                stallLastPos = hp;
+            }
+        }
         if (jamStrip.isVisible())
         {
             if (jamPlayer != nullptr && jamPlayer->active())
@@ -20315,6 +20347,9 @@ private:  // (restores the section the HANDS burst was in)
     juce::int64 eventsOffset = 0, receiptsOffset = 0;
     juce::String chronicleLoadedFor;   // THE CHRONICLE: which song's chat the panel wears
     int requestId = 0, tick = 0;
+    double stallLastPos = -1.0;            // V49 v1.5 hang namer state
+    int stallTicks = 0;
+    bool stallNamed = false;
     juce::String songName;
     juce::ChildProcess sidecar, exportProc;
 
