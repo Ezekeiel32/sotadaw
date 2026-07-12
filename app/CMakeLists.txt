@@ -59,9 +59,22 @@ target_compile_definitions(m1 PRIVATE
 # JIT needs modern libfaust (interpreter backend); old distros (e.g. focal) build
 # AOT-only with -DSOTADAW_ENABLE_JIT=OFF — faust HEADERS still required (dsp.h/UI.h).
 option(SOTADAW_ENABLE_JIT "JIT unregistered instruments/.dsp via libfaust" ON)
+# PORT_SPEC round-4: point at an extracted faust release dist (Windows/macOS CI)
+# instead of system libfaust. Layout: <dist>/include/faust/..., <dist>/lib/...
+set(SOTADAW_FAUST_DIST "" CACHE PATH "external faust distribution root (win/mac JIT)")
 if(NOT SOTADAW_ENABLE_JIT)
   add_compile_definitions(SOTADAW_NO_JIT)
   set(SOTADAW_FAUST_LIB "")
+elseif(SOTADAW_FAUST_DIST)
+  include_directories(BEFORE ${SOTADAW_FAUST_DIST}/include)
+  if(WIN32)
+    set(SOTADAW_FAUST_LIB ${SOTADAW_FAUST_DIST}/lib/faust.lib)
+  elseif(APPLE)
+    set(SOTADAW_FAUST_LIB ${SOTADAW_FAUST_DIST}/lib/libfaust.a z)
+  else()
+    set(SOTADAW_FAUST_LIB faust)
+  endif()
+  message(STATUS "JIT: external faust dist at ${SOTADAW_FAUST_DIST}")
 else()
   set(SOTADAW_FAUST_LIB faust)
 endif()

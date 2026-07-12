@@ -9034,6 +9034,23 @@ public:
         if (! d.existsAsFile()) d = sotadaw::sotadawRoot().getChildFile ("songs/v1_test.json");
         if (d.existsAsFile()) loadSong (d);
         populateBrowser();
+        // #24a THE FRONT DOOR (V41/V58): a FIRST boot (no lastSong pref ever
+        // written, not a rig) lands the newcomer in the generator's arms —
+        // prompt prefilled with a real MAKE, status names the one gesture.
+        // Time-to-first-sound: one Enter (zero-credential MAKE is ~13s).
+        if (std::getenv ("SOTADAW_SNAPSHOT") == nullptr
+            && loadUiPrefString ("lastSong", "").isEmpty()
+            && std::getenv ("SOTADAW_SONG") == nullptr)
+        {
+            promptBox.setText ("make a house track", juce::dontSendNotification);
+            promptBox.grabKeyboardFocus();
+            setStatus ("WELCOME - press Enter to hear your first track in ~15s "
+                       "(or type any genre: trap, dnb, amapiano, 128 more)");
+            chat.add (ChatPanel::Kind::status,
+                      "first run: the prompt is loaded - press Enter and the "
+                      "generator builds a full editable track (no account, no "
+                      "keys). Every note it makes is yours to drag.");
+        }
         if (const char* v = std::getenv ("SOTADAW_VIEW"))    // dev: boot into a view (mix|live)
         {
             if (juce::String (v) == "mix")

@@ -680,7 +680,18 @@ inline juce::String pythonExe()
    #endif
 }
 
-inline juce::String loadKitInto (te::SamplerPlugin& sampler, const juce::String& kitName)
+// THE VELOCITY REMAP (BEST_DAW_30 #9): te::SamplerPlugin has no velocity
+// ranges — layered kits declare velLayers[] and each layer (+ its round-robin
+// alternates) loads at a SYNTHETIC key (100+); the note-insert remaps pitch by
+// the note's velocity and a deterministic per-pitch RR counter. Notes in the
+// json stay untouched; only the engine clip speaks synthetic keys.
+//   kit.json: "velLayers": [{"note":38, "layers":[
+//     {"velHi":0.55, "file":"soft.wav", "rr":["soft2.wav"], "gainDb":0},
+//     {"velHi":1.01, "file":"hard.wav"}]}]
+using KitVelMap = std::map<int, std::vector<std::pair<double, std::vector<int>>>>;
+
+inline juce::String loadKitInto (te::SamplerPlugin& sampler, const juce::String& kitName,
+                                 KitVelMap* velMap = nullptr)
 {
     auto kitDir = sotadawRoot().getChildFile ("kits").getChildFile (kitName);
     auto v = juce::JSON::parse (kitDir.getChildFile ("kit.json").loadFileAsString());
@@ -708,6 +719,46 @@ inline juce::String loadKitInto (te::SamplerPlugin& sampler, const juce::String&
         sampler.setSoundOpenEnded (index, kitOpenEnded);
         ++index;
     }
+    if (velMap != nullptr)                       // #9: layered voices, synthetic keys
+        if (auto* vls = v.getProperty ("velLayers", juce::var()).getArray())
+        {
+            int synth = 100;                     // above every GM drum key
+            for (auto& lv : *vls)
+            {
+                const int srcNote = (int) lv.getProperty ("note", -1);
+                auto* layers = lv.getProperty ("layers", juce::var()).getArray();
+                if (srcNote < 0 || layers == nullptr) continue;
+                std::vector<std::pair<double, std::vector<int>>> tiers;
+                for (auto& ly : *layers)
+                {
+                    std::vector<int> alts;
+                    juce::StringArray files;
+                    files.add (ly.getProperty ("file", "").toString());
+                    if (auto* rr = ly.getProperty ("rr", juce::var()).getArray())
+                        for (auto& rv : *rr) files.add (rv.toString());
+                    for (auto& fn : files)
+                    {
+                        auto lf = kitDir.getChildFile (fn);
+                        if (! lf.existsAsFile() || synth > 127) continue;
+                        if (sampler.addSound (lf.getFullPathName(),
+                                              lf.getFileNameWithoutExtension(), 0.0, 0.0,
+                                              (float) (double) ly.getProperty ("gainDb", 0.0)).isNotEmpty())
+                            continue;
+                        sampler.setSoundParams (index, synth, synth, synth);
+                        sampler.setSoundOpenEnded (index, kitOpenEnded);
+                        alts.push_back (synth);
+                        ++index; ++synth;
+                    }
+                    if (! alts.empty())
+                        tiers.push_back ({ juce::jlimit (0.0, 1.01,
+                                           (double) ly.getProperty ("velHi", 1.01)), alts });
+                }
+                std::sort (tiers.begin(), tiers.end(),
+                           [] (auto& a, auto& b) { return a.first < b.first; });
+                if (! tiers.empty())
+                    (*velMap)[srcNote] = std::move (tiers);
+            }
+        }
     return {};
 }
 
@@ -881,7 +932,7 @@ inline te::Plugin::Ptr makeFaustFx (te::Edit& edit, const SongFx& fx)
     return plugin;
 }
 
-inline juce::String buildTrackSource (te::Engine& engine, te::Edit& edit, te::AudioTrack& track, const SongTrack& t)
+inline juce::String buildTrackSource (te::Engine& engine, te::Edit& edit, te::AudioTrack& track, const SongTrack& t, KitVelMap* kitVel = nullptr)
 {
     if (t.source.kind == "audio")
         return {};   // clips only — no instrument; volume/fx/sends still apply
@@ -915,7 +966,7 @@ inline juce::String buildTrackSource (te::Engine& engine, te::Edit& edit, te::Au
         auto* sp = dynamic_cast<te::SamplerPlugin*> (plugin.get());
         if (sp == nullptr) return "sampler unavailable";
         track.pluginList.insertPlugin (plugin, 0, nullptr);
-        return loadKitInto (*sp, t.source.id);
+        return loadKitInto (*sp, t.source.id, kitVel);
     }
     if (t.source.kind == "vst3")
     {

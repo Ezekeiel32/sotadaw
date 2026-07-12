@@ -141,8 +141,8 @@ jobs:
             dist/*.sha256
 
   # EXPERIMENTAL (PORT_SPEC v2 lane; never blocks releases): JIT via the faust
-  # release's bundled libfaust. Goal: SOTADAW_ENABLE_JIT=ON off-Linux, proven by
-  # a JIT probe render (a .dsp NOT in the AOT registry must sound).
+  # release's bundled libfaust. Proof = a .dsp that exists in NO registry renders
+  # real audio through the interpreter (the [fxdbg] JIT line is the receipt).
   jit-probe:
     strategy:
       fail-fast: false
@@ -154,20 +154,68 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: fetch libfaust from the faust release
+      - name: fetch faust dist (mac: both arches, lipo the static lib universal)
         shell: bash
         run: |
-          set -x
           if [ "${{ matrix.name }}" = "windows" ]; then
             curl -fsSL -o faust.exe https://github.com/grame-cncm/faust/releases/download/2.85.9/Faust-2.85.9-win64.exe
             7z x -ofaustdist faust.exe > /dev/null || true
           else
-            curl -fsSL -o faust.dmg https://github.com/grame-cncm/faust/releases/download/2.85.9/Faust-2.85.9-arm64.dmg
-            hdiutil attach faust.dmg -nobrowse -mountpoint /tmp/faust
-            cp -R /tmp/faust/*aust*/ faustdist || cp -R /tmp/faust/ faustdist
+            curl -fsSL -o fa.dmg https://github.com/grame-cncm/faust/releases/download/2.85.9/Faust-2.85.9-arm64.dmg
+            curl -fsSL -o fx.dmg https://github.com/grame-cncm/faust/releases/download/2.85.9/Faust-2.85.9-x64.dmg
+            hdiutil attach fa.dmg -nobrowse -mountpoint /tmp/fa
+            hdiutil attach fx.dmg -nobrowse -mountpoint /tmp/fx
+            cp -R /tmp/fa/*aust*/ faustdist 2>/dev/null || cp -R /tmp/fa/. faustdist
+            XA=$(find /tmp/fx -name libfaust.a | head -1)
+            lipo -create faustdist/lib/libfaust.a "$XA" -output faustdist/lib/libfaust_u.a
+            mv faustdist/lib/libfaust_u.a faustdist/lib/libfaust.a
+            lipo -info faustdist/lib/libfaust.a
           fi
-          echo "== what did we get =="
-          find faustdist -maxdepth 3 \( -name 'libfaust*' -o -name 'faust*.lib' -o -name 'faust*.dll' -o -iname 'interpreter-dsp.h' \) | head -20
-      - name: report layout (evidence for wiring the real link step)
+          ls faustdist/lib | head
+      - name: vendored tracktion (pinned)
         shell: bash
-        run: find faustdist -maxdepth 4 -type d | head -40
+        run: |
+          git clone https://github.com/Tracktion/tracktion_engine app/tracktion_engine
+          cd app/tracktion_engine
+          git checkout $TRACKTION_SHA
+          git config --file=.gitmodules submodule.modules/juce.url https://github.com/juce-framework/JUCE.git
+          git submodule sync --recursive && git submodule update --init --recursive
+      - name: build m1 with JIT=ON against the dist
+        shell: bash
+        run: |
+          EXTRA=""
+          [ "${{ matrix.name }}" = "macos" ] && EXTRA='-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0'
+          cmake -B app/build -S app -DCMAKE_BUILD_TYPE=Release -DSOTADAW_ENABLE_JIT=ON \
+                "-DSOTADAW_FAUST_DIST=$PWD/faustdist" $EXTRA
+          cmake --build app/build --config Release --target m1 -j 3
+      - name: JIT probe — a voice no registry has ever seen must SOUND
+        shell: bash
+        run: |
+          M1=$(find app/build/m1_artefacts -type f \( -name 'm1' -o -name 'M1.exe' -o -name 'm1.exe' \) | head -1)
+          [ "${{ matrix.name }}" = "windows" ] && cp faustdist/lib/faust.dll "$(dirname "$M1")/" || true
+          cat > instruments/_jitprobe.dsp <<'DSP'
+          import("stdfaust.lib");
+          freq = hslider("freq", 440, 40, 3000, 0.01);
+          gain = hslider("gain", 0.7, 0, 1, 0.01);
+          gate = button("gate");
+          process = os.sawtooth(freq) * gain * en.adsr(0.01, 0.1, 0.8, 0.2, gate) : fi.lowpass(2, 2400) <: _,_;
+          DSP
+          cat > songs/_jitprobe.json <<'JSON'
+          {"bpm":120,"lengthBars":4,"tracks":[{"name":"probe","source":{"kind":"faust","id":"_jitprobe"},
+           "notes":[{"beat":0,"pitch":60,"lengthBeats":0.9,"velocity":0.9},{"beat":1,"pitch":62,"lengthBeats":0.9,"velocity":0.9},
+                    {"beat":2,"pitch":64,"lengthBeats":0.9,"velocity":0.9},{"beat":3,"pitch":65,"lengthBeats":0.9,"velocity":0.9},
+                    {"beat":4,"pitch":67,"lengthBeats":0.9,"velocity":0.9},{"beat":5,"pitch":69,"lengthBeats":0.9,"velocity":0.9},
+                    {"beat":6,"pitch":71,"lengthBeats":0.9,"velocity":0.9},{"beat":7,"pitch":72,"lengthBeats":0.9,"velocity":0.9}]}]}
+          JSON
+          "$M1" render songs/_jitprobe.json jit_${{ matrix.name }}.wav 2> jit_stderr.txt || { cat jit_stderr.txt; exit 1; }
+          grep -a "JIT" jit_stderr.txt || echo "(no fxdbg line — checking audio anyway)"
+          python3 tools/ci_wav_gate.py jit_${{ matrix.name }}.wav 3 || python tools/ci_wav_gate.py jit_${{ matrix.name }}.wav 3
+      - name: upload jit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jit-${{ matrix.name }}
+          if-no-files-found: ignore
+          path: |
+            jit_*.wav
+            jit_stderr.txt

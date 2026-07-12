@@ -977,6 +977,21 @@ private:
                         g.setColour (theme::bad.withAlpha (0.85f));
                         g.fillRoundedRectangle (card.getX(), card.getY() + 3.0f, 3.0f, card.getHeight() - 6.0f, 1.5f);
                     }
+                    else if (m.text.trimStart().startsWith ("PLAN:"))
+                    {
+                        // #16 THE PLAN CARD: the run's contract, streamed BEFORE
+                        // tools fire (the PLAN-FIRST prompt law) — branded so the
+                        // user sees the agent commit to a shape before it works
+                        theme::card (g, card, theme::agent.withAlpha (0.10f), 10.0f);
+                        g.setColour (theme::agent.withAlpha (0.9f));
+                        g.fillRoundedRectangle (card.getX(), card.getY() + 3.0f, 3.0f,
+                                                card.getHeight() - 6.0f, 1.5f);
+                        g.setColour (theme::agent);
+                        g.setFont (theme::caps (8.0f));
+                        g.drawText ("THE PLAN", (int) card.getX() + 13, (int) y + 1, 120, 10,
+                                    juce::Justification::centredLeft);
+                        theme::spark (g, { 8.0f, y + 5.0f, 8.0f, 8.0f }, theme::agent);
+                    }
                     else
                     {
                         theme::card (g, card, theme::panelHi, 10.0f);

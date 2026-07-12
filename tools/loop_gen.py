@@ -1411,6 +1411,19 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
         for t in tracks:
             if base_name(t["name"]) in ("color", "arp"):
                 t.setdefault("fx", []).append(json.loads(json.dumps(pump)))
+        # THE DUCK (ledger 162 #1 — dr02/dr11/dr12 converge): a SUSTAINED bass
+        # under the four-on-floor kick held UN-ducked — the two loudest low
+        # sources collided unmanaged. Placement-ducked styles (offbeat,
+        # psy_rolling) skip by construction; the held styles duck DEEPER with
+        # a faster release (the classic sidechain pocket). A/B-gated ship:
+        # SOTADAW_BASSDUCK=0 kills.
+        if (bstyle in ("sustained", "roots", "wub", "sub")
+                and os.environ.get("SOTADAW_BASSDUCK", "1") != "0"):
+            bpump = {"id": "fx_pump", "params": {"rate": round(bpm / 60.0, 3),
+                                                 "depth": 0.55, "release": 0.18}}
+            for t in tracks:
+                if t["name"] == "bass":
+                    t.setdefault("fx", []).append(bpump)
 
     # ---- SPACE AT BIRTH: one shared reverb return, melodic lanes send into it.
     # A bone-dry loop is the other demo tell; drums stay dry (the tight spine).
