@@ -635,6 +635,19 @@ def main():
 
     # ---- THE CHOP TAKE (dr23, 2026-07-12): breaks-family snares re-chop per
     # bar; the 2&4 backbeat anchors stay sacred in EVERY bar.
+    # ---- THE DUCK (ledger 162 #1, 2026-07-12): a sustained bass under the
+    # four-on-floor kick rides the sidechain pocket; placement-ducked styles
+    # (offbeat house) stay clean. Ships on a level-matched CLAP win.
+    birth("progressive_house", 3, "_cmp_duck")
+    _dk = json.load(open(os.path.join(SONGS, "_cmp_duck.json")))
+    _dkb = next(t for t in _dk["tracks"] if t["name"] == "bass")
+    check("duck: sustained bass rides the pump",
+          any(f.get("id") == "fx_pump" for f in _dkb.get("fx", [])))
+    _hob = next(t for t in json.load(open(os.path.join(SONGS, "_cmp_house.json")))["tracks"]
+                if t["name"] == "bass")
+    check("duck: offbeat house bass stays clean (placement IS the duck)",
+          not any(f.get("id") == "fx_pump" for f in _hob.get("fx", [])))
+
     # ---- THE BREATH LAW (dr03 + the adlib court, 2026-07-12): a chattering
     # cell's phrase tail thins to anchor + one pickup (pure hook_notes case;
     # curated cells that already rest, like pop's, no-op by construction).

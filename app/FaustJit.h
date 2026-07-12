@@ -79,10 +79,22 @@ inline ::dsp* createJitFaustDsp (const std::string& name, std::string& error)
         std::ifstream f (path);
         std::stringstream src;
         src << f.rdbuf();
-        const char* argv[] = { "-I", "/usr/share/faust" };
+        // stdlib import path: env override first (packaged Win/mac builds ship
+        // faustlibs/ and point this at it), else the Linux system path.
+        static const std::string libPath = []
+        {
+            if (const char* e = std::getenv ("SOTADAW_FAUST_LIB_PATH")) return std::string (e);
+            return std::string ("/usr/share/faust");
+        }();
+        const char* argv[] = { "-I", libPath.c_str() };
         auto* factory = createInterpreterDSPFactoryFromString (name, src.str(), 2, argv, error);
         if (factory == nullptr)
-            return nullptr;                                  // error carries the compiler message
+        {
+            // PORT_SPEC round-4 truth: a silent null here cost a CI round —
+            // the compiler message must always reach stderr.
+            std::fprintf (stderr, "[fxdbg] JIT %s FAILED: %s\n", name.c_str(), error.c_str());
+            return nullptr;
+        }
         it = cache.emplace (name, Entry { factory, st.st_mtime }).first;
     }
     if (std::getenv ("SOTADAW_FX_DEBUG") != nullptr)

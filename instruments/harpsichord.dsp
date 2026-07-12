@@ -1,0 +1,11 @@
+osc = library("oscillators.lib");
+envl = library("envelopes.lib");
+filt = library("filters.lib");
+noi = library("noises.lib");
+freq = hslider("freq",440,20,20000,0.01);
+gain = hslider("gain",0.5,0,1,0.01);
+gate = button("gate");
+env = envl.adsr(0.001,2.6,0.0,0.06,gate);
+chiff = noi.noise * envl.ar(0.0005,0.014,gate) * 0.5;
+tone = osc.sawtooth(freq)*0.38 + osc.sawtooth(freq*2.003)*0.30 + osc.sawtooth(freq*3.997)*0.18 + osc.sawtooth(freq*5.01)*0.09 + osc.square(freq)*0.08;
+process = (tone + chiff) : filt.lowpass(2, min(15000.0, 2600.0 + freq*2.0 + 6800.0*env)) : filt.highpass(1, 280.0) : *(env) : *(gain*0.32) <: _,_;

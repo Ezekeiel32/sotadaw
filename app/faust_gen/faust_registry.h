@@ -237,6 +237,10 @@ namespace fg_harp {
 #include "harp.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_harpsichord {
+#include "harpsichord.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_hat {
 #include "hat.hpp"
 }
@@ -497,6 +501,7 @@ inline ::dsp* createFaustDsp (const std::string& name)
     if (name == "hardkick") return new fg_hardkick::Hardkick();
     if (name == "harmonica") return new fg_harmonica::Harmonica();
     if (name == "harp") return new fg_harp::Harp();
+    if (name == "harpsichord") return new fg_harpsichord::Harpsichord();
     if (name == "hat") return new fg_hat::Hat();
     if (name == "hat_metal") return new fg_hat_metal::HatMetal();
     if (name == "highgain_guitar") return new fg_highgain_guitar::HighgainGuitar();
@@ -610,6 +615,7 @@ inline const std::vector<std::string>& faustDspNames()
     "hardkick",
     "harmonica",
     "harp",
+    "harpsichord",
     "hat",
     "hat_metal",
     "highgain_guitar",

@@ -1289,7 +1289,8 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
         track->setName (t.name);
 
         const auto pfS = juce::Time::getHighResolutionTicks();
-        auto err = buildTrackSource (engine, *edit, *track, t);
+        KitVelMap kitVel;                       // #9: layered kits remap at insert
+        auto err = buildTrackSource (engine, *edit, *track, t, &kitVel);
         pfSource += pfMs (pfS);
         if (err.isNotEmpty()) errors << t.name << ": " << err << "\n";
         te::Plugin* sourcePlug = [&]() -> te::Plugin*
@@ -1355,13 +1356,30 @@ inline std::unique_ptr<te::Edit> buildEdit (te::Engine& engine, const Song& s,
             if (auto clip = track->insertMIDIClip ({ 0_tp, songEnd }, nullptr))
             {
                 int ni = 0;
+                std::map<int, int> rrCount;      // #9: deterministic per-pitch RR walk
                 for (auto& n : t.notes)
                     if (noteIncluded (n, ni++))          // HB5: per-note chance (seeded)
-                        clip->getSequence().addNote (n.pitch,
+                    {
+                        int outPitch = n.pitch;
+                        if (! kitVel.empty())            // #9 THE VELOCITY REMAP
+                        {
+                            auto kv = kitVel.find (n.pitch);
+                            if (kv != kitVel.end() && ! kv->second.empty())
+                            {
+                                auto& tiers = kv->second;
+                                size_t li = 0;
+                                while (li + 1 < tiers.size() && n.vel > tiers[li].first)
+                                    ++li;
+                                auto& alts = tiers[li].second;
+                                outPitch = alts[(size_t) (rrCount[n.pitch]++) % alts.size()];
+                            }
+                        }
+                        clip->getSequence().addNote (outPitch,
                                                      te::BeatPosition::fromBeats (applySwing (n.start, s)),
                                                      te::BeatDuration::fromBeats (n.len),
                                                      juce::jlimit (1, 127, (int) std::lround (n.vel * 127.0)),
                                                      0, nullptr);
+                    }
             }
         pfMidi += pfMs (pfM);
 

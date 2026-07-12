@@ -154,24 +154,30 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: fetch faust dist (mac gets both arches, lipo'd universal static lib)
+      - name: fetch faust dist (win) / build interpreter-only libfaust from source (mac)
         shell: bash
         run: |
           if [ "${{ matrix.name }}" = "windows" ]; then
+            # round-4 truth: the official dll EXPORTS the interpreter (it linked);
+            # the silence was our hardcoded /usr/share/faust stdlib path.
             curl -fsSL -o faust.exe https://github.com/grame-cncm/faust/releases/download/2.85.9/Faust-2.85.9-win64.exe
             7z x -ofaustdist faust.exe > /dev/null || true
           else
-            curl -fsSL -o fa.dmg https://github.com/grame-cncm/faust/releases/download/2.85.9/Faust-2.85.9-arm64.dmg
-            curl -fsSL -o fx.dmg https://github.com/grame-cncm/faust/releases/download/2.85.9/Faust-2.85.9-x64.dmg
-            hdiutil attach fa.dmg -nobrowse -mountpoint /tmp/fa
-            hdiutil attach fx.dmg -nobrowse -mountpoint /tmp/fx
-            cp -R /tmp/fa/*aust*/ faustdist 2>/dev/null || cp -R /tmp/fa/. faustdist
-            XA=$(find /tmp/fx -name libfaust.a | head -1)
-            lipo -create faustdist/lib/libfaust.a "$XA" -output faustdist/lib/libfaust_u.a
-            mv faustdist/lib/libfaust_u.a faustdist/lib/libfaust.a
+            # round-4 truth: dist libfaust.a needs external LLVM (undefined llvm::*).
+            # Interpreter-only from source = small, self-contained, universal.
+            git clone --depth 1 --branch 2.85.9 https://github.com/grame-cncm/faust fsrc
+            cmake -S fsrc/build -B fb -C fsrc/build/backends/interp.cmake \
+              -DINCLUDE_STATIC=ON -DINCLUDE_DYNAMIC=OFF -DINCLUDE_EXECUTABLE=OFF \
+              -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+            cmake --build fb --target staticlib -j 3 || cmake --build fb -j 3
+            mkdir -p faustdist/lib faustdist/include faustdist/share
+            cp $(find fb -name 'libfaust*.a' | head -1) faustdist/lib/libfaust.a
+            cp -R fsrc/architecture/faust faustdist/include/faust
+            cp -R fsrc/libraries faustdist/share/faust
             lipo -info faustdist/lib/libfaust.a
           fi
-          ls faustdist/lib | head
+          ls faustdist/lib faustdist/share 2>/dev/null | head
       - name: vendored tracktion (pinned)
         shell: bash
         run: |
@@ -207,8 +213,11 @@ jobs:
                     {"beat":4,"pitch":67,"lengthBeats":0.9,"velocity":0.9},{"beat":5,"pitch":69,"lengthBeats":0.9,"velocity":0.9},
                     {"beat":6,"pitch":71,"lengthBeats":0.9,"velocity":0.9},{"beat":7,"pitch":72,"lengthBeats":0.9,"velocity":0.9}]}]}
           JSON
+          export SOTADAW_FAUST_LIB_PATH="$PWD/faustdist/share/faust"
+          [ -d "$SOTADAW_FAUST_LIB_PATH/stdfaust.lib" ] || ls "$SOTADAW_FAUST_LIB_PATH" | head -5
+          export SOTADAW_FX_DEBUG=1
           "$M1" render songs/_jitprobe.json jit_${{ matrix.name }}.wav 2> jit_stderr.txt || { cat jit_stderr.txt; exit 1; }
-          grep -a "JIT" jit_stderr.txt || echo "(no fxdbg line — checking audio anyway)"
+          cat jit_stderr.txt | grep -a "fxdbg" || echo "(no fxdbg line)"
           python3 tools/ci_wav_gate.py jit_${{ matrix.name }}.wav 3 || python tools/ci_wav_gate.py jit_${{ matrix.name }}.wav 3
       - name: upload jit evidence
         if: always()
