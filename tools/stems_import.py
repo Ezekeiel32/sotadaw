@@ -1335,8 +1335,13 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
                 # noise = the fidelity ruler's own resolution). A bare run
                 # would land a 32-band deck that needs a retrofit
                 # transplant on day one.
-                chain = (f"{py} {shlex.quote(os.path.join(ROOT, 'tools', 'vocal_truth.py'))} "
-                         f"{shlex.quote(name)} --win 10 --quality ultra; "
+                vt = shlex.quote(os.path.join(ROOT, 'tools', 'vocal_truth.py'))
+                # #10 VOCAL TRUTH by DEFAULT: after the windows land, fuse
+                # them into ONE sidecar (spectral lanes sound symbolically;
+                # merge is atomic tmp+replace — a failed merge leaves the
+                # landed wav untouched and sing still runs: ';' by design).
+                chain = (f"{py} {vt} {shlex.quote(name)} --win 10 --quality ultra; "
+                         f"{py} {vt} {shlex.quote(name)} --merge; "
                          f"{py} {shlex.quote(os.path.join(ROOT, 'tools', 'sing.py'))} "
                          f"hum {shlex.quote(name)} vocals_sketch ooh")
                 _sp.Popen(["bash", "-c", chain], stdout=open(slog, "a"),

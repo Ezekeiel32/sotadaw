@@ -583,12 +583,32 @@ def _worldclass_floor(rid, prop, a):
                 a = render_and_analyze(rid, prop, "proposal")
                 v = worldclass.floor_verdict(fixed, a)
         standing = [h["why"] for h in v["hard"]]
+        # THE SYMBOLIC EARS ON EVERY TAKE (ledger 162 #8): the floor judges +
+        # heals its own trap classes; the doctor's remaining HARD findings
+        # (M3 focal panned, C3 no low end, unhealable X2 zone typos) never
+        # rode generated output before. Advisory: judged POST-heal, hard-set
+        # filtered so style truths (one-chord psy loops) never nag. Fail-open.
+        doctor_finds = []
+        try:
+            import doctor as _doc
+            cur = fixed if healed else doc
+            _hard = {"M1", "M3", "X1", "X2", "X3", "X4", "C3"}
+            if len(cur.get("tracks", [])) < 3:
+                _hard.discard("C3")        # sketches aren't 'missing' low end yet
+            doctor_finds = [f"[{c}] {w}" for c, w, _fx in _doc.diagnose(cur)
+                            if c in _hard][:5]
+        except Exception:
+            pass
         emit(rid, "quality", song=prop[len("_prop_"):] if prop.startswith("_prop_")
              else prop, world_class=v["pass"], healed=healed,
-             hard=standing, soft=[s["why"] for s in v["soft"]])
+             hard=standing, soft=[s["why"] for s in v["soft"]],
+             doctor=doctor_finds)
         if standing:
             emit(rid, "activity", text="WORLD-CLASS FLOOR: standing - "
                  + " | ".join(standing[:3]))
+        if doctor_finds:
+            emit(rid, "activity", text="DOCTOR (take): "
+                 + " | ".join(doctor_finds[:3]))
     except Exception:
         pass
     return a

@@ -169,5 +169,27 @@ S.last_genres.pop("_psrbat_gt", None)
 ck("genre truth: silence when nothing speaks", S.resolve_take_genre("_psrbat_gt") is None)
 os.remove(_tmp)
 
+# 10. THE BREATH FLOORS (wave 52): lra_floor now rides MixTargets for the
+# dynamics-defined families — the guard that waved the W40 gospel squash
+# (4.2 -> 3.0 LU) through at the universal 3.2 default must now BLOCK it.
+squash = {"clipped_samples": 0, "lufs_integrated": -12.0,
+          "true_peak_dbtp": -0.4, "lra": 4.2}   # at the wall, breathing 4.2 LU
+d_old, _ = S.recovery_step(squash, -6.0, None, 0.0, max_push=6.0, lra_floor=3.2)
+d_gospel, why_g = S.recovery_step(squash, -6.0, None, 0.0, max_push=6.0, lra_floor=4.5)
+ck("breath floors: 3.2 default let the gospel squash lift", d_old > 0, str(d_old))
+ck("breath floors: gospel 4.5 BLOCKS the same lift at the wall",
+   d_gospel == 0.0 and "LRA" in why_g, f"{d_gospel} / {why_g}")
+_cache = json.load(open(os.path.join(ROOT, "agent", "dna_cache.json")))
+_gen = _cache.get("genres", _cache)
+ck("breath floors: cache carries jazz 6.0 / ambient 6.0 / gospel 4.5",
+   (_gen.get("jazz") or {}).get("lra_floor") == 6.0
+   and (_gen.get("ambient") or {}).get("lra_floor") == 6.0
+   and (_gen.get("gospel") or {}).get("lra_floor") == 4.5)
+# club genres: EFFECTIVE floor stays 3.2 — either unset (guard default) or
+# stored 3.2 by the E12 physics seed; wave 52 deliberately left them alone
+ck("breath floors: club effective floor stays 3.2",
+   (_gen.get("techno") or {}).get("lra_floor") in (None, 3.2)
+   and (_gen.get("house") or {}).get("lra_floor") in (None, 3.2))
+
 print(f"\n== PSR FLOORS: {len(PASS)} pass / {len(FAIL)} fail ==")
 sys.exit(0 if not FAIL else 1)

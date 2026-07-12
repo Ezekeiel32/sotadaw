@@ -139,7 +139,56 @@ def main():
           len(walls) == 1 and walls[0]["params"]["ceiling"] == -1.5
           and fixed["master"][-1]["id"] == "fx_truepeak", fixed["master"])
 
-    want = 16
+    # ---- misnamed-param aliases + the hipass twin (2026-07-12) ----
+    s = base_song()
+    s["tracks"][0]["fx"] = [{"id": "fx_filter",
+                             "params": {"cutoff": 900, "resonance": 2.0}}]
+    v = wc.floor_verdict(s, LOUD)
+    fixed, rec = wc.heal(s, v)
+    check("'resonance' aliases to 'res' (X2 heal)",
+          any(h["code"] == "param_alias" for h in v["hard"])
+          and fixed["tracks"][0]["fx"][0]["params"] == {"cutoff": 900, "res": 2.0},
+          fixed["tracks"][0]["fx"])
+
+    s = base_song()
+    s["tracks"][0]["fx"] = [{"id": "fx_filter",
+                             "params": {"cutoff": 300, "mode": "hp"}}]
+    v = wc.floor_verdict(s, LOUD)
+    fixed, rec = wc.heal(s, v)
+    f0 = fixed["tracks"][0]["fx"][0]
+    v2 = wc.floor_verdict(fixed, LOUD)
+    check("mode:hp swaps to fx_hipass; healed take passes",
+          f0["id"] == "fx_hipass" and "mode" not in f0["params"]
+          and f0["params"]["cutoff"] == 300 and v2["pass"], (f0, v2))
+
+    s = base_song()
+    s["tracks"][0]["fx"] = [{"id": "fx_filter",
+                             "params": {"cutoff": 9000, "mode": "lp"}}]
+    v = wc.floor_verdict(s, LOUD)
+    fixed, rec = wc.heal(s, v)
+    f0 = fixed["tracks"][0]["fx"][0]
+    check("mode:lp = dead key dropped, filter stays",
+          f0["id"] == "fx_filter" and "mode" not in f0["params"], f0)
+
+    s = base_song(master=[{"id": "fx_filter",
+                           "params": {"cutoff": 500, "mode": "hp"}},
+                          {"id": "fx_truepeak", "params": {"ceiling": -1.2}}])
+    v = wc.floor_verdict(s, LOUD)
+    fixed, rec = wc.heal(s, v)
+    check("master hp-intent filter: X3 exempt, swapped not dropped",
+          not any(h["code"] == "dark_master" for h in v["hard"])
+          and fixed["master"][0]["id"] == "fx_hipass", (v["hard"], fixed["master"]))
+
+    s = base_song()
+    s["tracks"][0]["fx"] = [{"id": "fx_delay",
+                             "params": {"time": 0.4, "wet": 0.3}}]
+    v = wc.floor_verdict(s, LOUD)
+    fixed, rec = wc.heal(s, v)
+    check("'wet' aliases to 'mix' on fx_delay",
+          fixed["tracks"][0]["fx"][0]["params"] == {"time": 0.4, "mix": 0.3},
+          fixed["tracks"][0]["fx"])
+
+    want = 21
     ok = not FAILS and N == want
     print(f"[wc-battery] {N}/{want} checks, "
           + ("ALL PASS — the floor holds" if ok else f"RED: {FAILS}"))

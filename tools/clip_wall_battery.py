@@ -74,6 +74,30 @@ def main():
        "clean take passes through untouched")
     # 7) unreadable analysis: passthrough
     ok(sc.clip_wall(0, SONG, True) is True, "non-dict analysis passes through")
+    # 8) THE SYMBOLIC EARS (ledger 162 #8): doctor HARD findings ride the
+    # quality event on every take — M3 (focal panned) is doctor-ONLY truth
+    # the floor can't see; it must arrive without blocking or healing
+    d8 = doc_with([{"id": "fx_truepeak", "params": {"ceiling": -1.2}}])
+    d8["tracks"].append({"name": "lead", "source": {"kind": "faust", "id": "pluck"},
+                         "pan": 0.6,
+                         "notes": [{"start": i * 1.0, "len": 0.5, "pitch": 72, "vel": 0.8}
+                                   for i in range(8)]})
+    d8["tracks"].append({"name": "bass", "source": {"kind": "faust", "id": "bass_warm"},
+                         "notes": [{"start": i * 1.0, "len": 0.5, "pitch": 40, "vel": 0.8}
+                                   for i in range(8)]})
+    json.dump(d8, open(PJ, "w"))
+    events = []
+    real_emit = sc.emit
+    sc.emit = lambda rid, kind, **kw: events.append((kind, kw))
+    try:
+        sc.clip_wall(0, SONG, {"clipped_samples": 0, "peak_dbfs": -1.4})
+    finally:
+        sc.emit = real_emit
+    q = next((kw for k, kw in events if k == "quality"), {})
+    ok(any("[M3]" in s for s in q.get("doctor", [])),
+       f"doctor M3 (focal panned) rides the quality event ({q.get('doctor')})")
+    ok(json.load(open(PJ))["tracks"][1]["pan"] == 0.6,
+       "advisory only: the doctor never mutates the take")
     os.remove(PJ)
 
     if "--real" in sys.argv:

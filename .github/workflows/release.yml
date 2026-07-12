@@ -205,6 +205,8 @@ jobs:
             # round-4 truth: dist libfaust.a needs external LLVM (undefined llvm::*).
             # Interpreter-only from source = small, self-contained, universal.
             git clone --depth 1 --branch 2.85.9 https://github.com/grame-cncm/faust fsrc
+            git clone --depth 1 https://github.com/grame-cncm/faustlibraries fsrc/libraries_full
+            rm -rf fsrc/libraries && mv fsrc/libraries_full fsrc/libraries
             cmake -S fsrc/build -B fb -C fsrc/build/backends/interp.cmake \
               -DINCLUDE_STATIC=ON -DINCLUDE_DYNAMIC=OFF -DINCLUDE_EXECUTABLE=OFF \
               -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" \

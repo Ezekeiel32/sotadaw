@@ -2225,6 +2225,58 @@ private:
 };
 
 //==============================================================================
+// THE CLIPBOARD CROSSES WINDOWS (Chezy live 2026-07-12): the H24 shared note
+// store dies at the process line — two SOTA DAW windows can't trade notes.
+// Every copy also stamps the SYSTEM clipboard with a tagged JSON payload;
+// every paste offers a parse of it (the latest copy across ALL windows wins).
+static juce::String notesToClipText (const std::vector<SongNote>& ns)
+{
+    juce::Array<juce::var> arr;
+    for (auto& n : ns)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("s", n.start);  o->setProperty ("l", n.len);
+        o->setProperty ("p", n.pitch);  o->setProperty ("v", n.vel);
+        if (n.chance < 1.0) o->setProperty ("c", n.chance);
+        arr.add (juce::var (o));
+    }
+    auto* root = new juce::DynamicObject();
+    root->setProperty ("sotadaw_notes", arr);
+    return juce::JSON::toString (juce::var (root), true);
+}
+static std::vector<SongNote> notesFromClipText (const juce::String& txt)
+{
+    std::vector<SongNote> out;
+    if (! txt.startsWith ("{\"sotadaw_notes\"")) return out;
+    const juce::var v = juce::JSON::parse (txt);   // hold the var (lifetime law)
+    auto* obj = v.getDynamicObject();
+    if (obj == nullptr) return out;
+    const auto notes = obj->getProperty ("sotadaw_notes");
+    if (! notes.isArray()) return out;
+    for (auto& nv : *notes.getArray())
+        if (auto* no = nv.getDynamicObject())
+        {
+            SongNote n;
+            n.start  = (double) no->getProperty ("s");
+            n.len    = juce::jmax (0.05, (double) no->getProperty ("l"));
+            n.pitch  = juce::jlimit (0, 127, (int) no->getProperty ("p"));
+            n.vel    = juce::jlimit (0.0, 1.0, (double) no->getProperty ("v"));
+            n.chance = no->hasProperty ("c") ? (double) no->getProperty ("c") : 1.0;
+            out.push_back (n);
+        }
+    return out;
+}
+static bool sameNotes (const std::vector<SongNote>& a, const std::vector<SongNote>& b)
+{
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (std::abs (a[i].start - b[i].start) > 1e-9 || std::abs (a[i].len - b[i].len) > 1e-9
+            || a[i].pitch != b[i].pitch || std::abs (a[i].vel - b[i].vel) > 1e-9)
+            return false;
+    return true;
+}
+
+//==============================================================================
 // Piano-roll v2: drag move, right-edge resize, right-click delete, velocity lane.
 class PianoRollEditor : public juce::Component
 {
@@ -2797,11 +2849,14 @@ public:
         if (hasKey && (! chatSurface || getWidth() > 260))
         {   // the key wears a chip on the grid — and the chip IS the scale lock (H12)
             const auto f = theme::caps (8.0f);
-            const auto lbl = song->key.toUpperCase() + juce::String (scaleLock ? "  LOCKED" : "");
+            const auto lbl = song->key.toUpperCase()
+                             + juce::String (chordLock ? "  CHORD-LOCK"
+                                             : scaleLock ? "  LOCKED" : "");
             keyChipRect = { (float) r.getX() + 6.0f, (float) r.getY() + 6.0f,
                             theme::measure (f, lbl) + 28.0f, 15.0f };
+            const bool lk = scaleLock || chordLock;
             theme::chip (g, keyChipRect, theme::accent, lbl, f,
-                         scaleLock ? 0.34f : 0.16f, scaleLock ? 0.95f : 0.45f);
+                         lk ? 0.34f : 0.16f, lk ? 0.95f : 0.45f);
         }
         else keyChipRect = {};
         // hint chip: floats top-right of the grid, never under the velocity bars
@@ -2883,8 +2938,12 @@ public:
 
         if (hasKey && ! keyChipRect.isEmpty() && keyChipRect.contains (e.position)
             && ! e.mods.isPopupMenu())
-        {   // the key chip IS the scale lock (H12): drags/arrows/brush land in key
-            scaleLock = ! scaleLock;
+        {   // the key chip IS the lock (H12): off -> KEY; with a chord spine the
+            // cycle grows a third stop (#23b): KEY -> CHORD-LOCK -> off
+            if (! scaleLock && ! chordLock)      scaleLock = true;
+            else if (scaleLock && ! song->chords.empty())
+                                                 { scaleLock = false; chordLock = true; }
+            else                                 scaleLock = chordLock = false;
             repaint(); return;
         }
         if (velLaneH() > 0 && e.y >= getHeight() - velLaneH() && e.x >= r.getX())   // velocity lane
@@ -3120,10 +3179,12 @@ public:
             for (auto i : selection) if (i < t.notes.size()) minStart = juce::jmin (minStart, t.notes[i].start);
             for (auto i : selection) if (i < t.notes.size())
                 { auto n = t.notes[i]; n.start -= minStart; clipboard.push_back (n); }
+            pushSystemClip();                      // the copy crosses windows
             if (onClipWrite) onClipWrite();
             repaint(); return true;
         }
-        if (ctrl && k.getKeyCode() == 'V' && ! clipRef().empty())
+        if (ctrl && k.getKeyCode() == 'V'
+            && (pullSystemClip(), ! clipRef().empty()))   // latest copy across ALL windows
         {
             auto& clipboard = clipRef();
             const double at = snapTo (playheadBeats >= 0 ? playheadBeats : vs,
@@ -3209,6 +3270,7 @@ public:
     // under the hands (quantize/humanize/stretch/retrograde/velocity_ramp parity).
     // Empty selection = the whole clip answers (FL law). One op = one undo step.
     bool scaleLock = false;                  // the key chip IS the lock: hands land in key
+    bool chordLock = false;                  // #23b: hands land in the SPINE's chord at that beat
     int armedStamp = 0;                      // chord stamp painted by click/brush (0 = single)
     juce::Rectangle<float> keyChipRect;      // painted by the chip, hit by mouseDown
 
@@ -3416,9 +3478,35 @@ public:
         selected = selection.empty() ? -1 : (int) *selection.begin();
         repaint();
     }
-    int snapPitchScale (int p) const         // SCALE LOCK: nearest in-key pitch
+    // the harmonic spine at this beat (#2's chord track; chords carry 1-based bars,
+    // the WORLD GRID routes bar->beat). nullptr when the song has no spine there.
+    const sotadaw::SongChord* chordAtBeat (double beat) const
     {
-        if (! scaleLock || ! hasKey) return p;
+        if (song == nullptr) return nullptr;
+        const sotadaw::SongChord* best = nullptr;
+        double bestBeat = -1e9;
+        for (auto& c : song->chords)
+        {
+            const double b = song->barStartBeat (c.bar - 1.0);
+            if (b <= beat + 1e-6 && b > bestBeat) { bestBeat = b; best = &c; }
+        }
+        return best;
+    }
+    int snapPitchScale (int p, double beat = -1.0) const   // LOCK: nearest legal pitch
+    {
+        if (chordLock && beat >= 0.0)        // #23b: the chord under the hand outranks the key
+            if (auto* c = chordAtBeat (beat); c != nullptr && c->mask != 0)
+            {
+                for (int d = 0; d <= 6; ++d)
+                    for (int s : { -1, 1 })
+                    {
+                        const int q = p + d * s;
+                        if (q >= 0 && q <= 127 && ((c->mask >> (((q % 12) + 12) % 12)) & 1))
+                            return q;
+                    }
+                return p;
+            }
+        if (! (scaleLock || chordLock) || ! hasKey) return p;   // chord-lock off the spine falls to key
         for (int d = 0; d <= 6; ++d)
             for (int s : { -1, 1 })
             {
@@ -3599,6 +3687,27 @@ public:
 private:
     std::vector<SongNote> clipLocal;               // fallback when unwired (chat cards stay isolated)
     std::vector<SongNote>& clipRef() { return sharedClip != nullptr ? *sharedClip : clipLocal; }
+    // THE CLIPBOARD CROSSES WINDOWS (Chezy live 2026-07-12: "i cant copy
+    // ctrl+c - ctrl+v from one window to the other!?"): the shared store dies
+    // at the process line — every copy from a WIRED editor also stamps the
+    // SYSTEM clipboard with a tagged JSON payload, and paste prefers a parse
+    // of that (the latest copy across ALL windows wins). Unwired chat cards
+    // keep their isolation: no stamp, no pull.
+    void pushSystemClip()
+    {
+        if (sharedClip == nullptr) return;         // chat cards keep their isolation
+        juce::SystemClipboard::copyTextToClipboard (notesToClipText (clipRef()));
+    }
+    void pullSystemClip()
+    {
+        if (sharedClip == nullptr) return;
+        auto in = notesFromClipText (juce::SystemClipboard::getTextFromClipboard());
+        if (! in.empty() && ! sameNotes (in, clipRef()))
+        {
+            clipRef() = std::move (in);
+            if (onClipWrite) onClipWrite();        // adopted payload has no lane info
+        }
+    }
     juce::Point<int> marqueeA, marqueeB;
     SongNote dragNote;
     Mode mode = Mode::none;
@@ -12089,7 +12198,10 @@ public:
                         {
                             if (r == 0) return;            // dismissed = no import
                             if (r == 2) { cmd.add ("--instruments"); cmd.add ("ear"); }
-                            runBridge (cmd, desc, out);
+                            // audio JOINS the session it was imported into
+                            // (evaluated at LAND time; blank sessions still
+                            // open the record as its own project)
+                            bridgeMergeAudio = runBridge (cmd, desc, out);
                         });
                     return;
                 }
@@ -14333,6 +14445,7 @@ private:
                         noteClip.push_back (n);
                         noteClipLane.push_back (ti);
                     }
+        juce::SystemClipboard::copyTextToClipboard (notesToClipText (noteClip));
         setStatus ("copied " + juce::String ((int) noteClip.size()) + " notes");
     }
     void blockCut()
@@ -14349,6 +14462,16 @@ private:
     }
     void blockPaste()
     {
+        // cross-window: adopt a FRESHER system-clipboard payload (another
+        // window's copy); an identical one keeps the local lane origins
+        {
+            auto in = notesFromClipText (juce::SystemClipboard::getTextFromClipboard());
+            if (! in.empty() && ! sameNotes (in, noteClip))
+            {
+                noteClip = std::move (in);
+                noteClipLane.clear();          // foreign notes carry no lanes here
+            }
+        }
         if (noteClip.empty() || song.tracks.empty()) return;
         snapshot();
         const double g  = juce::jmax (laneSnapBeats(), 0.25);
@@ -19622,7 +19745,16 @@ private:  // (restores the section the HANDS burst was in)
                     appendActivity ("[connector] " + bridgeDesc + " -> "
                                     + bridgePendingLoad.getFileNameWithoutExtension());
                     refreshSongList();
-                    loadSong (bridgePendingLoad);
+                    // THE IMPORT JOINS THE SESSION (Chezy live 2026-07-12:
+                    // "importing an audio force-opens a new project?! it
+                    // should integrate"): with a real song open, the record's
+                    // stem + sketch lanes land IN it, tempo-warped. A blank
+                    // session keeps the old door (the import IS the project).
+                    if (bridgeMergeAudio && songName.isNotEmpty() && ! song.tracks.empty())
+                        mergeImportedSession (bridgePendingLoad);
+                    else
+                        loadSong (bridgePendingLoad);
+                    bridgeMergeAudio = false;
                 }
                 else
                 {
@@ -19658,6 +19790,7 @@ private:  // (restores the section the HANDS burst was in)
                 setStatus ("plugin list reloaded");
             }
             bridgePendingLoad = bridgeReveal = juce::File();
+            bridgeMergeAudio = false;
             setStatus ("connector done");
         }
         if (masterClientAttached)
@@ -19866,6 +19999,50 @@ private:  // (restores the section the HANDS burst was in)
         if (bars <= song.lengthBars) return false;
         song.lengthBars = bars;
         return true;
+    }
+    // THE IMPORT JOINS THE SESSION (Chezy live 2026-07-12): a finished record
+    // import lands its stem + sketch lanes INTO the open song — clips warped
+    // to the session tempo (sourceBpm = the record's detected bpm), names
+    // uniqued, world grown to fit. Fail-open: anything unparseable falls back
+    // to the old open-as-project door. The Reference DNA stays banked under
+    // the import's own <name>_stems dir either way.
+    void mergeImportedSession (const juce::File& f)
+    {
+        sotadaw::Song imp;
+        if (! sotadaw::parseSong (f, imp) || imp.tracks.empty()) { loadSong (f); return; }
+        snapshot();
+        double endBeat = 0;
+        int landed = 0;
+        juce::StringArray names;
+        for (auto& t : song.tracks) names.add (t.name);
+        for (auto& it : imp.tracks)
+        {
+            if (it.notes.empty() && it.audioClips.empty()) continue;  // empty scaffolds stay behind
+            sotadaw::SongTrack t = it;
+            if (names.contains (t.name))
+            {
+                int k = 2;
+                while (names.contains (t.name + "_" + juce::String (k))) ++k;
+                t.name = t.name + "_" + juce::String (k);
+            }
+            names.add (t.name);
+            for (auto& ac : t.audioClips)
+            {
+                if (ac.sourceBpm <= 0 && imp.bpm > 0)
+                    ac.sourceBpm = imp.bpm;      // warp: the record follows the session tempo
+                endBeat = juce::jmax (endBeat, ac.startBeat + ac.lengthBeats);
+            }
+            for (auto& n : t.notes) endBeat = juce::jmax (endBeat, n.start + n.len);
+            song.tracks.push_back (std::move (t));
+            ++landed;
+        }
+        if (landed == 0) { loadSong (f); return; }
+        if (growSongToFit (endBeat)) { viewPpb = 0; viewStart = 0; }   // fit: the grown world on screen
+        saveNow();
+        engineDirty = true;
+        appendActivity ("[connector] " + juce::String (landed) + " lanes joined '"
+                        + songName + "' (warped from " + juce::String (imp.bpm, 1) + " bpm)");
+        setStatus (juce::String (landed) + " imported lanes joined " + songName);
     }
     void landDroppedAudio (const juce::File& f, const juce::File& src, int ti, double bar)
     {
@@ -20596,6 +20773,7 @@ private:  // (restores the section the HANDS burst was in)
     juce::uint32 importT0 = 0;
     bool bridgeWasStarted = false;
     juce::File bridgePendingLoad, bridgeReveal;
+    bool bridgeMergeAudio = false;   // stems import JOINS the open song (Chezy 2026-07-12)
     juce::String personaId { "default" }; // agent behavioral contract (menu-selected)
     bool mockAgent = false;               // Agent menu: zero-token mock sidecar
     juce::ComboBox genreBox;            // one-button track: pick a genre, hit MAKE — zero tokens

@@ -1,0 +1,36 @@
+{
+ "flow": "import_qc",
+ "song": "goldenbrown",
+ "when": "2026-07-12 15:12:50",
+ "approval": "auto",
+ "steps": [
+  {
+   "tool": "render_song",
+   "args": {
+    "name": "goldenbrown",
+    "max_bars": 16
+   },
+   "secs": 10.71,
+   "result_head": "RENDER OK -> songs/goldenbrown.wav\n[m1] song: bpm=187.5 bars=16 tracks=11 notes=22 swing=0.5 master_fx=1 len=206.761s\n[m1] renderToFile ok=1 bytes=109418544 -> /home/chezy/AI_SOTA_DAW/songs/goldenbrow",
+   "ok": true,
+   "gate": {
+    "metric": "last_render.clipped_samples",
+    "op": "==",
+    "want": 0,
+    "got": 0,
+    "ok": true
+   }
+  },
+  {
+   "tool": "analyze_wav",
+   "args": {
+    "path": "songs/goldenbrown.wav"
+   },
+   "secs": 120.15,
+   "result_head": "TOOL EXCEPTION: Command '['/home/chezy/AI_SOTA_DAW/.venv/bin/python', '/home/chezy/AI_SOTA_DAW/tools/analyze2.py', '/home/chezy/AI_SOTA_DAW/songs/goldenbrown.wav']' timed out after 120 seconds",
+   "ok": false
+  }
+ ],
+ "ok": false,
+ "halted": "step 2 analyze_wav failed: TOOL EXCEPTION: Command '['/home/chezy/AI_SOTA_DAW/.venv/bin/python', '/home/chezy/AI_SOTA_DAW/tools/analyze2.py', '/hom"
+}

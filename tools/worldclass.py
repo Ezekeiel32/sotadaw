@@ -26,10 +26,76 @@ Kernel only — no engine, no network, no KG. The sidecar wires it.
 """
 import copy
 
+# Misnamed fx params the corpus actually writes (2026-07-12 sweep: 29x
+# fx_filter 'mode', 6x 'resonance', 'threshold', 'wet') — deterministic
+# renames ONLY, and only when the fx's real zone set contains the target
+# (zone truth = doctor.FX_ZONES, imported lazily, fail-open).
+PARAM_ALIASES = {"resonance": "res", "threshold": "thresh",
+                 "outputDb": "makeup", "output_db": "makeup", "wet": "mix"}
+_HP_WORDS = {"hp", "high", "highpass", "hi", "1", "1.0", "true"}
+
+
+def _fx_zones(fid):
+    try:
+        import os as _os, sys as _sys
+        _tp = _os.path.dirname(_os.path.abspath(__file__))
+        if _tp not in _sys.path:
+            _sys.path.insert(0, _tp)
+        import doctor as _doc
+        return _doc.FX_ZONES.get(fid)
+    except Exception:
+        return None
+
+
+def _alias_walk(hard, where, ti, fi, f):
+    """Misnamed-param convictions (X2 family) with deterministic heals:
+    rename what has exactly one real home; fx_filter 'mode' either swaps to
+    the hipass twin (hp intent) or drops the dead key (lp = already true)."""
+    fid = f.get("id")
+    params = f.get("params") or {}
+    zones = _fx_zones(fid)
+    if zones:
+        for bad, good in PARAM_ALIASES.items():
+            if bad in params and good in zones and good not in params \
+                    and not (fid == "fx_trim" and bad == "gain"):
+                hard.append({"code": "param_alias",
+                             "heal": ("fx_param_rename", where, ti, fi, bad, good),
+                             "why": f"{fid} param '{bad}' is not a zone — "
+                                    f"the real knob is '{good}' (X2)"})
+    if fid == "fx_filter" and "mode" in params:
+        if str(params.get("mode")).strip().lower() in _HP_WORDS:
+            hard.append({"code": "param_alias",
+                         "heal": ("fx_to_hipass", where, ti, fi),
+                         "why": "fx_filter has NO 'mode' zone — the hp "
+                                "intent belongs to fx_hipass (X2)"})
+        else:
+            hard.append({"code": "param_alias",
+                         "heal": ("fx_drop_param", where, ti, fi, "mode"),
+                         "why": "fx_filter has NO 'mode' zone — dead key (X2)"})
+
 
 def _is_sub(track):
     nm = str(track.get("name", "")).lower()
-    return any(k in nm for k in ("kick", "bass", "sub", "808")) and "808s" not in nm
+    if any(k in nm for k in ("kick", "bass", "sub", "808")) and "808s" not in nm:
+        return True
+    # FREQUENCY TRUTH (M4 upstreamed, 2026-07-12): an 808 named 'melody' is
+    # still a sub — median NOTE pitch <= E2 (MIDI 40) convicts whatever the
+    # name says. Drum lanes exempt (GM numbers are not pitches); when
+    # drum-ness can't be verified, stay name-only (fail-open).
+    ns = [n.get("pitch", 60) for n in track.get("notes", []) or []]
+    if len(ns) >= 4:
+        try:
+            import os as _os, sys as _sys
+            _tp = _os.path.dirname(_os.path.abspath(__file__))
+            if _tp not in _sys.path:
+                _sys.path.insert(0, _tp)
+            from chordvote import is_drum_track as _idt
+            if _idt(track):
+                return False
+        except Exception:
+            return False
+        return sorted(ns)[len(ns) // 2] <= 40
+    return False
 
 
 def _has_sound(song):
@@ -90,8 +156,12 @@ def floor_verdict(song, analysis=None):
             str(k) in s for s in autos for k in params)
         if automated:
             continue                               # sweeps are performance
+        _alias_walk(hard, "master", -1, i, f)
         try:
-            if fid == "fx_filter" and float(params.get("cutoff", 20000)) < 800:
+            # hp-INTENT filters exempt from X3: they aren't dark, they're
+            # mis-homed — the alias walk swaps them to fx_hipass instead
+            if fid == "fx_filter" and float(params.get("cutoff", 20000)) < 800 \
+                    and str(params.get("mode", "")).strip().lower() not in _HP_WORDS:
                 hard.append({"code": "dark_master", "heal": ("drop_master_fx", i),
                              "why": f"parked master fx_filter at "
                                     f"{params.get('cutoff')}Hz with no automation "
@@ -134,6 +204,8 @@ def floor_verdict(song, analysis=None):
                                  "why": f"'{t.get('name')}' fx_trim uses "
                                         "\"gain\" — a silent no-op; the zone "
                                         "is \"level\" (X2)"})
+        for fi, f in enumerate(t.get("fx", []) or []):
+            _alias_walk(hard, "track", ti, fi, f)
         if _is_sub(t) and (t.get("notes") or t.get("audioClips")):
             try:
                 if abs(float(t.get("pan", 0) or 0)) > 1e-6:
@@ -179,6 +251,28 @@ def heal(song, verdict):
             f.setdefault("params", {})["level"] = f["params"].pop("gain")
             receipts.append(f"fx_trim \"gain\" -> \"level\" on "
                             f"'{doc['tracks'][fix[1]].get('name')}'")
+        elif op == "fx_param_rename":
+            _, where, ti, fi, bad, good = fix
+            fxl = (doc.get("master", []) if where == "master"
+                   else doc["tracks"][ti].get("fx", []))
+            p = fxl[fi].setdefault("params", {})
+            if bad in p and good not in p:
+                p[good] = p.pop(bad)
+                receipts.append(f"{fxl[fi].get('id')} '{bad}' -> '{good}'")
+        elif op == "fx_to_hipass":
+            _, where, ti, fi = fix
+            fxl = (doc.get("master", []) if where == "master"
+                   else doc["tracks"][ti].get("fx", []))
+            f = fxl[fi]
+            f.setdefault("params", {}).pop("mode", None)
+            f["id"] = "fx_hipass"
+            receipts.append("fx_filter mode:hp -> fx_hipass (the intent's real home)")
+        elif op == "fx_drop_param":
+            _, where, ti, fi, key = fix
+            fxl = (doc.get("master", []) if where == "master"
+                   else doc["tracks"][ti].get("fx", []))
+            (fxl[fi].get("params") or {}).pop(key, None)
+            receipts.append(f"{fxl[fi].get('id')} dead param '{key}' dropped")
         elif op == "center_sub":
             doc["tracks"][fix[1]]["pan"] = 0.0
             receipts.append(f"'{doc['tracks'][fix[1]].get('name')}' sub "
