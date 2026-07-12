@@ -139,3 +139,35 @@ jobs:
             installer/windows/Output/*.exe
             dist/*.dmg
             dist/*.sha256
+
+  # EXPERIMENTAL (PORT_SPEC v2 lane; never blocks releases): JIT via the faust
+  # release's bundled libfaust. Goal: SOTADAW_ENABLE_JIT=ON off-Linux, proven by
+  # a JIT probe render (a .dsp NOT in the AOT registry must sound).
+  jit-probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: windows }
+          - { os: macos-14, name: macos }
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: fetch libfaust from the faust release
+        shell: bash
+        run: |
+          set -x
+          if [ "${{ matrix.name }}" = "windows" ]; then
+            curl -fsSL -o faust.exe https://github.com/grame-cncm/faust/releases/download/2.85.9/Faust-2.85.9-win64.exe
+            7z x -ofaustdist faust.exe > /dev/null || true
+          else
+            curl -fsSL -o faust.dmg https://github.com/grame-cncm/faust/releases/download/2.85.9/Faust-2.85.9-arm64.dmg
+            hdiutil attach faust.dmg -nobrowse -mountpoint /tmp/faust
+            cp -R /tmp/faust/*aust*/ faustdist || cp -R /tmp/faust/ faustdist
+          fi
+          echo "== what did we get =="
+          find faustdist -maxdepth 3 \( -name 'libfaust*' -o -name 'faust*.lib' -o -name 'faust*.dll' -o -iname 'interpreter-dsp.h' \) | head -20
+      - name: report layout (evidence for wiring the real link step)
+        shell: bash
+        run: find faustdist -maxdepth 4 -type d | head -40

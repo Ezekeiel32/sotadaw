@@ -174,6 +174,8 @@ def main():
     _mint = _src[_src.index('"name": "vocals_sung"'):][:600]
     ok('"type": "comp"' in _mint and '"id": "fx_delay"' in _mint,
        "import-path vocals_sung mint carries comp+delay (dr19)")
+    ok(_src.count('"id": "fx_deess"') >= 2,
+       "the de-esser stands FIRST in BOTH vocal chains (dr19)")
 
     print(f"sing-preflight battery: {PASS}/{PASS + len(FAIL)} "
           + ("clean" if not FAIL else "RED"))

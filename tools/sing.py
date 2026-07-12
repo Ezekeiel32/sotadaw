@@ -159,7 +159,23 @@ def _mem_avail_gb():
         pass
     return None
 
-_SING_LOCK = None   # module-held: the flock lives for the whole render
+_SING_LOCK = None   # module-held: the flock lives for the SYNTHESIS
+
+
+def _sing_release():
+    """The lock guards the SYNTHESIS (models in RAM/GPU); the landing is
+    JSON + file work. Release before landing — the adlib CHILD sing queued
+    on its own parent's flock until the 600s wait expired, then skipped
+    SILENTLY (the missing-wav branch, adlib court #2, 2026-07-12)."""
+    global _SING_LOCK
+    if _SING_LOCK is not None:
+        try:
+            import fcntl
+            fcntl.flock(_SING_LOCK, fcntl.LOCK_UN)
+            _SING_LOCK.close()
+        except Exception:
+            pass
+        _SING_LOCK = None
 
 def _cuda_preload():
     """ORT-GPU dlopens CUDA sonames it does not bundle (libcudart.so.13,
@@ -610,6 +626,7 @@ def render(song_name, track_name, embed="standard", steps=30):
     # lands there. Non-import songs keep the classic 'vocals' landing.
     # RELOAD FRESH: synthesis takes minutes (detached on imports) — landing
     # on the copy read before it would clobber every edit made since.
+    _sing_release()   # synthesis done — the child adlib sing needs its turn
     song = json.load(open(song_path))
     vt = next((t for t in song["tracks"] if t.get("name") == "vocals_sung"), None)
     if vt is None:
@@ -624,7 +641,9 @@ def render(song_name, track_name, embed="standard", steps=30):
             vt = {"name": "vocals_sung",
                   "source": {"kind": "audio", "id": "vocals_sung"},
                   "gainDb": -1.5, "notes": [],
-                  "fx": [{"type": "comp", "params": {"threshold": -18, "ratio": 2.5,
+                  "fx": [{"id": "fx_deess", "params": {"freq": 5500, "thresh": -32,
+                                                        "ratio": 4}},   # dr19: FIRST
+                         {"type": "comp", "params": {"threshold": -18, "ratio": 2.5,
                                                      "attack": 8, "release": 120,
                                                      "outputDb": 3}},
                          {"id": "fx_delay", "params": {"time": 0.28, "feedback": 0.22,
@@ -637,7 +656,9 @@ def render(song_name, track_name, embed="standard", steps=30):
     if vt is None:
         _vt_minted = True                       # W102: first landing (see below)
         vt = {"name": "vocals", "source": {"kind": "audio", "id": "vocals"}, "gainDb": -4.0, "notes": [],
-              "fx": [{"type": "comp", "params": {"threshold": -18, "ratio": 2.5,
+              "fx": [{"id": "fx_deess", "params": {"freq": 5500, "thresh": -32,
+                                                    "ratio": 4}},   # dr19: FIRST
+                     {"type": "comp", "params": {"threshold": -18, "ratio": 2.5,
                                                  "attack": 8, "release": 120, "outputDb": 3}},
                      {"id": "fx_delay", "params": {"time": 0.28, "feedback": 0.22, "mix": 0.12}}]}
         if any(b.get("id") == "verb" for b in song.get("buses", [])):
@@ -776,10 +797,13 @@ def render(song_name, track_name, embed="standard", steps=30):
                 json.dump(_tsong, open(_tj, "w"), indent=1)
                 _env = dict(os.environ)
                 _env["SOTADAW_ADLIB_CHILD"] = "1"
-                _sp.run([sys.executable, os.path.abspath(__file__),
-                         "render", _tmp, "lead"],
-                        capture_output=True, text=True, timeout=900, env=_env)
+                _rr = _sp.run([sys.executable, os.path.abspath(__file__),
+                               "render", _tmp, "lead"],
+                              capture_output=True, text=True, timeout=900, env=_env)
                 _aw_wav = os.path.join(ROOT, "songs", f"{_tmp}_vocal.wav")
+                if not os.path.exists(_aw_wav):
+                    print("[sing] adlib child produced no wav: "
+                          + (_rr.stdout + _rr.stderr).strip()[-160:], flush=True)
                 if os.path.exists(_aw_wav):
                     _dest = os.path.join(ROOT, "songs", f"{_base}_adlibs.wav")
                     os.replace(_aw_wav, _dest)

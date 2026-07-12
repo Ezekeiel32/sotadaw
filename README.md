@@ -25,6 +25,14 @@ JIT (live-compiling new `.dsp` instruments) needs libfaust ≥ 2.69 with the
 interpreter backend (`-DSOTADAW_ENABLE_JIT=ON`; Linux: `apt install libfaust-dev`-era
 packages / noble's faust 2.70.3). The AOT registry (50 voices) builds everywhere.
 
+## Voice & stems extras (optional, per-user)
+
+The DAW and agent run with zero extras. Heavy ML lanes want a venv:
+`python3 -m venv .venv && .venv/bin/pip install demucs basic-pitch soundfile`
+(stems import / audio→MIDI). THE VOICE additionally needs the Gahata Meiji
+DiffSinger bank (separate NON-COMMERCIAL download, attribution required —
+"Gahata Meiji from LUNAI Project"); the app stamps that credit into exports.
+
 ## License
 
 GPL-3.0 (see LICENSE) — this satisfies the corresponding-source obligations of

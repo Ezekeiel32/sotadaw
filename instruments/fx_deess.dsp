@@ -1,25 +1,15 @@
-// fx_deess — split-band sibilance tamer (the vocal chain's missing dynamics tool).
-// Complementary split at `freq`: lo = 3rd-order lowpass, hi = x - lo (PERFECT
-// reconstruction — under threshold the fx is bit-transparent by construction).
-// The high band rides a linked stereo envelope (0.8ms attack / 60ms release):
-// level over `thresh` is reduced 4:1, capped at `amount` dB of max GR. Lows are
-// never touched — esses duck, the voice's body stays. Stereo-through contract.
+// fx_deess — split-band de-esser (ledger dr19: the product's own vocal-chain
+// doc mandates a de-esser FIRST; no such voice existed). The band above the
+// crossover compresses on its own energy (sibilance ducks itself); the low
+// band passes untouched. Compression-only = output <= input, headroom-safe
+// by construction. Stereo-through per the FX law.
 import("stdfaust.lib");
-freq   = hslider("freq", 6500, 3000, 11000, 1) : si.smoo;
+freq   = hslider("freq", 5500, 3000, 9000, 10);     // crossover
 thresh = hslider("thresh", -32, -60, 0, 0.5);
-amount = hslider("amount", 12, 0, 24, 0.5);
-
-process = _,_ : de
-with {
-    de(l, r) = (lol + hil * g), (lor + hir * g)
-    with {
-        lol = l : fi.lowpass(3, freq);
-        lor = r : fi.lowpass(3, freq);
-        hil = l - lol;
-        hir = r - lor;
-        key = (hil + hir) * 0.5 : an.amp_follower_ar(0.0008, 0.06);
-        lvl = ba.linear2db(key + 1e-9);
-        gr  = min(amount, max(0.0, lvl - thresh) * 0.75);
-        g   = ba.db2linear(0.0 - gr) : si.smoo;
-    };
+ratio  = hslider("ratio", 4, 1, 12, 0.1);
+de(x) = lo + hic with {
+  lo  = x : fi.lowpass(3, freq);
+  hi  = x : fi.highpass(3, freq);
+  hic = hi : co.compressor_mono(ratio, thresh, 0.002, 0.05);
 };
+process = de, de;

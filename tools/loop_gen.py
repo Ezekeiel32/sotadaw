@@ -1436,8 +1436,19 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
     elif g_sp in ("trap", "drill", "phonk", "memphis_rap", "hiphop", "boombap",
                   "sexy_drill", "jersey_drill"):
         sp_size, sp_damp = 1.45, 4200.0         # dark + tight: the verb hides
+    elif g_sp in ("vaporwave", "witch_house", "chillwave", "hardwave",
+                  "future_garage", "ambient", "dark_ambient", "psybient",
+                  "dungeon_synth", "drone", "berlin_school", "new_age"):
+        # dr26 (2026-07-12): the atmospheric family fell to the one-size
+        # else — for these the SPACE IS the genre (the drowned hall)
+        sp_size, sp_damp = 3.4, 3200.0
+    elif g_sp in ("dub", "dub_techno", "triphop", "downtempo"):
+        sp_size, sp_damp = 2.6, 3800.0          # the smoked chamber
     else:
         sp_size, sp_damp = 1.6, 5500.0
+    if isinstance(grid.get("space"), dict):     # curated escape hatch (grid law)
+        sp_size = float(grid["space"].get("size", sp_size))
+        sp_damp = float(grid["space"].get("damp", sp_damp))
     buses = [{"id": "space", "gainDb": 0.0,
               "fx": [{"id": "fx_reverb", "params": {"size": sp_size, "damp": sp_damp, "mix": 1.0}},
               {"id": "fx_widen", "params": {"width": 1.5, "rate": 0.1}}]}]
