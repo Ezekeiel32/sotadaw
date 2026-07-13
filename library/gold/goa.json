@@ -1,0 +1,509 @@
+{
+ "genre": "goa",
+ "source": "accept:untitled_27",
+ "score": 0.77,
+ "bpm": 142.0,
+ "key": "E phrygian",
+ "key_parsed": {
+  "tonic_pc": 4,
+  "mode": "phrygian",
+  "scale_pcs": [
+   0,
+   2,
+   4,
+   5,
+   7,
+   9,
+   11
+  ],
+  "allowed_pcs": [
+   0,
+   2,
+   4,
+   5,
+   7,
+   9,
+   11
+  ],
+  "scale_names": [
+   "E",
+   "F",
+   "G",
+   "A",
+   "B",
+   "C",
+   "D"
+  ],
+  "flats": false
+ },
+ "lengthBars": 132,
+ "swing": null,
+ "sections": [],
+ "window": {
+  "startBar": 93,
+  "bars": 8
+ },
+ "tracks": [
+  {
+   "name": "kick",
+   "role": "drums",
+   "voice": "kick_punch_tight",
+   "gainDb": -1.5,
+   "pan": 0.0,
+   "fx": [
+    "eq(hiFreq 17000,hiGain 0,loFreq 60,loGain 2.5,midFreq 300,midFreq2 )",
+    "fx_transient(attack 7,sustain 0)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 2.83,
+   "vel_lo": 0.894,
+   "vel_hi": 1.0,
+   "vel_variety": 12,
+   "in_key_pct": 1.0,
+   "pitch_lo": 36,
+   "pitch_hi": 36,
+   "bar_counts": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+   ],
+   "dna": "b93 C2@0+.2^.97 C2@1+.2^.93 C2@2+.2^.96 C2@3+.2^.92 | b94 C2@0+.2^.98 C2@1+.2^.93 C2@2+.2^.92 C2@3+.2^1"
+  },
+  {
+   "name": "hat",
+   "role": "drums",
+   "voice": "hat",
+   "gainDb": -9.5,
+   "pan": 0.22,
+   "fx": [
+    "eq(loFreq 350,loGain -7)",
+    "fx_widen(rate .15,width 1.15)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 11.76,
+   "vel_lo": 0.275,
+   "vel_hi": 0.729,
+   "vel_variety": 23,
+   "in_key_pct": 0.0,
+   "pitch_lo": 42,
+   "pitch_hi": 42,
+   "bar_counts": [
+    16,
+    16,
+    16,
+    16,
+    16,
+    16,
+    16,
+    16
+   ],
+   "dna": "b93 F#2@0+.1^.73 F#2@.25+.1^.3 F#2@.5+.1^.43 F#2@.75+.1^.29 F#2@1+.1^.6 F#2@1.25+.1^.28 F#2@1.5+.1^.44 F#2@1.75+.1^.28 F#2@2+.1^.66 F#2@2.25+.1^.29 +6 more | b94 F#2@0+.1^.68 F#2@.25+.1^.28 F#2@.5+.1^.43 F#2@.75+.1^.28 F#2@1+.1^.59 F#2@1.25+.1^.29 F#2@1.5+.1^.43 F#2@1.75+.1^.28 F#2@2+.1^.67 F#2@2.25+.1^.29 +6 more"
+  },
+  {
+   "name": "openhat",
+   "role": "drums",
+   "voice": "hat_metal",
+   "gainDb": -8.5,
+   "pan": -0.18,
+   "fx": [
+    "eq(loFreq 350,loGain -7)",
+    "fx_widen(rate .12,width 1.25)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 2.85,
+   "vel_lo": 0.441,
+   "vel_hi": 0.482,
+   "vel_variety": 5,
+   "in_key_pct": 0.0,
+   "pitch_lo": 46,
+   "pitch_hi": 46,
+   "bar_counts": [
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4,
+    4
+   ],
+   "dna": "b93 A#2@.5+.3^.48 A#2@1.5+.3^.47 A#2@2.5+.3^.46 A#2@3.5+.3^.48 | b94 A#2@.5+.3^.45 A#2@1.5+.3^.47 A#2@2.5+.3^.45 A#2@3.5+.3^.47"
+  },
+  {
+   "name": "bass",
+   "role": "melodic",
+   "voice": "sub_clean",
+   "gainDb": -6.0,
+   "pan": 0.0,
+   "fx": [
+    "fx_saturate(drive 6.5,mix .8,tone 2600)",
+    "fx_filter(cutoff 2400,res 1.5)",
+    "fx_transient(attack 4.5,sustain -3)",
+    "eq(hiFreq 17000,hiGain 0,loFreq 120,loGain 0,midFreq 380,midFreq2 1)",
+    "fx_pump(depth .5,rate 2.37,release .22)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 8.08,
+   "vel_lo": 0.55,
+   "vel_hi": 1.0,
+   "vel_variety": 33,
+   "in_key_pct": 0.991,
+   "pitch_lo": 40,
+   "pitch_hi": 52,
+   "bar_counts": [
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12
+   ],
+   "dna": "b93 E2@.25+.23^.85 E2@.5+.23^.77 E2@.75+.23^.94 E2@1.25+.23^.81 E2@1.5+.23^.77 E2@1.75+.23^.87 E2@2.25+.23^.78 E2@2.5+.23^.78 E2@2.75+.23^.86 E2@3.25+.23^.8 +2 more | b94 E2@.25+.23^.8 E2@.5+.23^.85 E2@.75+.23^.95 E2@1.25+.23^.78 E2@1.5+.23^.81 E2@1.75+.23^.94 E2@2.25+.23^.77 E2@2.5+.23^.84 E2@2.75+.23^.87 E2@3.25+.23^.79 +2 more | b95 E2@.25+.23^.85 E2@.5+.23^.8 E2@.75+.23^.95 E2@1.25+.23^.75 E2@1.5+.23^.75 E2@1.75+.23^.95 E2@2.25+.23^.81 E2@2.5+.23^.76 E2@2.75+.23^.88 E2@3.25+.23^.78 +2 more | b96 E2@.25+.23^.76 E2@.5+.23^.79 E2@.75+.23^.93 E2@1.25+.23^.8 E2@1.5+.23^.76 E2@1.75+.23^.85 E2@2.25+.23^.79 E2@2.5+.23^.78 E2@2.75+.23^.86 E2@3.25+.23^.78 +2 more"
+  },
+  {
+   "name": "acid",
+   "role": "melodic",
+   "voice": "acid303",
+   "gainDb": -12.0,
+   "pan": -0.08,
+   "fx": [
+    "fx_delay(feedback .42,mix .22,time 317)",
+    "fx_widen(width 1.25)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 13.18,
+   "vel_lo": 0.45,
+   "vel_hi": 0.9,
+   "vel_variety": 12,
+   "in_key_pct": 0.875,
+   "pitch_lo": 50,
+   "pitch_hi": 64,
+   "bar_counts": [
+    16,
+    16,
+    16,
+    16,
+    16,
+    16,
+    16,
+    16
+   ],
+   "dna": "b93 E3@0+.18^.8 E3@.25+.18^.5 G#3@.5+.18^.7 E3@.75+.18^.55 A3@1+.18^.8 B3@1.25+.18^.6 C4@1.5+.18^.75 B3@1.75+.18^.6 E3@2+.18^.85 E3@2.25+.18^.5 +6 more | b94 E3@0+.18^.8 E3@.25+.18^.55 E3@.5+.18^.6 F3@.75+.3^.85 E3@1+.18^.55 G#3@1.25+.18^.8 E3@1.5+.18^.5 E3@1.75+.18^.6 B3@2+.18^.85 E3@2.25+.18^.5 +6 more | b95 E3@0+.18^.8 E3@.25+.18^.5 G#3@.5+.18^.7 E3@.75+.18^.55 A3@1+.18^.8 B3@1.25+.18^.6 C4@1.5+.18^.75 B3@1.75+.18^.6 E3@2+.18^.85 E3@2.25+.18^.5 +6 more | b96 E3@0+.18^.8 E3@.25+.18^.55 E3@.5+.18^.6 F3@.75+.3^.85 E3@1+.18^.55 G#3@1.25+.18^.8 E3@1.5+.18^.5 E3@1.75+.18^.6 B3@2+.18^.85 E3@2.25+.18^.5 +6 more"
+  },
+  {
+   "name": "arp",
+   "role": "melodic",
+   "voice": "fmbell",
+   "gainDb": -13.0,
+   "pan": 0.15,
+   "fx": [
+    "fx_delay(feedback .35,mix .25,time 317)",
+    "fx_widen(width 1.3)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 10.67,
+   "vel_lo": 0.425,
+   "vel_hi": 0.85,
+   "vel_variety": 15,
+   "in_key_pct": 0.812,
+   "pitch_lo": 59,
+   "pitch_hi": 88,
+   "bar_counts": [
+    16,
+    16,
+    16,
+    16,
+    16,
+    16,
+    16,
+    16
+   ],
+   "dna": "b93 E5@0+.14^.59 B4@.25+.14^.42 G#5@.5+.14^.55 E5@.75+.14^.47 C6@1+.14^.68 E5@1.25+.14^.42 B5@1.5+.14^.55 A5@1.75+.14^.51 F5@2+.14^.68 A5@2.25+.14^.47 +6 more | b94 E5@0+.14^.59 B4@.25+.14^.42 G#5@.5+.14^.55 E5@.75+.14^.47 B5@1+.14^.64 E5@1.25+.14^.42 G#5@1.5+.14^.51 B4@1.75+.14^.42 E6@2+.14^.68 E5@2.25+.14^.42 +6 more | b95 E5@0+.14^.59 B4@.25+.14^.42 G#5@.5+.14^.55 E5@.75+.14^.47 C6@1+.14^.68 E5@1.25+.14^.42 B5@1.5+.14^.55 A5@1.75+.14^.51 F5@2+.14^.68 A5@2.25+.14^.47 +6 more | b96 E5@0+.14^.59 B4@.25+.14^.42 G#5@.5+.14^.55 E5@.75+.14^.47 B5@1+.14^.64 E5@1.25+.14^.42 G#5@1.5+.14^.51 B4@1.75+.14^.42 E6@2+.14^.68 E5@2.25+.14^.42 +6 more"
+  },
+  {
+   "name": "gaia",
+   "role": "melodic",
+   "voice": "supersaw_fat",
+   "gainDb": -14.0,
+   "pan": 0.0,
+   "fx": [
+    "fx_pump(depth .5,rate 2.37,release .28)"
+   ],
+   "chordal": 1.0,
+   "notes_per_bar": 1.25,
+   "vel_lo": 0.5,
+   "vel_hi": 0.6,
+   "vel_variety": 3,
+   "in_key_pct": 1.0,
+   "pitch_lo": 52,
+   "pitch_hi": 65,
+   "bar_counts": [
+    3,
+    3,
+    0,
+    3,
+    0,
+    3,
+    0,
+    3
+   ],
+   "dna": "b93 @2 F3C4F4 | b94 @0 E3B3E4 | b95 (rest) | b96 @0 E3B3E4 | b97 (rest) | b98 @0 E3B3E4 | b99 (rest) | b100 @0 E3B3E4"
+  },
+  {
+   "name": "tanpura",
+   "role": "melodic",
+   "voice": "tanpura_drone",
+   "gainDb": -16.0,
+   "pan": 0.0,
+   "fx": [],
+   "chordal": 0.0,
+   "notes_per_bar": 0.5,
+   "vel_lo": 0.26,
+   "vel_hi": 0.5,
+   "vel_variety": 4,
+   "in_key_pct": 1.0,
+   "pitch_lo": 40,
+   "pitch_hi": 52,
+   "bar_counts": [
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0,
+    2
+   ],
+   "dna": "b93 (rest) | b94 (rest) | b95 (rest) | b96 E2@0+16^.5 E3@0+16^.35"
+  },
+  {
+   "name": "snake",
+   "role": "melodic",
+   "voice": "zurna",
+   "gainDb": -14.0,
+   "pan": 0.05,
+   "fx": [
+    "fx_delay(feedback .5,mix .3,time 317)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 2.32,
+   "vel_lo": 0.6,
+   "vel_hi": 0.85,
+   "vel_variety": 6,
+   "in_key_pct": 0.922,
+   "pitch_lo": 64,
+   "pitch_hi": 77,
+   "bar_counts": [
+    5,
+    16,
+    3,
+    5,
+    6,
+    6,
+    4,
+    6
+   ],
+   "dna": "b93 D5@0+.75^.8 C5@.75+.25^.7 B4@1+.75^.75 A4@1.75+.25^.6 B4@2+2^.8 | b94 E5@0+.2^.65 F5@.25+.2^.7 E5@.5+.2^.6 D5@.75+.2^.65 C5@1+.2^.7 D5@1.25+.2^.6 C5@1.5+.2^.65 B4@1.75+.2^.7 A4@2+.2^.7 B4@2.25+.2^.65 +6 more | b95 A4@0+1^.75 G#4@1+1^.7 E4@2+2^.8 | b96 B4@0+1.5^.7 C5@1.5+.5^.65 B4@2+.5^.6 A4@2.5+.5^.65 G#4@3+1^.7"
+  },
+  {
+   "name": "riser",
+   "role": "melodic",
+   "voice": "riser",
+   "gainDb": -13.0,
+   "pan": 0.0,
+   "fx": [],
+   "chordal": 0.0,
+   "notes_per_bar": 0.04,
+   "vel_lo": 0.7,
+   "vel_hi": 0.8,
+   "vel_variety": 3,
+   "in_key_pct": 1.0,
+   "pitch_lo": 52,
+   "pitch_hi": 64,
+   "bar_counts": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "dna": "b93 (rest) | b94 (rest) | b95 (rest) | b96 (rest)"
+  },
+  {
+   "name": "snare",
+   "role": "drums",
+   "voice": "snare",
+   "gainDb": -8.0,
+   "pan": 0.0,
+   "fx": [],
+   "chordal": 0.0,
+   "notes_per_bar": 0.91,
+   "vel_lo": 0.35,
+   "vel_hi": 1.0,
+   "vel_variety": 43,
+   "in_key_pct": 1.0,
+   "pitch_lo": 38,
+   "pitch_hi": 38,
+   "bar_counts": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "dna": "b93 (rest) | b94 (rest)"
+  },
+  {
+   "name": "crash",
+   "role": "drums",
+   "voice": "crash_noise",
+   "gainDb": -12.0,
+   "pan": 0.1,
+   "fx": [],
+   "chordal": 0.0,
+   "notes_per_bar": 0.06,
+   "vel_lo": 0.55,
+   "vel_hi": 1.0,
+   "vel_variety": 6,
+   "in_key_pct": 1.0,
+   "pitch_lo": 60,
+   "pitch_hi": 60,
+   "bar_counts": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "dna": "b93 (rest) | b94 (rest)"
+  },
+  {
+   "name": "answer",
+   "role": "melodic",
+   "voice": "supersaw",
+   "gainDb": -13.0,
+   "pan": -0.2,
+   "fx": [
+    "fx_delay(feedback .42,mix .3,time 317)",
+    "fx_widen(width 1.3)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 1.97,
+   "vel_lo": 0.7,
+   "vel_hi": 0.9,
+   "vel_variety": 5,
+   "in_key_pct": 0.8,
+   "pitch_lo": 64,
+   "pitch_hi": 76,
+   "bar_counts": [
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5,
+    5
+   ],
+   "dna": "b93 B4@.5+.4^.8 C5@1.25+.2^.75 B4@1.75+.2^.7 G#4@2.5+.4^.8 E5@3+.75^.9 | b94 B4@.5+.4^.8 A4@1.25+.2^.7 G#4@1.75+.2^.75 E4@2.5+.4^.8 F4@3.5+.45^.85 | b95 B4@.5+.4^.8 C5@1.25+.2^.75 B4@1.75+.2^.7 G#4@2.5+.4^.8 E5@3+.75^.9 | b96 B4@.5+.4^.8 A4@1.25+.2^.7 G#4@1.75+.2^.75 E4@2.5+.4^.8 F4@3.5+.45^.85"
+  },
+  {
+   "name": "pop",
+   "role": "melodic",
+   "voice": "bass_warm",
+   "gainDb": -9.0,
+   "pan": 0.0,
+   "fx": [
+    "fx_saturate(drive 8,mix .8,tone 2800)",
+    "fx_filter(cutoff 2200,res 2)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 2.55,
+   "vel_lo": 0.78,
+   "vel_hi": 0.92,
+   "vel_variety": 5,
+   "in_key_pct": 1.0,
+   "pitch_lo": 52,
+   "pitch_hi": 55,
+   "bar_counts": [
+    12,
+    0,
+    12,
+    0,
+    12,
+    0,
+    12,
+    0
+   ],
+   "dna": "b93 E3@.25+.19^.78 E3@.5+.19^.8 E3@.75+.19^.9 E3@1.25+.19^.78 E3@1.5+.19^.8 E3@1.75+.19^.9 E3@2.25+.19^.78 E3@2.5+.19^.8 E3@2.75+.19^.9 E3@3.25+.19^.78 +2 more | b94 (rest) | b95 E3@.25+.19^.78 E3@.5+.19^.8 E3@.75+.19^.9 E3@1.25+.19^.78 E3@1.5+.19^.8 E3@1.75+.19^.9 E3@2.25+.19^.78 E3@2.5+.19^.8 E3@2.75+.19^.9 E3@3.25+.19^.78 +2 more | b96 (rest)"
+  },
+  {
+   "name": "bliss",
+   "role": "melodic",
+   "voice": "vox_pad",
+   "gainDb": -11.0,
+   "pan": 0.0,
+   "fx": [
+    "fx_widen(width 1.5)"
+   ],
+   "chordal": 1.0,
+   "notes_per_bar": 0.23,
+   "vel_lo": 0.38,
+   "vel_hi": 0.6,
+   "vel_variety": 8,
+   "in_key_pct": 1.0,
+   "pitch_lo": 64,
+   "pitch_hi": 76,
+   "bar_counts": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    4
+   ],
+   "dna": "b93 (rest) | b94 (rest) | b95 (rest) | b96 (rest) | b97 (rest) | b98 (rest) | b99 (rest) | b100 @0 Em7=E4G4B4D5"
+  }
+ ],
+ "buses": [
+  "verb: fx_reverb(damp 4500,mix .9,size 4)"
+ ],
+ "automation": [],
+ "master": [
+  "eq(hiFreq 6800,hiGain 3.5,loFreq 85,loGain 1,midFreq 170,midGain 2,)",
+  "fx_comp(attack 25,makeup 0,ratio 2.5,release 140,thresh -22)",
+  "fx_trim(level 0)",
+  "fx_saturate(drive 6,mix 1)",
+  "fx_trim(level 12.5)",
+  "fx_truepeak(ceiling -1.5)"
+ ],
+ "masterGainDb": 0.0,
+ "measured": null,
+ "mixtarget": {
+  "lufs_lo": -14,
+  "lufs_hi": -8,
+  "band_order": "low>lowmid>mid",
+  "psr_floor": 6.0,
+  "clipped_samples": 0,
+  "bpm_lo": 135,
+  "bpm_hi": 145
+ }
+}

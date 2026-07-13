@@ -1,0 +1,195 @@
+{
+ "genre": "ambient",
+ "source": "eval:eval_ambient",
+ "score": 0.642,
+ "bpm": 68.0,
+ "key": "C major",
+ "key_parsed": {
+  "tonic_pc": 0,
+  "mode": "major",
+  "scale_pcs": [
+   0,
+   2,
+   4,
+   5,
+   7,
+   9,
+   11
+  ],
+  "allowed_pcs": [
+   0,
+   2,
+   4,
+   5,
+   7,
+   9,
+   11
+  ],
+  "scale_names": [
+   "C",
+   "D",
+   "E",
+   "F",
+   "G",
+   "A",
+   "B"
+  ],
+  "flats": false
+ },
+ "lengthBars": 16,
+ "swing": null,
+ "sections": [],
+ "window": {
+  "startBar": 8,
+  "bars": 8
+ },
+ "tracks": [
+  {
+   "name": "Evolving Pad",
+   "role": "melodic",
+   "voice": "pad_motion",
+   "gainDb": -9,
+   "pan": 0,
+   "fx": [
+    "fx_filter(cutoff 350,res 1.2)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 1.25,
+   "vel_lo": 0.34,
+   "vel_hi": 0.5,
+   "vel_variety": 7,
+   "in_key_pct": 1.0,
+   "pitch_lo": 45,
+   "pitch_hi": 67,
+   "bar_counts": [
+    2,
+    2,
+    1,
+    0,
+    2,
+    2,
+    1,
+    0
+   ],
+   "dna": "b8 F3@0+16^.5 C4@2+14^.45 | b9 A3@0+14^.42 E4@2+12^.4 | b10 G4@1+10^.36 | b11 (rest)"
+  },
+  {
+   "name": "Choir Breath",
+   "role": "melodic",
+   "voice": "vox_pad",
+   "gainDb": -13,
+   "pan": 0,
+   "fx": [
+    "fx_filter(cutoff 550,res 1)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 0.38,
+   "vel_lo": 0.35,
+   "vel_hi": 0.4,
+   "vel_variety": 2,
+   "in_key_pct": 1.0,
+   "pitch_lo": 55,
+   "pitch_hi": 65,
+   "bar_counts": [
+    2,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0
+   ],
+   "dna": "b8 C4@2+12^.4 F4@2+12^.35 | b9 (rest) | b10 (rest) | b11 (rest)"
+  },
+  {
+   "name": "Air Pad",
+   "role": "melodic",
+   "voice": "sample",
+   "gainDb": -16,
+   "pan": 0,
+   "fx": [],
+   "chordal": 0.0,
+   "notes_per_bar": 0.38,
+   "vel_lo": 0.28,
+   "vel_hi": 0.3,
+   "vel_variety": 2,
+   "in_key_pct": 1.0,
+   "pitch_lo": 55,
+   "pitch_hi": 65,
+   "bar_counts": [
+    0,
+    2,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0
+   ],
+   "dna": "b8 (rest) | b9 C4@0+12^.3 F4@0+12^.28 | b10 (rest) | b11 (rest)"
+  },
+  {
+   "name": "Bells",
+   "role": "melodic",
+   "voice": "fmbell",
+   "gainDb": -16,
+   "pan": 0.1,
+   "fx": [
+    "fx_delay(feedback .42,mix .2,time 992)",
+    "fx_reverb(damp 6000,mix .18,size 4)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 0.5,
+   "vel_lo": 0.4,
+   "vel_hi": 0.5,
+   "vel_variety": 5,
+   "in_key_pct": 1.0,
+   "pitch_lo": 72,
+   "pitch_hi": 84,
+   "bar_counts": [
+    1,
+    1,
+    0,
+    1,
+    0,
+    1,
+    0,
+    1
+   ],
+   "dna": "b8 C5@1+8^.42 | b9 C6@3+8^.5 | b10 (rest) | b11 D5@3+8^.4"
+  }
+ ],
+ "buses": [
+  "hall: vst3:Surge XT Effects",
+  "shimmer: vst3:Surge XT Effects"
+ ],
+ "automation": [],
+ "master": [
+  "eq(hiFreq 3500,hiGain -3,loFreq 150,loGain 0,midFreq 1100,midFreq2 )",
+  "fx_trim(level 7)",
+  "fx_brickwall(ceiling -1.5)"
+ ],
+ "masterGainDb": 0,
+ "measured": {
+  "lufs": -18.71,
+  "dbtp": -2.52,
+  "clipped": 0,
+  "bands": {
+   "low_20_120": 0.3,
+   "lowmid_120_500": 61.1,
+   "mid_500_2k": 38.2,
+   "himid_2k_6k": 0.3,
+   "high_6k_up": 0.0
+  }
+ },
+ "mixtarget": {
+  "lufs_lo": -26,
+  "lufs_hi": -14,
+  "band_order": "lowmid>mid>low",
+  "psr_floor": 10.0,
+  "clipped_samples": 0,
+  "bpm_lo": 60,
+  "bpm_hi": 85
+ }
+}

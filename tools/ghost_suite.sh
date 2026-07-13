@@ -51,10 +51,13 @@ leg "refresh_guard (no storm)"     python3 tools/refresh_guard_battery.py
 leg "done_court (one done/run)"    python3 tools/done_court_battery.py
 leg "crash_pin (symbolize law)"    python3 tools/crash_symbolize.py --selftest
 leg "resurrection_court (zombies)" python3 tools/resurrection_battery.py
+leg "context_tune (note court)"    "$VENVPY" tools/retune.py --selftest
+leg "one_tempo (no bpm splits)"    python3 tools/one_tempo_battery.py
 leg "prop_fence (base immutable)"  python3 tools/prop_fence_e2e.py
 leg "living_cards (chat rolls)"    python3 tools/cards_e2e.py 1
 leg "ears_on_write"                python3 tools/ears_on_write_battery.py
 leg "session_diet"                 python3 tools/session_diet_battery.py
+leg "gold_standard (DNA bank)"     python3 tools/gold_battery.py
 leg "feedback_loop"                python3 tools/feedback_loop_battery.py
 leg "chronicle (kernel)"           python3 tools/chronicle_battery.py
 leg "chronicle (protocol seam)"    python3 tools/chronicle_e2e.py 1

@@ -54,6 +54,8 @@ EVENTS = os.path.join(IPC, "events.jsonl")
 last_feedback = {}
 last_reject = {}     # song -> {"t", "notes", "why"}: honest reject context, why VERBATIM
 last_curation = {}   # song -> {"t", "held"}: hunk-dropped notes — do-not-readd law
+last_final = {}      # song -> the run's final agent text (empty-diff diagnosis;
+                     # ephemeral by design — never joins the feedback_state family)
 last_verdict_t = {}  # song -> t of the last consumed accept: a double-click inside
                      # the round-trip window is BENIGN, never an error (live-user x4)
 
@@ -267,7 +269,7 @@ def loudness_recovery(rid, prop, a, genre):
         delta, why = recovery_step(a, lo, psr_floor, pushed, max_push=24.0,
                                    lra_floor=lra_floor)
         if delta < 0.4:
-            if why.startswith("PSR floor"):
+            if why.startswith(("PSR floor", "no ears")):
                 emit(rid, "activity", text=("loudness recovery stopped: " + why)[:200])
             break
         pj = os.path.join(SONGS, f"{prop}.json")
@@ -282,7 +284,7 @@ def loudness_recovery(rid, prop, a, genre):
             round(float(trim["params"].get("level", 0.0)) + delta, 1)
         _awrite(pj, doc)
         pushed += delta
-        lufs = float(a.get("lufs_integrated", 0.0))
+        lufs = float(a.get("lufs_integrated") or 0.0)   # display-only; None-proof
         emit(rid, "activity",
              text=f"loudness recovery: {lufs:.1f} LUFS -> target {lo:.1f} (+{delta} dB trim; {why})")
         a = render_and_analyze(rid, prop, "proposal")
@@ -374,7 +376,18 @@ def recovery_step(a, lo, psr_floor, pushed, max_push=8.0, lra_floor=None):
     analysis carries no lra."""
     if not isinstance(a, dict) or a.get("clipped_samples", 1) != 0:
         return 0.0, "not clean"
-    lufs = float(a.get("lufs_integrated", 0.0))
+    # NO EARS, NO SURGERY (2026-07-13, hezy's Inspiron first-prompt death):
+    # lufs_integrated arrives null on a silent render (or a degraded analyzer)
+    # and float(None) killed the WHOLE prompt run inside the W116 pass that
+    # rides every proposal lane. Unmeasurable loudness = an honest STOP —
+    # gain on silence is still silence. (-200..20 also rejects -inf/nan.)
+    try:
+        lufs = float(a.get("lufs_integrated"))
+    except (TypeError, ValueError):
+        lufs = None
+    if lufs is None or not (-200.0 <= lufs <= 20.0):
+        return 0.0, ("no ears: LUFS unmeasurable (silent render? voice "
+                     "missing on this build?) — recovery needs a sounding take")
     delta = round(min(max_push - pushed, lo - lufs), 1)
     if delta < 0.4:
         return 0.0, "at target"
@@ -433,6 +446,39 @@ def refund_step(psr, psr_floor, lufs, lo, slope=0.5, max_refund=4.0):
                      f"(LUFS {lufs:.1f} at window floor {lo:.1f}) — mix too dense at birth")
     return delta, (f"crest refund: true PSR {psr:.1f} below floor {floor:.1f} — "
                    f"giving back {delta} dB of wall drive (slope {slope:.2f})")
+
+
+def empty_diff_why(base_doc, final_text, n_receipts):
+    """EMPTY-DIFF DIAGNOSIS (2026-07-13, pure): hezy hit 'the ask is likely too
+    large for one pass on a song this size' THREE times on an 8-BAR demo — the
+    old message assumed one cause and blamed the ask. A zero-change proposal
+    has FOUR distinct causes; name the real one -> (headline, hint).
+      receipts>0  = edits landed then dissolved (locks/reverts)
+      final text  = the agent finished ON PURPOSE without editing — its own
+                    words are the diagnosis (question back / refusal / rail
+                    error text all surface verbatim)
+      neither     = the model lane died silently (rail/credentials)
+    The scoped-context hint only rides when the song is actually big."""
+    try:
+        bars = float(base_doc.get("lengthBars", 0) or 0)
+    except (TypeError, ValueError):
+        bars = 0.0
+    ntr = len(base_doc.get("tracks", []) or [])
+    if bars > 24 or ntr > 8:
+        hint = ("Drag-select the target region/tracks first (scoped context), "
+                "or split the ask.")
+    else:
+        hint = (f"The song is small ({int(bars)} bars, {ntr} track"
+                f"{'s' if ntr != 1 else ''}) — ask size is NOT the problem.")
+    final_text = (final_text or "").strip()
+    if n_receipts > 0:
+        return (f"{n_receipts} edit receipt(s) landed but NO change survived "
+                "(locked tracks? every edit reverted?)", hint)
+    if final_text:
+        return ("the agent finished without touching the song — its own words: "
+                f"“{final_text[:220]}”", hint)
+    return ("the model lane returned no work AND no reply — the run likely "
+            "died mid-flight (rail down? credentials? limit?)", hint)
 
 
 def stage_wall(doc):
@@ -2648,6 +2694,7 @@ def real_propose(req_id, text, song_name, ctx_block="", persona_name="", model_o
     prop = f"_prop_{song_name}"
     prop_path = os.path.join(SONGS, f"{prop}.json")
     prop_existed_on_entry = os.path.exists(prop_path)
+    last_final.pop(song_name, None)   # a stale final must never dress THIS run's diagnosis
     arranged_note = ""
     # FEEDBACK IS NOT REJECTION: a revise request iterates the PENDING proposal in
     # place — the base is never copied over it; the take survives the conversation.
@@ -3040,6 +3087,7 @@ def real_propose(req_id, text, song_name, ctx_block="", persona_name="", model_o
                 if cost is not None:
                     emit(req_id, "activity", text=f"cost: ${cost:.3f} · {res.get('num_turns', '?')} turns")
                 emit(req_id, "activity", text="agent done: " + txt)
+                last_final[song_name] = txt
                 chronicle.append(song_name, "agent", txt, route=model)
                 return prop
             emit(req_id, "activity", text="resident died mid-turn — falling back to the cold rail")
@@ -3121,6 +3169,7 @@ def real_propose(req_id, text, song_name, ctx_block="", persona_name="", model_o
         if cost is not None:
             emit(req_id, "activity", text=f"cost: ${cost:.3f} · {res.get('num_turns', '?')} turns")
         emit(req_id, "activity", text="agent done: " + txt)
+        last_final[song_name] = txt
         chronicle.append(song_name, "agent", txt, route=model)
     p.wait()
     if p.returncode != 0:
@@ -4409,18 +4458,26 @@ def handle(req):
         try:   # EMPTY-DIFF HONESTY: a proposal identical to the base is a FAILURE,
             #  not a card with an Accept button (seen live: 337-bar song, the agent
             #  burned its turns moving JSON and changed nothing).
-            if json.load(open(base_json)) == json.load(open(os.path.join(SONGS, f"{result}.json"))):
+            _base_doc = json.load(open(base_json))
+            if _base_doc == json.load(open(os.path.join(SONGS, f"{result}.json"))):
                 # ...and the corpse LEAVES with the verdict (2026-07-09: an identical
                 # _prop_ left behind restored as a phantom pending proposal on app
                 # relaunch AND parse-miss'd every next ask as 'pending_proposal')
                 for _sfx in (".json", ".ghost.json", ".wav"):
                     _pp = os.path.join(SONGS, f"{result}{_sfx}")
                     os.path.exists(_pp) and os.remove(_pp)
+                try:
+                    _n_rc = len(surgical.read_receipts(f"_prop_{song}"))
+                except Exception:
+                    _n_rc = 0
+                _head, _hint = empty_diff_why(_base_doc, last_final.get(song), _n_rc)
                 emit(rid, "error",
-                     text=("the edit came back with NO changes — the ask is likely too "
-                           "large for one pass on a song this size. Drag-select the "
-                           "target region/tracks first (scoped context), or split the ask."))
+                     text=f"the edit came back with NO changes — {_head}. {_hint}")
                 emit(rid, "done", ok=False)
+                try:   # continuity: the next run's memory sees WHY this one was empty
+                    chronicle.append(song, "note", f"(empty-diff run: {_head[:160]})")
+                except Exception:
+                    pass
                 return
         except Exception:
             pass

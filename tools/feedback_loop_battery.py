@@ -196,6 +196,34 @@ def recovery_brain():
     d, why = sc.recovery_step(AL(-16.0, -1.3, 3.8), -12.0, None, 0.0, lra_floor=4.0)
     ok(d == 0.0 and why.startswith("LRA squash guard"),
        "R12: a GENRE floor above 3.2 protects more breath (dnb 4.0)")
+    # NO EARS, NO SURGERY (2026-07-13, hezy's Inspiron first-prompt death):
+    # a silent render / degraded analyzer ships lufs_integrated null — the
+    # brain must STOP honestly, never float(None)-crash the whole prompt run.
+    d, why = sc.recovery_step(A(None, -1.3), -12.0, None, 0.0)
+    ok(d == 0.0 and why.startswith("no ears"),
+       f"R13: null LUFS = honest stop, not a TypeError ({why[:40]})")
+    d, why = sc.recovery_step(A(float("-inf"), -1.3), -12.0, None, 0.0)
+    ok(d == 0.0 and why.startswith("no ears"), "R14: -inf LUFS (true silence) stops too")
+    d, why = sc.recovery_step(A("garbage", -1.3), -12.0, None, 0.0)
+    ok(d == 0.0 and why.startswith("no ears"), "R15: unparsable LUFS stops honestly")
+    # EMPTY-DIFF DIAGNOSIS (2026-07-13, hezy's 3x 'ask too large' on an 8-BAR
+    # demo): the zero-change message must name the REAL cause, and the
+    # scoped-context hint only rides on songs that are actually big.
+    SMALL = {"lengthBars": 8, "tracks": [{"name": "808"}]}
+    BIG = {"lengthBars": 96, "tracks": [{"name": f"t{i}"} for i in range(12)]}
+    h, hint = sc.empty_diff_why(SMALL, "", 0)
+    ok("no work AND no reply" in h and "NOT the problem" in hint,
+       f"E1: silent dead rail named, small song absolved ({h[:40]})")
+    h, hint = sc.empty_diff_why(SMALL, "Which track should I put the melody on?", 0)
+    ok("its own words" in h and "Which track" in h,
+       "E2: the agent's question surfaces VERBATIM")
+    h, hint = sc.empty_diff_why(SMALL, "", 3)
+    ok("3 edit receipt(s)" in h and "NO change survived" in h,
+       "E3: landed-then-dissolved edits named (locks/reverts)")
+    h, hint = sc.empty_diff_why(BIG, "", 0)
+    ok("Drag-select" in hint, "E4: the scoped-context hint rides ONLY big songs")
+    h, hint = sc.empty_diff_why({"lengthBars": None, "tracks": None}, None, 0)
+    ok(isinstance(h, str) and isinstance(hint, str), "E5: degenerate doc never throws")
 
 
 if __name__ == "__main__":

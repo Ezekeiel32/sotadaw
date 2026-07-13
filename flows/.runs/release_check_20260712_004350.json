@@ -1,0 +1,19 @@
+{
+ "flow": "release_check",
+ "song": "_flowbat_x",
+ "when": "2026-07-12 00:43:50",
+ "approval": "auto",
+ "steps": [
+  {
+   "tool": "finish_audit",
+   "args": {
+    "song": "_flowbat_x"
+   },
+   "secs": 0.07,
+   "result_head": "FINISH AUDIT FAILED:\nno such song: /home/chezy/AI_SOTA_DAW/songs/_flowbat_x.json\n",
+   "ok": false
+  }
+ ],
+ "ok": false,
+ "halted": "step 1 finish_audit failed: FINISH AUDIT FAILED:\nno such song: /home/chezy/AI_SOTA_DAW/songs/_flowbat_x.json\n"
+}

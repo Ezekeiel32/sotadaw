@@ -1,0 +1,286 @@
+{
+ "genre": "phonk",
+ "source": "eval:eval_phonk",
+ "score": 0.676,
+ "bpm": 140.0,
+ "key": "C# minor",
+ "key_parsed": {
+  "tonic_pc": 1,
+  "mode": "minor",
+  "scale_pcs": [
+   1,
+   3,
+   4,
+   6,
+   8,
+   9,
+   11
+  ],
+  "allowed_pcs": [
+   0,
+   1,
+   3,
+   4,
+   6,
+   8,
+   9,
+   11
+  ],
+  "scale_names": [
+   "C#",
+   "D#",
+   "E",
+   "F#",
+   "G#",
+   "A",
+   "B"
+  ],
+  "flats": false
+ },
+ "lengthBars": 12,
+ "swing": {
+  "grid": "16th",
+  "amount": 0.56
+ },
+ "sections": [],
+ "window": {
+  "startBar": 4,
+  "bars": 8
+ },
+ "tracks": [
+  {
+   "name": "808",
+   "role": "drums",
+   "voice": "kick_808",
+   "gainDb": -6,
+   "pan": 0,
+   "fx": [
+    "fx_saturate(drive 7,mix .6,tone 2500)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 3.0,
+   "vel_lo": 0.8,
+   "vel_hi": 0.95,
+   "vel_variety": 3,
+   "in_key_pct": 1.0,
+   "pitch_lo": 25,
+   "pitch_hi": 32,
+   "bar_counts": [
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3
+   ],
+   "dna": "b4 E1@0+1.75^.95 E1@1.75+1.5^.85 E1@3.25+.75^.8 | b5 E1@0+1.75^.95 E1@1.75+1.5^.85 E1@3.25+.75^.8"
+  },
+  {
+   "name": "kick",
+   "role": "drums",
+   "voice": "sample",
+   "gainDb": -5,
+   "pan": 0,
+   "fx": [],
+   "chordal": 0.0,
+   "notes_per_bar": 3.0,
+   "vel_lo": 0.8,
+   "vel_hi": 0.95,
+   "vel_variety": 3,
+   "in_key_pct": 1.0,
+   "pitch_lo": 36,
+   "pitch_hi": 36,
+   "bar_counts": [
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3,
+    3
+   ],
+   "dna": "b4 C2@0+.2^.95 C2@1.75+.2^.8 C2@3.25+.2^.85 | b5 C2@0+.2^.95 C2@1.75+.2^.8 C2@3.25+.2^.85"
+  },
+  {
+   "name": "snare",
+   "role": "drums",
+   "voice": "sample",
+   "gainDb": -3,
+   "pan": 0,
+   "fx": [
+    "fx_reverb(damp 6000,mix .18,size 1.5)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 2.0,
+   "vel_lo": 0.3,
+   "vel_hi": 0.95,
+   "vel_variety": 2,
+   "in_key_pct": 0.0,
+   "pitch_lo": 38,
+   "pitch_hi": 38,
+   "bar_counts": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "dna": "b4 D2@2+.5^.95 D2@2.75+.25^.3 | b5 D2@2+.5^.95 D2@2.75+.25^.3"
+  },
+  {
+   "name": "clap",
+   "role": "drums",
+   "voice": "clap_909",
+   "gainDb": -5,
+   "pan": 0,
+   "fx": [
+    "fx_reverb(damp 5500,mix .2,size 1.6)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 1.0,
+   "vel_lo": 0.8,
+   "vel_hi": 0.8,
+   "vel_variety": 1,
+   "in_key_pct": 1.0,
+   "pitch_lo": 60,
+   "pitch_hi": 60,
+   "bar_counts": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "dna": "b4 C4@2+.4^.8 | b5 C4@2+.4^.8"
+  },
+  {
+   "name": "hats",
+   "role": "drums",
+   "voice": "sample",
+   "gainDb": -11,
+   "pan": 0.1,
+   "fx": [
+    "fx_widen(rate .2,width 1.2)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 8.17,
+   "vel_lo": 0.35,
+   "vel_hi": 0.7,
+   "vel_variety": 7,
+   "in_key_pct": 1.0,
+   "pitch_lo": 42,
+   "pitch_hi": 42,
+   "bar_counts": [
+    8,
+    8,
+    8,
+    8,
+    8,
+    8,
+    8,
+    10
+   ],
+   "dna": "b4 F#2@0+.2^.5 F#2@.5+.2^.35 F#2@1+.2^.45 F#2@1.5+.2^.35 F#2@2+.2^.5 F#2@2.5+.2^.35 F#2@3+.2^.45 F#2@3.5+.2^.35 | b5 F#2@0+.2^.5 F#2@.5+.2^.35 F#2@1+.2^.45 F#2@1.5+.2^.35 F#2@2+.2^.5 F#2@2.5+.2^.35 F#2@3+.2^.45 F#2@3.5+.2^.35"
+  },
+  {
+   "name": "cowbell",
+   "role": "drums",
+   "voice": "hat_metal",
+   "gainDb": 6,
+   "pan": 0,
+   "fx": [
+    "fx_filter(cutoff 9000,res 1.5)",
+    "fx_saturate(drive 10,mix .65,tone 3200)",
+    "fx_reverb(damp 4500,mix .2,size 2.2)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 6.0,
+   "vel_lo": 0.7,
+   "vel_hi": 0.95,
+   "vel_variety": 6,
+   "in_key_pct": 1.0,
+   "pitch_lo": 61,
+   "pitch_hi": 71,
+   "bar_counts": [
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6
+   ],
+   "dna": "b4 G#4@0+.4^.95 B4@1+.4^.85 G#4@1.5+.3^.7 F#4@2+.4^.8 E4@2.5+.3^.7 C#4@3+.6^.85 | b5 G#4@0+.4^.95 B4@1+.4^.85 G#4@1.5+.3^.7 F#4@2+.4^.8 E4@2.5+.3^.7 C#4@3+.6^.85"
+  },
+  {
+   "name": "chant",
+   "role": "melodic",
+   "voice": "sample",
+   "gainDb": -2,
+   "pan": -0.15,
+   "fx": [
+    "fx_saturate(drive 5,mix .4,tone 3000)",
+    "fx_reverb(damp 3500,mix .3,size 3)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 2.0,
+   "vel_lo": 0.55,
+   "vel_hi": 0.6,
+   "vel_variety": 2,
+   "in_key_pct": 1.0,
+   "pitch_lo": 44,
+   "pitch_hi": 49,
+   "bar_counts": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "dna": "b4 C#3@1.5+.4^.6 G#2@3.5+.4^.55 | b5 C#3@1.5+.4^.6 G#2@3.5+.4^.55 | b6 C#3@1.5+.4^.6 G#2@3.5+.4^.55 | b7 C#3@1.5+.4^.6 G#2@3.5+.4^.55"
+  }
+ ],
+ "buses": [],
+ "automation": [],
+ "master": [
+  "fx_trim(level 0)",
+  "fx_saturate(drive 5,mix 1,tone 3400)",
+  "fx_trim(level 8)",
+  "fx_brickwall(ceiling -1.5)"
+ ],
+ "masterGainDb": 0,
+ "measured": {
+  "lufs": -18.03,
+  "dbtp": -1.13,
+  "clipped": 0,
+  "bands": {
+   "low_20_120": 84.7,
+   "lowmid_120_500": 13.3,
+   "mid_500_2k": 1.1,
+   "himid_2k_6k": 0.7,
+   "high_6k_up": 0.2
+  }
+ },
+ "mixtarget": {
+  "lufs_lo": -16,
+  "lufs_hi": -8,
+  "band_order": "low>lowmid>mid>himid>high",
+  "psr_floor": 5.0,
+  "clipped_samples": 0,
+  "bpm_lo": 130,
+  "bpm_hi": 145
+ }
+}

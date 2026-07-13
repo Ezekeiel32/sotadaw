@@ -1,0 +1,301 @@
+{
+ "genre": "rock",
+ "source": "accept:untitled_43",
+ "score": 0.866,
+ "bpm": 172.0,
+ "key": "A minor",
+ "key_parsed": {
+  "tonic_pc": 9,
+  "mode": "minor",
+  "scale_pcs": [
+   0,
+   2,
+   4,
+   5,
+   7,
+   9,
+   11
+  ],
+  "allowed_pcs": [
+   0,
+   2,
+   3,
+   4,
+   5,
+   7,
+   8,
+   9,
+   11
+  ],
+  "scale_names": [
+   "A",
+   "B",
+   "C",
+   "D",
+   "E",
+   "F",
+   "G"
+  ],
+  "flats": false
+ },
+ "lengthBars": 150,
+ "swing": {
+  "grid": "8th",
+  "amount": 0.54
+ },
+ "sections": [],
+ "window": {
+  "startBar": 117,
+  "bars": 8
+ },
+ "tracks": [
+  {
+   "name": "harpsichord",
+   "role": "melodic",
+   "voice": "harpsichord",
+   "gainDb": -8.0,
+   "pan": -0.12,
+   "fx": [
+    "eq(hiFreq 6800,hiGain 1.5,loFreq 150,loGain -2)",
+    "fx_widen(width 1.15)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 5.64,
+   "vel_lo": 0.408215,
+   "vel_hi": 0.821439,
+   "vel_variety": 38,
+   "in_key_pct": 1.0,
+   "pitch_lo": 50,
+   "pitch_hi": 88,
+   "bar_counts": [
+    4,
+    4,
+    4,
+    3,
+    4,
+    4,
+    5,
+    4
+   ],
+   "dna": "b117 C4@1+.9^.47 A4@2+.9^.48 F3@3+.9^.52 C4@3.99+.9^.48 | b118 A4@1+.9^.47 E3@2+.9^.51 B3@3+.9^.47 G#4@3.99+.9^.49 | b119 E3@1+.9^.53 B3@2+.9^.47 G#4@3+.9^.47 A3@3.99+.9^.54 | b120 E4@1+.9^.48 C5@2+.9^.49 G3@3+.9^.53"
+  },
+  {
+   "name": "harpsi_lead",
+   "role": "melodic",
+   "voice": "harpsichord",
+   "gainDb": -8.0,
+   "pan": 0.14,
+   "fx": [
+    "eq(hiFreq 5200,hiGain 1.8,loFreq 180,loGain -2)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 1.85,
+   "vel_lo": 0.575365,
+   "vel_hi": 0.823825,
+   "vel_variety": 23,
+   "in_key_pct": 1.0,
+   "pitch_lo": 57,
+   "pitch_hi": 89,
+   "bar_counts": [
+    8,
+    8,
+    9,
+    8,
+    8,
+    8,
+    7,
+    8
+   ],
+   "dna": "b117 A5@0+.45^.8 F5@.5+.45^.72 C5@1+.45^.73 F5@1.5+.45^.74 A5@2.01+.45^.73 C6@2.5+.45^.71 C6@3+.45^.8 A5@3.49+.45^.73 | b118 F5@0+.45^.7 C5@.5+.45^.72 A4@1.01+.45^.73 C5@1.49+.45^.72 G#5@2.01+.45^.79 E5@2.51+.45^.7 B4@2.99+.45^.73 E5@3.49+.45^.73 | b119 G#5@.01+.45^.72 B5@.5+.45^.71 E6@1.01+.45^.77 D#6@1.5+.45^.73 E6@2+.45^.73 B5@2.51+.45^.72 G#5@3+.45^.72 E5@3.49+.45^.73 A5@4+.45^.82 | b120 E5@.5+.45^.75 C5@1+.45^.74 E5@1.5+.45^.76 A5@1.99+.45^.75 E6@2.5+.45^.76 D6@2.99+.45^.78 B5@3.5+.45^.76 G5@4+.45^.77"
+  },
+  {
+   "name": "bass",
+   "role": "melodic",
+   "voice": "bass_warm",
+   "gainDb": -8.0,
+   "pan": 0.0,
+   "fx": [
+    "eq(hiFreq 2500,hiGain -1,loFreq 70,loGain 1)"
+   ],
+   "chordal": 0.0,
+   "notes_per_bar": 2.53,
+   "vel_lo": 0.5,
+   "vel_hi": 0.62,
+   "vel_variety": 4,
+   "in_key_pct": 1.0,
+   "pitch_lo": 38,
+   "pitch_hi": 52,
+   "bar_counts": [
+    3,
+    2,
+    3,
+    3,
+    2,
+    3,
+    3,
+    2
+   ],
+   "dna": "b117 F2@0+1.9^.62 C3@2+.9^.5 F2@3+1.9^.62 | b118 C3@1+.9^.5 E2@2+1.9^.62 | b119 B2@0+.9^.5 E2@1+1.9^.62 B2@3+.9^.5 | b120 A2@0+1.9^.62 E3@2+.9^.5 G2@3+1.9^.62"
+  },
+  {
+   "name": "kick",
+   "role": "drums",
+   "voice": "kick_punch",
+   "gainDb": -7.0,
+   "pan": 0.0,
+   "fx": [],
+   "chordal": 0.0,
+   "notes_per_bar": 1.2,
+   "vel_lo": 0.684657,
+   "vel_hi": 0.818504,
+   "vel_variety": 15,
+   "in_key_pct": 1.0,
+   "pitch_lo": 36,
+   "pitch_hi": 36,
+   "bar_counts": [
+    2,
+    1,
+    1,
+    2,
+    1,
+    2,
+    1,
+    1
+   ],
+   "dna": "b117 C2@.01+.3^.81 C2@2.99+.3^.71 | b118 C2@2.01+.3^.69"
+  },
+  {
+   "name": "snare",
+   "role": "drums",
+   "voice": "brush_snare",
+   "gainDb": -12.0,
+   "pan": 0.06,
+   "fx": [],
+   "chordal": 0.0,
+   "notes_per_bar": 1.69,
+   "vel_lo": 0.305608,
+   "vel_hi": 0.570603,
+   "vel_variety": 20,
+   "in_key_pct": 1.0,
+   "pitch_lo": 55,
+   "pitch_hi": 55,
+   "bar_counts": [
+    1,
+    1,
+    5,
+    1,
+    2,
+    1,
+    1,
+    1
+   ],
+   "dna": "b117 G3@2+.3^.41 | b118 G3@1.01+.3^.41"
+  },
+  {
+   "name": "hats",
+   "role": "drums",
+   "voice": "hat",
+   "gainDb": -15.0,
+   "pan": -0.08,
+   "fx": [],
+   "chordal": 0.0,
+   "notes_per_bar": 4.75,
+   "vel_lo": 0.228313,
+   "vel_hi": 0.419426,
+   "vel_variety": 19,
+   "in_key_pct": 1.0,
+   "pitch_lo": 80,
+   "pitch_hi": 80,
+   "bar_counts": [
+    6,
+    5,
+    4,
+    5,
+    6,
+    5,
+    6,
+    5
+   ],
+   "dna": "b117 G#5@.5+.18^.27 G#5@1.01+.18^.37 G#5@1.51+.18^.25 G#5@2.5+.18^.29 G#5@3.51+.18^.26 G#5@3.99+.18^.39 | b118 G#5@.49+.18^.23 G#5@1.51+.18^.29 G#5@2.49+.18^.26 G#5@2.99+.18^.37 G#5@3.5+.18^.24"
+  },
+  {
+   "name": "pad",
+   "role": "melodic",
+   "voice": "pad_motion",
+   "gainDb": -14.0,
+   "pan": 0.1,
+   "fx": [
+    "fx_filter(cutoff 900)",
+    "fx_widen(width 1.3)"
+   ],
+   "chordal": 1.0,
+   "notes_per_bar": 1.62,
+   "vel_lo": 0.32,
+   "vel_hi": 0.36,
+   "vel_variety": 3,
+   "in_key_pct": 1.0,
+   "pitch_lo": 50,
+   "pitch_hi": 64,
+   "bar_counts": [
+    3,
+    3,
+    0,
+    6,
+    3,
+    3,
+    6,
+    3
+   ],
+   "dna": "b117 @0 F=F3A3C4 | b118 @2 E=E3G#3B3 | b119 (rest) | b120 @0 Am=A3C4E4 @3 G=G3B3D4 | b121 @2 F=F3A3C4 | b122 @1 Dm=D3F3A3 | b123 @0 E=E3G#3B3 @3 E3G#3D4 | b124 @2 Am=A3C4E4"
+  },
+  {
+   "name": "lead",
+   "role": "melodic",
+   "voice": "formant_vox",
+   "gainDb": -22.0,
+   "pan": 0.0,
+   "fx": [],
+   "chordal": 0.0,
+   "notes_per_bar": 0.81,
+   "vel_lo": 0.48,
+   "vel_hi": 0.69669,
+   "vel_variety": 18,
+   "in_key_pct": 1.0,
+   "pitch_lo": 67,
+   "pitch_hi": 76,
+   "bar_counts": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "dna": "b117 (rest) | b118 (rest) | b119 (rest) | b120 (rest)"
+  }
+ ],
+ "buses": [
+  "verb: fx_reverb(damp 5200,mix 1,size 3.2)"
+ ],
+ "automation": [
+  "masterGainDb 0->-60 bars 0-150 (late-bloom)"
+ ],
+ "master": [
+  "fx_trim(level 12.5)",
+  "eq(hiFreq 9500,hiGain 1.2,loFreq 30,loGain 0)",
+  "fx_truepeak(ceiling -1.2)"
+ ],
+ "masterGainDb": 0.0,
+ "measured": null,
+ "mixtarget": {
+  "lufs_lo": -12,
+  "lufs_hi": -8,
+  "band_order": "lowmid>low>mid",
+  "psr_floor": 7.0,
+  "clipped_samples": 0,
+  "bpm_lo": 110,
+  "bpm_hi": 150
+ }
+}

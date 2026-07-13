@@ -370,6 +370,18 @@ def _skill_essence(body):
         cut = cut[:nl]
     return cut.strip()
 
+def _gold_block(genre):
+    """THE GOLD STANDARD (2026-07-13, Chezy law: 'REAL fully complex music-notes
+    DNA as the EXAMPLE of the standard, retrieved with the canonical context'):
+    the matched genre's banked exemplar — real ears-passed notes + the mastering
+    standard — rides beside the genre skill. library/gold via tools/gold_bank.py;
+    runtime is KG-free. Fail-open: the bank must never kill a session."""
+    try:
+        import gold_bank
+        return gold_bank.render_block(genre) or ""
+    except Exception:
+        return ""
+
 def _vibe_route(text, k=4, timeout=90):
     """SEMANTIC GENRE ROUTING (pass 5): kg_vibe subprocess -> {"genre","score",
     "sibs"} or None. Weak routes (top cos < 0.35) return None — the semantic
@@ -393,6 +405,9 @@ def _vibe_route(text, k=4, timeout=90):
 def t_start_session(args):
     genre = str(args.get("genre", "")).lower()
     ctx = set(re.split(r"[\s,/+-]+", genre)) | {genre}
+    # literal-first law: 'uk garage' must hit the 'ukgarage' tag before any
+    # semantic lane gets a vote (vibe once routed it to future_garage)
+    ctx.add(re.sub(r"[^a-z0-9_]", "", genre))
     fired = select_skills(ctx)
     kits = list_kits()
     # THE KIT LINE DIET (2026-07-09): every import/battery mints source kits
@@ -411,10 +426,13 @@ def t_start_session(args):
     always = [(n, e) for n, e in fired if "always" in {t.lower() for t in e["tags"]}]
     genred = [(n, e) for n, e in fired if (n, e) not in always]
     vibe_note = ""
-    if not genred and genre.strip():
-        # SEMANTIC ROUTING (pass 5): no skill tag matched the genre words — KNN
-        # the vibe against the KG captions and re-fire skills on the nearest
+    if genre.strip() and not any(n.endswith("-arrangement") for n, _ in genred):
+        # SEMANTIC ROUTING (pass 5): no ARRANGEMENT skill matched the genre words
+        # — KNN the vibe against the KG captions and re-fire skills on the nearest
         # real genre ("smoky late night jazz bar" -> jazz skills, not nothing).
+        # 2026-07-13: trigger widened from `not genred` — "uk garage" fired ONLY
+        # faust-reese (a technique tagged 'garage') and the ask never saw its
+        # genre skill; a technique match must not mask a genre miss.
         v = _vibe_route(genre)
         if v:
             ctx |= {v["genre"]} | set(v["genre"].split("_"))
@@ -426,8 +444,11 @@ def t_start_session(args):
                          f"near: {v['sibs']}]")
     best = None
     if genred:                                   # the ask's OWN genre rides full
+        # arrangement skills outrank technique skills at equal tag overlap (the
+        # 'uk garage' lesson: faust-reese must never be the session's "genre")
         score = lambda ne: (len({t.lower() for t in ne[1]["tags"]} & ctx),
-                            genre in {t.lower() for t in ne[1]["tags"]}, ne[0])
+                            genre in {t.lower() for t in ne[1]["tags"]},
+                            ne[0].endswith("-arrangement"), ne[0])
         best = max(genred, key=score)[0]
     full, indexed = [], []
     for n, e in fired:
@@ -441,6 +462,12 @@ def t_start_session(args):
              f"{len(indexed)} indexed (their FULL law is one get_skill away):\n"]
     for name, e in full:
         parts.append(f"\n===== SKILL {name}@v{e['version']} =====\n{skill_body(e)}")
+    for cand in ([best[:-len("-arrangement")]]
+                 if best and best.endswith("-arrangement") else []) + [genre]:
+        gold = _gold_block(cand)        # raw genre second: bank names are squashed
+        if gold:                        # ("uk garage" -> ukgarage) so a tag gap
+            parts.append("\n" + gold)   # in skills can't hide a banked standard
+            break
     if indexed:
         parts.append("\n===== SKILL INDEX — call get_skill(name) BEFORE work that "
                      "touches one (the essence below is a hook, NOT the law) =====")
@@ -457,7 +484,14 @@ def t_get_skill(args):
     name = args["name"]
     if name not in reg["skills"]:
         return f"unknown skill '{name}'. available: {sorted(reg['skills'])}"
-    return skill_body(reg["skills"][name])
+    body = skill_body(reg["skills"][name])
+    if name.endswith("-arrangement"):
+        # mid-session genre switches fetch the sibling skill — the gold standard
+        # rides with it (the session-diet fetch law checks prefix, not equality)
+        gold = _gold_block(name[:-len("-arrangement")])
+        if gold:
+            body += "\n\n" + gold
+    return body
 
 def t_write_instrument(args):
     name = re.sub(r"[^a-z0-9_]", "", str(args["name"]).lower())
@@ -554,6 +588,49 @@ def _track_verdict(t):
                 finds.append(f"[X2] {f.get('id')} on '{nm}' has unknown param(s) {bad} — real zones: {sorted(zones)}; these do NOTHING")
     return ("\nDOCTOR: " + "; ".join(finds[:3])) if finds else ""
 
+def one_tempo_guard(song, old_bpm, old_song=None):
+    """THE ONE-TEMPO LAW (Chezy, 2026-07-13, the untitled_43 tempo split: bpm moved
+    172->186 while the vocal's unwarped clips kept pacing at 172 — the band ran 8%
+    faster than the singer and every downstream pitch pass read chords from windows
+    the audio had drifted out of): ONE bpm for the whole song, the same number for
+    the user, the agent, and every clip. When bpm changes, any audio clip WITHOUT a
+    sourceBpm (absent/null — an explicit 0 is a deliberate tempo-free opt-out, e.g.
+    FX/textures) is stamped sourceBpm=old_bpm so the engine WARPS it to follow
+    (pitch preserved; clip_beat_fn and the tune rail read the same mapping).
+    old_song given (write_song lane) = stamp only clips that EXISTED unwarped
+    (same track+file) — brand-new clips in the same write are the new tempo's own.
+    Returns how many clips were stamped."""
+    try:
+        new_bpm = float(song.get("bpm") or 0)
+        old = float(old_bpm or 0)
+    except (TypeError, ValueError):
+        return 0
+    if not old or not new_bpm or abs(new_bpm - old) < 1e-6:
+        return 0
+    known = None
+    if old_song is not None:                # (track,file) -> the clip's OLD sourceBpm
+        known = {(t.get("name"), c.get("file")): c.get("sourceBpm")
+                 for t in old_song.get("tracks", [])
+                 for c in (t.get("audioClips") or [])}
+    n = 0
+    for t in song.get("tracks", []):
+        for c in (t.get("audioClips") or []):
+            if c.get("sourceBpm") is not None:      # warped already, or explicit 0 opt-out
+                continue
+            if known is not None:
+                key = (t.get("name"), c.get("file"))
+                if key not in known:
+                    continue                        # brand-new clip: the new tempo's own
+                old_sb = known[key]
+                # a warp stripped in the same write as a tempo change is an
+                # accident — restore it (0 = the deliberate opt-out, restored as 0)
+                c["sourceBpm"] = old_sb if old_sb is not None else old
+            else:
+                c["sourceBpm"] = old
+            n += 1
+    return n
+
+
 def t_write_song(args):
     name = resolve_song_name(args["name"])
     song = args["song"]
@@ -563,6 +640,15 @@ def t_write_song(args):
         except json.JSONDecodeError as e:
             return f"song is not valid JSON: {e}"
     song, _san = sanitize_song(song)
+    _old_doc, _warped = None, 0
+    try:
+        _p0 = os.path.join(SONGS, f"{resolve_song_name(args['name'])}.json")
+        if os.path.exists(_p0):
+            _old_doc = json.load(open(_p0))
+    except Exception:
+        _old_doc = None
+    if _old_doc is not None:
+        _warped = one_tempo_guard(song, _old_doc.get("bpm"), old_song=_old_doc)
     errs = validate_song(song)
     if errs:
         return "SONG INVALID — fix and resubmit:\n- " + "\n- ".join(errs) + f"\n{SONG_SCHEMA_HINT}"
@@ -571,8 +657,11 @@ def t_write_song(args):
     n = sum(len(t["notes"]) for t in song["tracks"])
     _rc(name, "write_song", fields=["*"], summary=f"FULL WRITE: {len(song['tracks'])} tracks, {n} notes")
     _sline = ("\nsanitized: " + "; ".join(_san)) if _san else ""
+    _otline = (f"\nONE-TEMPO LAW: bpm changed — {_warped} pre-existing unwarped audio "
+               f"clip(s) auto-stamped sourceBpm={_old_doc.get('bpm'):g} so their pacing "
+               f"follows the new tempo (sourceBpm:0 opts out)." if _warped else "")
     return (f"OK: songs/{name}.json written ({len(song['tracks'])} tracks, {n} notes). "
-            f"Next: render_song." + _sline + _doctor_verdict(song))
+            f"Next: render_song." + _sline + _otline + _doctor_verdict(song))
 
 def t_update_track(args):
     """Surgically replace fields of ONE track in a song — no need to resend the whole song."""
@@ -721,6 +810,7 @@ def t_update_song_meta(args):
     if not os.path.exists(path):
         return f"no such song '{name}'"
     song = json.load(open(path))
+    old_bpm = song.get("bpm")
     changed = []
     for k in ("bpm", "masterGainDb", "lengthBars", "key", "swing", "master", "tempoMap"):
         if k in args and args[k] is not None:
@@ -732,13 +822,17 @@ def t_update_song_meta(args):
                     return f"{k} is not valid JSON: {e}"
             song[k] = v
             changed.append(k)
+    warped = one_tempo_guard(song, old_bpm) if "bpm" in changed else 0
     errs = validate_song(song)
     if errs:
         return "INVALID after update:\n- " + "\n- ".join(errs)
     _awrite(path, song)
     _rc(name, "update_song_meta", fields=[f"meta:{k}" for k in changed],
         summary=f"meta: {', '.join(changed)}")
-    return f"OK: updated {', '.join(changed)} in songs/{name}.json"
+    ot = (f"\nONE-TEMPO LAW: {warped} audio clip(s) auto-stamped sourceBpm={old_bpm:g} — "
+          f"they now WARP to follow the new tempo (material pacing stays musical; "
+          f"sourceBpm:0 on a clip opts out)." if warped else "")
+    return f"OK: updated {', '.join(changed)} in songs/{name}.json" + ot
 
 def t_add_track(args):
     """Add a new track: name + source ({kind:faust|sample|vst3, id/kit/plugin}) + optional fx/gainDb/notes."""
@@ -3511,12 +3605,17 @@ def t_make_track(args):
             "swap voices via vst_presets, apply_groove for feel. New seed = new track.")
 
 def t_tune_vocal(args):
-    """CONTEXT-TUNE (V45): song-aware pitch correction on a track's audio clip.
-    Reads the ARRANGEMENT (per-beat chord field from all other tracks + scale) and
-    retunes through the WORLD vocoder — formants preserved, timing untouched.
-    Non-destructive: writes a new wav, swaps the clip file, keeps tuning provenance;
-    always re-tunes from the ORIGINAL source (never double-processes)."""
-    name, path, song = _load_song(args, mutate=True)
+    """CONTEXT-TUNE (V45 + NOTE COURT 2026-07-13): song-aware pitch correction on a
+    track's audio clip. Reads the ARRANGEMENT (per-beat chord field from every other
+    track + scale) and retunes through the WORLD vocoder — formants preserved, timing
+    untouched. Non-destructive: writes a new wav, swaps the clip file, keeps tuning
+    provenance; always re-tunes from the ORIGINAL source (never double-processes).
+    analyze:true = EARS ONLY — nothing changes, the result is THE NOTE MAP (every
+    sung note interval named to 128-MIDI precision: core pitch, target, cents,
+    duration, confidence, octave-court flags). f0 defaults to fcpe (the neural rail
+    that holds notes harvest drops); a fallen rail is REPORTED, never silent."""
+    analyze = bool(args.get("analyze"))
+    name, path, song = _load_song(args, mutate=not analyze)
     if song is None:
         return f"no such song '{name}'"
     tname = args["track"]
@@ -3562,13 +3661,21 @@ def t_tune_vocal(args):
     style = str(args.get("style", "natural"))
     if style not in ("tpain", "hard", "natural", "transparent"):
         return "style must be tpain|hard|natural|transparent"
+    f0 = str(args.get("f0", "consensus"))
+    if f0 not in ("consensus", "fcpe", "harvest", "crepe"):
+        return "f0 must be consensus|fcpe|harvest|crepe"
     stem = re.sub(r"[^a-z0-9_]", "", os.path.splitext(os.path.basename(src))[0].lower())
     out_rel = f"songs/_tuned_{stem}_{style}.wav"
-    rep_rel = f"songs/_tuned_{stem}_{style}.report.json"
+    rep_rel = (f"songs/_notes_{stem}.report.json" if analyze
+               else f"songs/_tuned_{stem}_{style}.report.json")
     py = VENV_PY if os.path.exists(VENV_PY) else sys.executable
-    cmd = [py, os.path.join(ROOT, "tools", "retune.py"), src_abs, os.path.join(ROOT, out_rel),
-           "--song", path, "--track", tname, "--style", style,
-           "--clip-index", str(ci), "--report", os.path.join(ROOT, rep_rel)]
+    cmd = [py, os.path.join(ROOT, "tools", "retune.py"), src_abs]
+    if not analyze:
+        cmd.append(os.path.join(ROOT, out_rel))
+    cmd += ["--song", path, "--track", tname, "--style", style, "--f0", f0,
+            "--clip-index", str(ci), "--report", os.path.join(ROOT, rep_rel)]
+    if analyze:
+        cmd.append("--analyze")
     if args.get("strength") is not None:
         cmd += ["--strength", str(float(args["strength"]))]
     if args.get("guide_track"):
@@ -3584,25 +3691,165 @@ def t_tune_vocal(args):
         rep = json.load(open(os.path.join(ROOT, rep_rel)))
     except Exception:
         rep = {"stats": {}, "notes": []}
+    if not analyze:
+        clip["file"] = out_rel
+        clip["tuning"] = {"style": style, "source": src, "report": rep_rel}
+        errs = validate_song(song)
+        if errs:
+            return "INVALID after tune — fix and resubmit:\n- " + "\n- ".join(errs)
+        _awrite(path, song)
+        _rc(name, "tune_vocal", fields=["audioClips"], track_wild=tname,
+            summary=f"tune_vocal {style} {tname}")
+    st = rep.get("stats", {})
+    notes = rep.get("notes", [])
+
+    def _row(n):
+        bb = f"b{n['beat0']:g}" if n.get("beat0") is not None else f"{n['t0']:g}s"
+        fl = f" [{n['flag']}]" if n.get("flag") else ""
+        return (f"  {bb:>9} {n['sung']:>10} -> {n['target_name']:<4} "
+                f"({n['cents_moved']:+.0f}c {n.get('dur_ms', '?')}ms conf {n.get('conf', '?')}) "
+                f"{n['reason']}{fl}")
+
+    held = st.get("held") or {}
+    held_s = ", ".join(f"{v} {k}" for k, v in held.items() if v) or "none"
+    f0_line = str(st.get("f0_mode", "?")) + (f" ({st['f0_note']})" if st.get("f0_note") else "")
+    head = (f"{'HEARD' if analyze else 'TUNED'} '{tname}' {style}: {st.get('notes', '?')} notes "
+            f"({st.get('fragments', '?')} fragments), {st.get('corrected', '?')} corrected, "
+            f"held: {held_s}, healed octave runs: {st.get('healed_runs', '?')}\n"
+            f"f0: {f0_line} · singer's register ~{st.get('register_center_name', '?')} · "
+            f"median off {st.get('median_abs_cents_off', '?')}c "
+            f"(worst {st.get('max_abs_cents_off', '?')}c)"
+            + ("" if analyze else f" · resynth {st.get('resynth_pct', '?')}%"))
+    if analyze:
+        body = "\n".join(_row(n) for n in notes[:80])
+        more = f"\n  ... +{len(notes) - 80} more (report json)" if len(notes) > 80 else ""
+        return (head + f"\nTHE NOTE MAP (every sung note interval, 128-MIDI precision):\n"
+                f"{body}{more}\nreport: {rep_rel}\n"
+                f"EARS ONLY — nothing changed. To cut: same call without analyze. Wrong "
+                f"targets? guide_track=<melody lane> pins them; region=[b0,b1] scopes.")
+    flagged = [n for n in notes if n.get("flag")
+               or (n.get("reason", "").startswith("held") and n["reason"] != "held(region)")]
+    moves = sorted((n for n in notes if n.get("cents_moved")),
+                   key=lambda n: -abs(n["cents_moved"]))[:10]
+    parts = [head, f"Clip -> {out_rel}", "biggest moves:"] + [_row(n) for n in moves]
+    if flagged:
+        parts.append(f"flagged/held ({len(flagged)}) — perception could not PROVE these; "
+                     f"passed through raw, never wrongly corrected:")
+        parts += [_row(n) for n in flagged[:8]]
+    parts += [f"original kept: {src} · full per-note report: {rep_rel}",
+              "Next: render_song + hear. Unsure of the melody? analyze:true shows the "
+              "note map without cutting; guide_track (a melody lane) pins explicit "
+              "targets; region [b0,b1] cuts surgical spans."]
+    return "\n".join(parts)
+
+def t_tune_notes(args):
+    """THE GRAPH MODE (2026-07-13): Antares-graph-class MANUAL per-note pitch editing
+    — the LLM is the editor. Workflow: tune_vocal analyze:true -> read THE NOTE MAP
+    -> send per-note verdicts keyed by the map's beat0. A manual verdict OVERRIDES
+    the octave court and auto's ±7 st safety (the editor saw the flag and decided).
+    verify (default true) re-measures the OUTPUT: every landing is a fact."""
+    name, path, song = _load_song(args, mutate=True)
+    if song is None:
+        return f"no such song '{name}'"
+    tname = args["track"]
+    trs = [t for t in song.get("tracks", []) if t.get("name") == tname]
+    if not trs:
+        return f"no track named '{tname}'. tracks: {[t.get('name') for t in song['tracks']]}"
+    clips = trs[0].get("audioClips") or []
+    ci = int(args.get("clip_index", 0))
+    if not clips or ci >= len(clips):
+        return f"track '{tname}' has no audioClip[{ci}] — tune_notes works on audio clips."
+    clip = clips[ci]
+    src = (clip.get("tuning") or {}).get("source") or clip.get("file")
+    src_abs = src if os.path.isabs(src) else os.path.join(ROOT, src)
+    if not os.path.exists(src_abs):
+        return f"clip source missing: {src}"
+    edits = args.get("edits")
+    if not isinstance(edits, list) or not edits:
+        return ("edits required: [{at: <beat0 from the analyze note map>, target: 'A3'|57, "
+                "hold: true, amount|retune_ms|vibrato_keep per note}]. Run tune_vocal "
+                "analyze:true first — the map's beat0 values are the note addresses. "
+                "NOTE: every call re-cuts from the ORIGINAL, so carry the FULL edit "
+                "list each time (edits are not cumulative across calls).")
+    style = str(args.get("style", "hard"))
+    if style not in ("tpain", "hard", "natural", "transparent"):
+        return "style must be tpain|hard|natural|transparent"
+    f0 = str(args.get("f0", "consensus"))
+    if f0 not in ("consensus", "fcpe", "harvest", "crepe"):
+        return "f0 must be consensus|fcpe|harvest|crepe"
+    stem = re.sub(r"[^a-z0-9_]", "", os.path.splitext(os.path.basename(src))[0].lower())
+    out_rel = f"songs/_tuned_{stem}_manual.wav"
+    rep_rel = f"songs/_tuned_{stem}_manual.report.json"
+    ed_rel = f"songs/_tuned_{stem}_manual.edits.json"
+    json.dump(edits, open(os.path.join(ROOT, ed_rel), "w"), indent=1)
+    py = VENV_PY if os.path.exists(VENV_PY) else sys.executable
+    cmd = [py, os.path.join(ROOT, "tools", "retune.py"), src_abs, os.path.join(ROOT, out_rel),
+           "--song", path, "--track", tname, "--style", style, "--f0", f0,
+           "--clip-index", str(ci), "--report", os.path.join(ROOT, rep_rel),
+           "--edits", os.path.join(ROOT, ed_rel)]
+    if args.get("only_edits"):
+        cmd.append("--only-edits")
+    if args.get("key"):
+        cmd += ["--key", str(args["key"])]
+    rc_, out, err = run(cmd, timeout=600)
+    if rc_ != 0:
+        return f"TUNE FAILED:\n{(err or out)[-800:]}"
+    try:
+        rep = json.load(open(os.path.join(ROOT, rep_rel)))
+    except Exception:
+        rep = {"stats": {}, "notes": [], "edits_applied": [], "edits_unmatched": []}
     clip["file"] = out_rel
-    clip["tuning"] = {"style": style, "source": src, "report": rep_rel}
+    clip["tuning"] = {"style": "manual", "base_style": style, "source": src,
+                      "report": rep_rel, "edits": ed_rel}
     errs = validate_song(song)
     if errs:
         return "INVALID after tune — fix and resubmit:\n- " + "\n- ".join(errs)
     _awrite(path, song)
-    _rc(name, "tune_vocal", fields=["audioClips"], track_wild=tname,
-        summary=f"tune_vocal {style} {tname}")
+    _rc(name, "tune_notes", fields=["audioClips"], track_wild=tname,
+        summary=f"tune_notes {len(edits)} edit(s) {tname}")
+    ver_txt = ""
+    if args.get("verify", True):
+        vrep_abs = os.path.join(ROOT, f"songs/_tuned_{stem}_manual.verify.json")
+        rc2, _o2, _e2 = run([py, os.path.join(ROOT, "tools", "retune.py"),
+                             os.path.join(ROOT, out_rel), "--analyze",
+                             "--song", path, "--track", tname, "--clip-index", str(ci),
+                             "--f0", "fcpe", "--report", vrep_abs], timeout=600)
+        lines = []
+        if rc2 == 0:
+            try:
+                vrows = json.load(open(vrep_abs)).get("notes", [])
+                for ea in rep.get("edits_applied", []):
+                    at = ea.get("matched_beat0") if ea.get("matched_beat0") is not None \
+                        else ea.get("matched_t0")
+                    best, bd = None, 9e9
+                    for r in vrows:
+                        a0 = r["beat0"] if r.get("beat0") is not None else r["t0"]
+                        if abs(a0 - at) < bd:
+                            best, bd = r, abs(a0 - at)
+                    if best is not None and bd <= 0.3:
+                        lines.append(f"  b{at:g} asked {ea['edit']} (was {ea['was']}) "
+                                     f"-> LANDED {best['sung']}")
+                    else:
+                        lines.append(f"  b{at:g} asked {ea['edit']} — verify could not "
+                                     f"re-find the note")
+            except Exception:
+                lines = ["  verify report unreadable"]
+        else:
+            lines = ["  verify pass failed (the tune itself landed fine)"]
+        ver_txt = "MEASURED LANDINGS (output re-analyzed — facts, not hopes):\n" \
+                  + "\n".join(lines) + "\n"
+    unmatched = rep.get("edits_unmatched", [])
+    um = ("UNMATCHED edits (no note near that beat0 — re-check the map): "
+          + "; ".join(str(u.get("at")) for u in unmatched) + "\n") if unmatched else ""
     st = rep.get("stats", {})
-    moves = sorted((n for n in rep.get("notes", []) if n.get("cents_moved")),
-                   key=lambda n: -abs(n["cents_moved"]))[:5]
-    mv = "\n".join(f"  b{n['beat0']} {n['sung']} -> {n['target_name']} ({n['cents_moved']:+.0f}c) {n['reason']}"
-                   for n in moves if n.get("beat0") is not None)
-    return (f"TUNED '{tname}' {style}: {st.get('corrected', '?')}/{st.get('events', '?')} notes, "
-            f"median off {st.get('median_abs_cents_off', '?')}c. Clip -> {out_rel}\n"
-            f"biggest moves:\n{mv}\n"
-            f"original kept: {src} · full note-by-note report: {rep_rel}\n"
-            f"Next: render_song + hear. Wrong note choice? re-run with guide_track "
-            f"(a melody lane = explicit targets) or region [b0,b1] for surgical spans.")
+    return (f"EDITED '{tname}': {len(rep.get('edits_applied', []))} manual verdict(s) "
+            f"({'ONLY the edited notes tuned' if args.get('only_edits') else f'riding on {style} auto'}), "
+            f"{st.get('notes', '?')} notes total, f0 {st.get('f0_mode', '?')}. Clip -> {out_rel}\n"
+            + um + ver_txt +
+            f"provenance: edits {ed_rel} · report {rep_rel} · original kept: {src}\n"
+            f"Iterating? Re-run tune_notes with the FULL edit list (each call re-cuts "
+            f"from the original).")
+
 
 # ---------- THE SCALPEL: surgical edits (agent/surgical.py kernel) ----------
 def t_locate(args):
@@ -3753,7 +4000,7 @@ def t_surgical_edit(args):
             + "\nReceipt filed — the proposal diff must stay inside your receipts.")
 
 TOOLS = {
-    "start_session": (t_start_session, "Start a production session. Deterministically force-injects the skill set matching the genre context plus always-on skills, and returns available instruments + the song format.",
+    "start_session": (t_start_session, "Start a production session. Deterministically force-injects the skill set matching the genre context plus always-on skills, THE GOLD STANDARD block for the matched genre (a real ears-passed exemplar: note DNA at the complexity/key/velocity bar to hold + the mastering standard with measured numbers — generalize it, never copy it), and returns available instruments + the song format.",
                       {"type": "object", "properties": {"genre": {"type": "string", "description": "genre/style words, e.g. 'trap', 'dnb', 'drill'"}}, "required": ["genre"]}),
     "list_instruments": (t_list_instruments, "List available Faust instrument names usable in song tracks.",
                          {"type": "object", "properties": {}}),
@@ -4215,15 +4462,26 @@ TOOLS = {
     "scene_bounce": (t_scene_bounce, "HEAR A SCENE: renders launcher scene k (by index or name) as audio + analysis — slots become looped timeline material on a scratch copy. Use after authoring scene stories to VERIFY each scene sounds right (build-ups grow, drops hit).",
                {"type": "object", "properties": {"song": {"type": "string"}, "scene": {"type": "string"}, "bars": {"type": "number"}},
                 "required": ["song", "scene"]}),
-    "tune_vocal": (t_tune_vocal, "CONTEXT-TUNE (V45), the song-aware autotune: retunes a track's audio clip reading the ARRANGEMENT itself — per-beat chord field from every other track + scale + optional guide melody — target picked by Viterbi (chord-tone/scale/contour), resynthesized through the WORLD vocoder (formants preserved =… [full laws: tool-guide skill]",
+    "tune_vocal": (t_tune_vocal, "CONTEXT-TUNE (V45 + NOTE COURT), the song-aware autotune: retunes a track's audio clip reading the ARRANGEMENT itself — per-beat chord field from every other track + scale + optional guide melody — target picked by Viterbi (chord-tone/scale/contour), resynthesized through the WORLD vocoder (formants preserved). analyze:true = EARS ONLY, returns THE NOTE MAP: every sung note interval named to 128-MIDI precision (core pitch, target, cents, ms, confidence, octave-court flags) — LOOK BEFORE YOU CUT, then hand-fix notes with tune_notes. Off-key at register extremes = octave/fry perception: the court heals provable octave errors, HOLDS+flags the rest (never wrongly corrected). f0 defaults consensus (fcpe+crepe vote, harvest referee); a fallen rail is reported, never silent. Key accepts 'A harmonic minor' (the G# class).… [full laws: tool-guide skill]",
                    {"type": "object", "properties": {"song": {"type": "string"}, "track": {"type": "string"},
                     "style": {"type": "string", "description": "tpain|hard|natural|transparent (default natural)"},
+                    "analyze": {"type": "boolean", "description": "true = hear the note map only, change NOTHING (no clip swap, no receipt)"},
+                    "f0": {"type": "string", "description": "consensus (default: fcpe+crepe vote, harvest referee) | fcpe | harvest | crepe"},
                     "strength": {"type": "number", "description": "0..1 correction amount override"},
                     "guide_track": {"type": "string", "description": "track whose notes are the target melody"},
                     "region": {"type": "array", "description": "[beat0, beat1] — only correct inside this span"},
-                    "key": {"type": "string", "description": "override scale, e.g. 'F minor'"},
+                    "key": {"type": "string", "description": "override scale, e.g. 'A harmonic minor'"},
                     "clip_index": {"type": "number"}},
                     "required": ["song", "track"]}),
+    "tune_notes": (t_tune_notes, "THE GRAPH MODE — Antares-graph-class MANUAL per-note pitch editing; YOU are the editor. Workflow: tune_vocal analyze:true -> read THE NOTE MAP -> send per-note verdicts addressed by the map's beat0: target (name 'G#3' or midi), hold:true (leave the note raw), amount/retune_ms/vibrato_keep per note. Edits ride ON TOP of the base auto style (only_edits:true = pure manual: nothing else tunes). A manual verdict OVERRIDES the octave court and auto's ±7st safety. verify (default true) RE-MEASURES the output and reports where every edited note actually landed — close the loop before declaring victory. Every call re-cuts from the ORIGINAL: carry the FULL edit list each time.",
+                   {"type": "object", "properties": {"song": {"type": "string"}, "track": {"type": "string"},
+                    "edits": {"type": "array", "description": "[{at: <beat0 from the note map>, target: 'A3'|57, hold: true, amount: 0..1, retune_ms: number, vibrato_keep: 0..1}]"},
+                    "style": {"type": "string", "description": "base auto style under the edits (default hard)"},
+                    "only_edits": {"type": "boolean", "description": "true = ONLY edited notes tune; everything else passes raw"},
+                    "f0": {"type": "string", "description": "consensus (default) | fcpe | harvest | crepe"},
+                    "verify": {"type": "boolean", "description": "re-measure the output per edit (default true)"},
+                    "key": {"type": "string"}, "clip_index": {"type": "number"}},
+                    "required": ["song", "track", "edits"]}),
     "listen_live": (t_listen_live, "HEAR the master bus LIVE: tail the 10 Hz feature frames (rms/peak/quick-dBTP/4 bands/crest/beat) the ears bus streams while anything plays or renders. Reflexes, not metrology — use for 'what is sounding RIGHT NOW' (is it clipping? bass-heavy? building or fading?); render_song+analyze_wav/hear stay the deep ears.",
                     {"type": "object", "properties": {"seconds": {"type": "number", "description": "how far back to listen (1-30, default 5)"}}, "required": []}),
     "hear": (t_hear, "SEE the sound: mel-band x time ASCII heatmap of a WAV (top rows = highs, bottom = sub; chars = intensity; onset row + bar ruler with bpm). Reads like an image: builds fill bottom-up, a drop = full-column jump, empty top third on a lead/horn genre = spectral collapse, column fades = tails/gaps. Use WITH analyze_wav: numbers for targets, sight for structure.",

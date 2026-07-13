@@ -153,6 +153,21 @@ def analyze(path):
         mf = mom[np.isfinite(mom)]; sf = stl[np.isfinite(stl)]
         if mf.size: lufs_momentary_max = round(float(mf.max()), 2)
         if sf.size: lufs_short_term_max = round(float(sf.max()), 2)
+        # INTEGRATED FALLBACK (2026-07-13, the Inspiron null-LUFS crash): a
+        # public install without pyloudnorm emitted lufs_integrated null and
+        # the sidecar's loudness pass died on float(None) — but BS.1770-4
+        # integrated is just these same 400ms/75%-overlap K-weighted blocks
+        # through the two gates (abs -70, relative mean-10 LU). Ears never
+        # depend on an optional wheel again.
+        if (lufs is None or not np.isfinite(lufs)) and mf.size:
+            absg_i = mf[mf >= -70.0]
+            if absg_i.size:
+                rel_i = (-0.691 + 10.0 * np.log10(
+                    np.mean(10.0 ** ((absg_i + 0.691) / 10.0)))) - 10.0
+                g_i = absg_i[absg_i >= rel_i]
+                if g_i.size:
+                    lufs = round(float(-0.691 + 10.0 * np.log10(
+                        np.mean(10.0 ** ((g_i + 0.691) / 10.0)))), 2)
         # LRA (EBU Tech 3342): abs-gate -70 LU, relative-gate (mean-20 LU), P95-P10 spread
         absg = sf[sf >= -70.0]
         if absg.size >= 2:
@@ -218,7 +233,10 @@ def analyze(path):
         "peak_p999_dbfs": dbfs(peak_p999),
         "clipped_samples": clipped_samples,
         "rms_db": dbfs(rms),
-        "lufs_integrated": lufs,
+        # true silence stays honest null (never -inf: json -Infinity breaks
+        # non-python consumers and float(-inf) poisons downstream arithmetic)
+        "lufs_integrated": (lufs if lufs is not None
+                            and np.isfinite(lufs) else None),
         "lufs_momentary_max": lufs_momentary_max,
         "lufs_short_term_max": lufs_short_term_max,
         "lra": lra,

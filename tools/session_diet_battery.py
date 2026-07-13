@@ -34,8 +34,14 @@ def main():
     s0 = session("")
     s1 = session("dark trap")
     # round 2 (tool-guide split by the core lane): the caps DROP hard
+    # 2026-07-13 THE GOLD STANDARD: genre sessions now carry a <=4.4K real-DNA
+    # exemplar block (library/gold) — pure signal, the exact thing sessions
+    # exist to deliver. Genre cap 32000 -> 36400; empty sessions carry no gold
+    # and hold the old cap.
     ok(len(s0) < 26000, f"empty-genre payload {len(s0)} < 26000 (round1 was 35.4K, v0 50.4K)")
-    ok(len(s1) < 32000, f"dark-trap payload {len(s1)} < 32000 (round1 was 41.4K, v0 68.3K)")
+    ok(len(s1) < 36400, f"dark-trap payload {len(s1)} < 36400 (round1 was 41.4K, v0 68.3K)")
+    ok("THE STANDARD" not in s0, "empty genre carries NO gold block")
+    ok("THE STANDARD" in s1, "genre session carries THE GOLD STANDARD block")
 
     # tool-guide split laws: core sections inline, tail NOT inline, tail fetchable,
     # section CONSERVATION vs the frozen v1 census (29 sections, no loss ever)
@@ -85,7 +91,10 @@ def main():
             body = D.TOOLS["get_skill"][0]({"name": name})
             ok(not body.startswith("unknown skill"), f"[{tag}] {name} fetchable")
             reg = D.load_registry()["skills"][name]
-            ok(body == D.skill_body(reg), f"[{tag}] {name} fetch == registry body (byte-exact)")
+            # ZERO LAW LOSS = the registry body arrives byte-exact; genre fetches
+            # may CARRY the gold standard after it (2026-07-13), never replace it
+            ok(body.startswith(D.skill_body(reg)),
+               f"[{tag}] {name} fetch starts with registry body (byte-exact law)")
             ess = blob[m.end():m.end() + 500].strip()
             ok(len(ess) > 60, f"[{tag}] {name} essence non-empty")
 

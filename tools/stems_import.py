@@ -172,23 +172,7 @@ def transcribe_v2(wav_path, bpm, role="melodic", key=None):
         elif role == "vocal":
             notes, rec = ts.vocal_notes(wav_path, bpm)
         else:
-            src = wav_path
-            # DRY TRUTH (#51): reverb/delay smear steals basic-pitch's
-            # onsets/frames on the 'other' stem — transcribe the DEREVERBED
-            # twin when the GPU rail is up (mel_clean caches it next to the
-            # stem as *_dry.wav; the WET original stays the product truth
-            # for kits/decks). Fail-open: no model / no CUDA / kill switch
-            # SOTADAW_NO_DRYCLEAN=1 -> the classic wet path, unchanged.
-            try:
-                import mel_clean
-                dry = mel_clean.clean_cached(wav_path, "dereverb")
-                if dry:
-                    src = dry
-            except Exception as ce:
-                print(f"[stems] dry-clean skipped ({ce})", flush=True)
-            notes, rec = ts.other_notes(src, bpm, key=key)
-            if src != wav_path:
-                rec["engine"] = str(rec.get("engine", "")) + "+dry"
+            notes, rec = ts.other_notes(wav_path, bpm, key=key)
         print(f"[stems] {role} rail: {rec}", flush=True)
         return notes, rec["engine"]
     except Exception as e:

@@ -223,3 +223,13 @@ def ingest():
 
 if __name__ == "__main__":
     ingest()
+    # THE GOLD LEG (2026-07-13): accepted takes are the truest standard — after
+    # every verdict batch, qualifying accepts distill into library/gold (strict
+    # gates + write-if-better inside gold_bank; the bank only rises). The sidecar
+    # already spawns this script post-verdict, so the circle closes for free.
+    try:
+        import gold_bank
+        for line in gold_bank.ingest_accepts():
+            print("gold:", line)
+    except Exception as e:
+        print(f"gold leg skipped: {e!r}")

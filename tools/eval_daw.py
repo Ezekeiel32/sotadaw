@@ -153,8 +153,10 @@ def graph_brief(genre):
                 f"(sourceBpm vs song bpm is the transform), then add what the genre needs, 16 bars")
     return f"make a {genre.replace('_', ' ')} track at {bpm}bpm{' in ' + key if key else ''}{lean}, 16 bars"
 
-def run_brief(genre):
-    """One real-agent run: brief -> song eval_<genre> -> machine checks."""
+def run_brief(genre, model="claude-opus-4-8"):
+    """One real-agent run: brief -> song eval_<genre> -> machine checks.
+    --model exists to prove SMALL models hold the bar now that THE GOLD
+    STANDARD (library/gold) rides start_session — the whole point of the bank."""
     name = f"eval_{genre}"
     brief = BRIEFS.get(genre) or graph_brief(genre)
     prompt = f"""You are the producer agent under EVALUATION. Produce a song from scratch.
@@ -168,7 +170,7 @@ End with one line: DONE <bpm> <key>."""
     cost, exit_code = None, None
     try:
         p = subprocess.run(
-            ["claude", "-p", prompt, "--model", "claude-opus-4-8",
+            ["claude", "-p", prompt, "--model", model,
              "--mcp-config", os.path.join(ROOT, "agent", "mcp.json"), "--strict-mcp-config",
              "--permission-mode", "dontAsk",
              "--allowedTools", ",".join("mcp__daw__" + t for t in
@@ -444,6 +446,8 @@ Reply with STRICT JSON only: {{"winner": "A"|"B", "margin": 1-5, "reasons": ["..
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--brief", help="genre: run the real agent on its brief")
+    ap.add_argument("--model", default="claude-opus-4-8",
+                    help="composer model for --brief (small-model proofs of the gold bank)")
     ap.add_argument("--check", help="song name to machine-check")
     ap.add_argument("--genre", help="genre for --check/--judge (default: derived from "
                                     "the song name, eval_<genre> -> <genre>; errors if underivable "
@@ -461,7 +465,7 @@ if __name__ == "__main__":
     ap.add_argument("--suite", action="store_true")
     a = ap.parse_args()
     if a.brief:
-        print(json.dumps(run_brief(a.brief), indent=1))
+        print(json.dumps(run_brief(a.brief, model=a.model), indent=1))
     elif a.check:
         g = a.genre
         if not g:                       # derive: eval_<genre> or exact genre-named song

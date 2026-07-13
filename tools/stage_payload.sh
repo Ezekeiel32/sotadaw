@@ -55,10 +55,14 @@ done
 # minimal user-facing data
 cp songs/demo_track.json "$DEST/songs/" 2>/dev/null || true
 cp library/grooves.json "$DEST/library/" 2>/dev/null || true
+# THE GOLD STANDARD (2026-07-13): ears-passed note-DNA exemplars ride every
+# session — the small-model quality lever; BYOK strangers need it most.
+cp -r library/gold "$DEST/library/" 2>/dev/null || echo "[stage] WARN missing library/gold"
 echo '{"samples": [], "kits": [], "instruments": [], "vsts": []}' > "$DEST/library.json"
 
-# version stamp (workspace refresh key on upgrades)
-GITSHA=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+# version stamp (workspace refresh key on upgrades). SOTADAW_GITSHA: worktree/
+# container stages can't always reach .git — the caller passes the sha in.
+GITSHA=${SOTADAW_GITSHA:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}
 echo "0.9.0-beta ($(date +%Y-%m-%d) g$GITSHA)" > "$DEST/VERSION"
 
 cat > "$DEST/CREDITS.md" <<'CRED'

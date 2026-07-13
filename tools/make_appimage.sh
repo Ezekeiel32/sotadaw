@@ -22,9 +22,15 @@ cp "$BUILD/m1_artefacts/Release/m1" "$APPDIR/usr/bin/"
 strip "$APPDIR/usr/bin/sotadaw" "$APPDIR/usr/bin/m1" 2>/dev/null || true
 
 # ---- bundle shared libs: full ldd closure MINUS the base-system set ----------
-# Kept on system: glibc family + C++ runtime (floor: Ubuntu 24.04-era), ALSA
-# (device configs are system property), fontconfig (config lives in /etc/fonts).
-EXCLUDE_RE='^(linux-vdso|ld-linux|libc\.so|libm\.so|libstdc\+\+|libgcc_s|libasound|libfontconfig)'
+# Kept on system: the ENTIRE glibc family — libpthread/libdl/librt are internal
+# split-libs that post-2.34 distros merged into libc; bundling focal's libpthread
+# onto a merged-glibc system dies on GLIBC_PRIVATE (matrix caught it on 22.04+
+# 24.04 while 20.04 was green). Also baseline desktop libs (ALSA, fontconfig,
+# freetype + its png/z/expat/uuid deps): guaranteed wherever X apps run, and a
+# focal copy shadowing a newer system lib is exactly the poison class above.
+# With static libstdc++ + static libfaust the closure is EMPTY today; the loop
+# stays so a future non-baseline dep (e.g. libsndfile) bundles by default.
+EXCLUDE_RE='^(linux-vdso|ld-linux|libc\.so|libm\.so|libmvec|libpthread|libdl\.so|librt\.so|libresolv|libnsl|libutil|libcrypt|libnss_|libstdc\+\+|libgcc_s|libasound|libfontconfig|libfreetype|libexpat|libuuid|libpng|libz\.so|libX|libxcb|libcurl)'
 for bin in "$APPDIR/usr/bin/sotadaw" "$APPDIR/usr/bin/m1"; do
   ldd "$bin" | awk '/=>/ {print $1" "$3}' | while read -r name path; do
     [ -f "$path" ] || continue

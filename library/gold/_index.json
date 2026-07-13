@@ -1,0 +1,2663 @@
+{
+"genres": {
+"trap": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 130,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -18,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid>himid>high",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"drill": {
+"parent": "trap",
+"common_key": "C# minor",
+"bpm_lo": 138,
+"bpm_hi": 146,
+"mastering": {
+"lufs_lo": -18,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid>himid>high",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"boombap": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 85,
+"bpm_hi": 95,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"house": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 120,
+"bpm_hi": 128,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"dnb": {
+"parent": null,
+"common_key": "E minor",
+"bpm_lo": 170,
+"bpm_hi": 176,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"lofi": {
+"parent": "boombap",
+"common_key": "D minor",
+"bpm_lo": 70,
+"bpm_hi": 85,
+"mastering": {
+"lufs_lo": -20,
+"lufs_hi": -12,
+"band_order": "low~lowmid>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"phonk": {
+"parent": "trap",
+"common_key": "C# minor",
+"bpm_lo": 130,
+"bpm_hi": 145,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid>himid>high",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"techno": {
+"parent": "house",
+"common_key": "A minor",
+"bpm_lo": 128,
+"bpm_hi": 136,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"ukgarage": {
+"parent": "house",
+"common_key": "E minor",
+"bpm_lo": 128,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"afrobeats": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 98,
+"bpm_hi": 110,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"jerseyclub": {
+"parent": "house",
+"common_key": "F minor",
+"bpm_lo": 132,
+"bpm_hi": 142,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"synthwave": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 100,
+"bpm_hi": 118,
+"mastering": {
+"lufs_lo": -15,
+"lufs_hi": -9,
+"band_order": "low>lowmid~mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"ambient": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 60,
+"bpm_hi": 85,
+"mastering": {
+"lufs_lo": -26,
+"lufs_hi": -14,
+"band_order": "lowmid>mid>low",
+"psr_floor": 10.0,
+"clipped_samples": 0
+}
+},
+"dembow": {
+"parent": null,
+"common_key": "D minor",
+"bpm_lo": 88,
+"bpm_hi": 100,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"_untagged": {
+"parent": null,
+"common_key": null,
+"bpm_lo": 0,
+"bpm_hi": 0,
+"mastering": null
+},
+"psytrance": {
+"parent": "techno",
+"common_key": "E minor",
+"bpm_lo": 140,
+"bpm_hi": 148,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"goa": {
+"parent": "psytrance",
+"common_key": "E phrygian",
+"bpm_lo": 135,
+"bpm_hi": 145,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"amapiano": {
+"parent": "afrobeats",
+"common_key": "D minor",
+"bpm_lo": 110,
+"bpm_hi": 118,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"dubstep": {
+"parent": "ukgarage",
+"common_key": "F minor",
+"bpm_lo": 138,
+"bpm_hi": 142,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"trance": {
+"parent": "techno",
+"common_key": "A minor",
+"bpm_lo": 136,
+"bpm_hi": 142,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"hardstyle": {
+"parent": "trance",
+"common_key": "F minor",
+"bpm_lo": 150,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"jungle": {
+"parent": "dnb",
+"common_key": "E minor",
+"bpm_lo": 160,
+"bpm_hi": 175,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"footwork": {
+"parent": "jerseyclub",
+"common_key": "C minor",
+"bpm_lo": 158,
+"bpm_hi": 162,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"gqom": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 120,
+"bpm_hi": 128,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"hyperpop": {
+"parent": null,
+"common_key": "A major",
+"bpm_lo": 140,
+"bpm_hi": 170,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -6,
+"band_order": "lowmid~mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"bossanova": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 120,
+"bpm_hi": 132,
+"mastering": {
+"lufs_lo": -20,
+"lufs_hi": -13,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.0,
+"clipped_samples": 0
+}
+},
+"cumbia": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 88,
+"bpm_hi": 100,
+"mastering": {
+"lufs_lo": -15,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"moombahton": {
+"parent": "dembow",
+"common_key": "F minor",
+"bpm_lo": 108,
+"bpm_hi": 112,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"driftphonk": {
+"parent": "phonk",
+"common_key": "C# minor",
+"bpm_lo": 130,
+"bpm_hi": 142,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"breakcore": {
+"parent": "jungle",
+"common_key": "E minor",
+"bpm_lo": 180,
+"bpm_hi": 220,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 4.5,
+"clipped_samples": 0
+}
+},
+"grime": {
+"parent": "ukgarage",
+"common_key": "C minor",
+"bpm_lo": 138,
+"bpm_hi": 142,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -7,
+"band_order": "low>mid>lowmid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"reggaeton": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 88,
+"bpm_hi": 98,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"baile_funk": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 125,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>mid>lowmid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"neurofunk": {
+"parent": "dnb",
+"common_key": "F# minor",
+"bpm_lo": 170,
+"bpm_hi": 176,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -6,
+"band_order": "low>mid>lowmid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"melodic_techno": {
+"parent": "techno",
+"common_key": "A minor",
+"bpm_lo": 120,
+"bpm_hi": 124,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"deephouse": {
+"parent": "house",
+"common_key": "E minor",
+"bpm_lo": 118,
+"bpm_hi": 124,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"triphop": {
+"parent": null,
+"common_key": "D minor",
+"bpm_lo": 80,
+"bpm_hi": 95,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"gabber": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 150,
+"bpm_hi": 190,
+"mastering": {
+"lufs_lo": -8,
+"lufs_hi": -5,
+"band_order": "low>mid>lowmid",
+"psr_floor": 4.5,
+"clipped_samples": 0
+}
+},
+"electro": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 125,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -7,
+"band_order": "low>mid>lowmid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"citypop": {
+"parent": null,
+"common_key": "Ab major",
+"bpm_lo": 100,
+"bpm_hi": 115,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "lowmid>low>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"funk": {
+"parent": null,
+"common_key": "E minor",
+"bpm_lo": 95,
+"bpm_hi": 115,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"soul": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 70,
+"bpm_hi": 95,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -10,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"disco": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 110,
+"bpm_hi": 125,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"rock": {
+"parent": null,
+"common_key": "E minor",
+"bpm_lo": 110,
+"bpm_hi": 150,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"salsa": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 160,
+"bpm_hi": 200,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.0,
+"clipped_samples": 0
+}
+},
+"highlife": {
+"parent": null,
+"common_key": "G major",
+"bpm_lo": 100,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -15,
+"lufs_hi": -10,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"kompa": {
+"parent": null,
+"common_key": "F major",
+"bpm_lo": 85,
+"bpm_hi": 95,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"bigroom": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 126,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>mid>lowmid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"jazzfusion": {
+"parent": null,
+"common_key": "D minor",
+"bpm_lo": 100,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -11,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"gfunk": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 88,
+"bpm_hi": 96,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"dub": {
+"parent": null,
+"common_key": "D minor",
+"bpm_lo": 65,
+"bpm_hi": 90,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"dancehall": {
+"parent": null,
+"common_key": "B minor",
+"bpm_lo": 85,
+"bpm_hi": 105,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"rnb": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 65,
+"bpm_hi": 95,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"new_jack_swing": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 100,
+"bpm_hi": 115,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "lowmid>low>mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"tech_house": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 124,
+"bpm_hi": 128,
+"mastering": {
+"lufs_lo": -8,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"afro_house": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 118,
+"bpm_hi": 124,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"hard_techno": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 145,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -7,
+"lufs_hi": -5,
+"band_order": "low>mid>lowmid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"future_bass": {
+"parent": null,
+"common_key": "D major",
+"bpm_lo": 140,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>mid>lowmid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"miami_bass": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 125,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"eurodance": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 130,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"reggae": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 70,
+"bpm_hi": 90,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"ska": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 120,
+"bpm_hi": 145,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"rocksteady": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 80,
+"bpm_hi": 100,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"blues": {
+"parent": null,
+"common_key": "E major",
+"bpm_lo": 60,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -11,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"jazz": {
+"parent": null,
+"common_key": "Bb major",
+"bpm_lo": 80,
+"bpm_hi": 220,
+"mastering": {
+"lufs_lo": -18,
+"lufs_hi": -12,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"gospel": {
+"parent": null,
+"common_key": "Ab major",
+"bpm_lo": 60,
+"bpm_hi": 110,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "lowmid>low>mid",
+"psr_floor": 8.0,
+"clipped_samples": 0
+}
+},
+"country": {
+"parent": null,
+"common_key": "G major",
+"bpm_lo": 90,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.0,
+"clipped_samples": 0
+}
+},
+"afrobeat": {
+"parent": null,
+"common_key": "E minor",
+"bpm_lo": 100,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"samba": {
+"parent": null,
+"common_key": "D major",
+"bpm_lo": 95,
+"bpm_hi": 110,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.0,
+"clipped_samples": 0
+}
+},
+"hiphop": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 85,
+"bpm_hi": 100,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"breakbeat_hardcore": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 140,
+"bpm_hi": 155,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"big_beat": {
+"parent": null,
+"common_key": "E minor",
+"bpm_lo": 100,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"idm": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 80,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"uk_funky": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 128,
+"bpm_hi": 132,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"3step": {
+"parent": null,
+"common_key": "D minor",
+"bpm_lo": 110,
+"bpm_hi": 116,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"corridos_tumbados": {
+"parent": null,
+"common_key": "E minor",
+"bpm_lo": 95,
+"bpm_hi": 125,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "lowmid>low>mid",
+"psr_floor": 8.0,
+"clipped_samples": 0
+}
+},
+"sexy_drill": {
+"parent": null,
+"common_key": "Bb minor",
+"bpm_lo": 136,
+"bpm_hi": 145,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"happy_hardcore": {
+"parent": null,
+"common_key": "F major",
+"bpm_lo": 165,
+"bpm_hi": 180,
+"mastering": {
+"lufs_lo": -8,
+"lufs_hi": -5,
+"band_order": "low>mid>lowmid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"speed_garage": {
+"parent": null,
+"common_key": "G minor",
+"bpm_lo": 130,
+"bpm_hi": 136,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"bassline": {
+"parent": null,
+"common_key": "F# minor",
+"bpm_lo": 135,
+"bpm_hi": 142,
+"mastering": {
+"lufs_lo": -8,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"pop": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 100,
+"bpm_hi": 122,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"kpop": {
+"parent": null,
+"common_key": "Ab major",
+"bpm_lo": 100,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -7,
+"lufs_hi": -5,
+"band_order": "low>mid>lowmid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"metal": {
+"parent": null,
+"common_key": "E minor",
+"bpm_lo": 90,
+"bpm_hi": 200,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "lowmid>low>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"punk": {
+"parent": null,
+"common_key": "A major",
+"bpm_lo": 160,
+"bpm_hi": 190,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"indie_rock": {
+"parent": null,
+"common_key": "G major",
+"bpm_lo": 110,
+"bpm_hi": 145,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"shoegaze": {
+"parent": null,
+"common_key": "D major",
+"bpm_lo": 80,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"bachata": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 120,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"merengue": {
+"parent": null,
+"common_key": "F major",
+"bpm_lo": 130,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"kuduro": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 125,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"singeli": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 180,
+"bpm_hi": 300,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "lowmid>mid>low",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"french_house": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 118,
+"bpm_hi": 126,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"italo_disco": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 115,
+"bpm_hi": 125,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"industrial": {
+"parent": null,
+"common_key": "D minor",
+"bpm_lo": 120,
+"bpm_hi": 145,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "lowmid>low>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"future_garage": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 130,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"swing_bigband": {
+"parent": null,
+"common_key": "Bb major",
+"bpm_lo": 120,
+"bpm_hi": 220,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -11,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"progressive_house": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 122,
+"bpm_hi": 128,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"jpop": {
+"parent": null,
+"common_key": "E major",
+"bpm_lo": 120,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -8,
+"lufs_hi": -6,
+"band_order": "lowmid>low>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"latin_trap": {
+"parent": null,
+"common_key": "C# minor",
+"bpm_lo": 88,
+"bpm_hi": 100,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"orchestral_cinematic": {
+"parent": null,
+"common_key": "D minor",
+"bpm_lo": 80,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -10,
+"band_order": "lowmid>low>mid",
+"psr_floor": 11.0,
+"clipped_samples": 0
+}
+},
+"drone": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 60,
+"bpm_hi": 60,
+"mastering": {
+"lufs_lo": -20,
+"lufs_hi": -12,
+"band_order": "lowmid>low>mid",
+"psr_floor": 10.0,
+"clipped_samples": 0
+}
+},
+"downtempo": {
+"parent": null,
+"common_key": "G minor",
+"bpm_lo": 85,
+"bpm_hi": 100,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "low>lowmid>mid",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"chicago_house": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 118,
+"bpm_hi": 126,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"acid_house": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 118,
+"bpm_hi": 128,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"detroit_techno": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 120,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"dub_techno": {
+"parent": null,
+"common_key": "D minor",
+"bpm_lo": 115,
+"bpm_hi": 125,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"minimal_techno": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 125,
+"bpm_hi": 132,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"ebm": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 115,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "lowmid>low>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"synthpop": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 110,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "lowmid>low>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"post_punk": {
+"parent": null,
+"common_key": "E minor",
+"bpm_lo": 130,
+"bpm_hi": 165,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"hardwave": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 140,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>mid>lowmid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"balearic": {
+"parent": null,
+"common_key": "D major",
+"bpm_lo": 95,
+"bpm_hi": 115,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"memphis_rap": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 66,
+"bpm_hi": 80,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"crunk": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 72,
+"bpm_hi": 85,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"bounce": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 95,
+"bpm_hi": 105,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"baltimore_club": {
+"parent": null,
+"common_key": "G minor",
+"bpm_lo": 125,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"ghettotech": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 145,
+"bpm_hi": 155,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"vaporwave": {
+"parent": null,
+"common_key": "E major",
+"bpm_lo": 60,
+"bpm_hi": 85,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -11,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"chillwave": {
+"parent": null,
+"common_key": "A major",
+"bpm_lo": 95,
+"bpm_hi": 115,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"witch_house": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 60,
+"bpm_hi": 75,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"nightcore": {
+"parent": null,
+"common_key": "F major",
+"bpm_lo": 160,
+"bpm_hi": 180,
+"mastering": {
+"lufs_lo": -8,
+"lufs_hi": -5,
+"band_order": "lowmid>low>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"breaks": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 128,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"soca": {
+"parent": null,
+"common_key": "F major",
+"bpm_lo": 155,
+"bpm_hi": 165,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"calypso": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 100,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"zouk": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 95,
+"bpm_hi": 110,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"forro": {
+"parent": null,
+"common_key": "G major",
+"bpm_lo": 90,
+"bpm_hi": 110,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "lowmid>low>mid",
+"psr_floor": 8.0,
+"clipped_samples": 0
+}
+},
+"flamenco": {
+"parent": null,
+"common_key": "E major",
+"bpm_lo": 90,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -15,
+"lufs_hi": -10,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"tango": {
+"parent": null,
+"common_key": "D minor",
+"bpm_lo": 60,
+"bpm_hi": 70,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -11,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"klezmer": {
+"parent": null,
+"common_key": "D major",
+"bpm_lo": 110,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"celtic": {
+"parent": null,
+"common_key": "D major",
+"bpm_lo": 110,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -15,
+"lufs_hi": -10,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"gnawa": {
+"parent": null,
+"common_key": "C minor",
+"bpm_lo": 80,
+"bpm_hi": 100,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"mariachi": {
+"parent": null,
+"common_key": "G major",
+"bpm_lo": 85,
+"bpm_hi": 110,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -9,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"surf_rock": {
+"parent": "rock",
+"common_key": "E minor",
+"bpm_lo": 150,
+"bpm_hi": 180,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -9,
+"band_order": "mid>lowmid>low",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"krautrock": {
+"parent": "rock",
+"common_key": "A major",
+"bpm_lo": 110,
+"bpm_hi": 150,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"grunge": {
+"parent": "rock",
+"common_key": "E minor",
+"bpm_lo": 90,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"stoner_rock": {
+"parent": "rock",
+"common_key": "C minor",
+"bpm_lo": 65,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"math_rock": {
+"parent": "rock",
+"common_key": "D major",
+"bpm_lo": 90,
+"bpm_hi": 170,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "mid>lowmid>low",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"midwest_emo": {
+"parent": "rock",
+"common_key": "F major",
+"bpm_lo": 90,
+"bpm_hi": 155,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -11,
+"band_order": "mid>lowmid>low",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"black_metal": {
+"parent": "metal",
+"common_key": "E minor",
+"bpm_lo": 140,
+"bpm_hi": 250,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "mid>lowmid>low",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"death_metal": {
+"parent": "metal",
+"common_key": "B minor",
+"bpm_lo": 90,
+"bpm_hi": 220,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"doom_metal": {
+"parent": "metal",
+"common_key": "C# minor",
+"bpm_lo": 40,
+"bpm_hi": 110,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"metalcore": {
+"parent": "metal",
+"common_key": "C minor",
+"bpm_lo": 80,
+"bpm_hi": 200,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"post_metal": {
+"parent": "metal",
+"common_key": "D minor",
+"bpm_lo": 40,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"bebop": {
+"parent": "jazz",
+"common_key": "F major",
+"bpm_lo": 120,
+"bpm_hi": 320,
+"mastering": {
+"lufs_lo": -18,
+"lufs_hi": -13,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"hard_bop": {
+"parent": "jazz",
+"common_key": "F minor",
+"bpm_lo": 70,
+"bpm_hi": 240,
+"mastering": {
+"lufs_lo": -17,
+"lufs_hi": -12,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"modal_jazz": {
+"parent": "jazz",
+"common_key": "D dorian",
+"bpm_lo": 60,
+"bpm_hi": 300,
+"mastering": {
+"lufs_lo": -18,
+"lufs_hi": -13,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"spiritual_jazz": {
+"parent": "jazz",
+"common_key": "F minor",
+"bpm_lo": 60,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -18,
+"lufs_hi": -14,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"gamelan": {
+"parent": null,
+"common_key": "D pentatonic (slendro approx.)",
+"bpm_lo": 60,
+"bpm_hi": 200,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -12,
+"band_order": "mid>lowmid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"balkan_brass": {
+"parent": null,
+"common_key": "D Phrygian dominant (Hijaz)",
+"bpm_lo": 90,
+"bpm_hi": 210,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -7,
+"band_order": "mid>lowmid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"bhangra": {
+"parent": null,
+"common_key": "G major (club: minor)",
+"bpm_lo": 90,
+"bpm_hi": 165,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"bollywood_filmi": {
+"parent": null,
+"common_key": "C harmonic minor (Bhairavi)",
+"bpm_lo": 70,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"ethio_jazz": {
+"parent": "jazz",
+"common_key": "C major (tizita pentatonic)",
+"bpm_lo": 75,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -12,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"kwaito": {
+"parent": "house",
+"common_key": "A minor",
+"bpm_lo": 95,
+"bpm_hi": 112,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"soukous": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 110,
+"bpm_hi": 145,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "mid>lowmid>low",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"bluegrass": {
+"parent": "country",
+"common_key": "G major",
+"bpm_lo": 80,
+"bpm_hi": 180,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -12,
+"band_order": "mid>lowmid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"fado": {
+"parent": null,
+"common_key": "A minor (fado menor)",
+"bpm_lo": 60,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -18,
+"lufs_hi": -13,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"neo_soul": {
+"parent": "rnb",
+"common_key": "D minor (Dorian)",
+"bpm_lo": 60,
+"bpm_hi": 100,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"djent": {
+"parent": "metal",
+"common_key": "E minor (Phrygian)",
+"bpm_lo": 90,
+"bpm_hi": 180,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"post_rock": {
+"parent": "rock",
+"common_key": "E minor",
+"bpm_lo": 60,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -15,
+"lufs_hi": -11,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"berlin_school": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 70,
+"bpm_hi": 132,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "low>lowmid>mid",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"future_funk": {
+"parent": "french_house",
+"common_key": "D minor (maj7 color)",
+"bpm_lo": 110,
+"bpm_hi": 128,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "mid>low>lowmid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"rage": {
+"parent": "trap",
+"common_key": "F minor (Phrygian)",
+"bpm_lo": 130,
+"bpm_hi": 170,
+"mastering": {
+"lufs_lo": -8,
+"lufs_hi": -5,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"plugg": {
+"parent": "trap",
+"common_key": "C minor",
+"bpm_lo": 125,
+"bpm_hi": 165,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"pluggnb": {
+"parent": "plugg",
+"common_key": "Eb major (min9 loops)",
+"bpm_lo": 125,
+"bpm_hi": 155,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"automotivo": {
+"parent": "baile_funk",
+"common_key": "F minor (anti-harmonic)",
+"bpm_lo": 125,
+"bpm_hi": 180,
+"mastering": {
+"lufs_lo": -8,
+"lufs_hi": -5,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"jersey_drill": {
+"parent": "jerseyclub",
+"common_key": "C# minor",
+"bpm_lo": 130,
+"bpm_hi": 150,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"afroswing": {
+"parent": "afrobeats",
+"common_key": "A minor",
+"bpm_lo": 95,
+"bpm_hi": 115,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"darksynth": {
+"parent": "synthwave",
+"common_key": "D minor (Phrygian)",
+"bpm_lo": 90,
+"bpm_hi": 150,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"dungeon_synth": {
+"parent": "ambient",
+"common_key": "E minor (Dorian/Phrygian)",
+"bpm_lo": 40,
+"bpm_hi": 110,
+"mastering": {
+"lufs_lo": -18,
+"lufs_hi": -14,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"digicore": {
+"parent": "hyperpop",
+"common_key": "A minor (emo axis)",
+"bpm_lo": 120,
+"bpm_hi": 170,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.5,
+"clipped_samples": 0
+}
+},
+"sigilkore": {
+"parent": "hyperpop",
+"common_key": "F# minor (Phrygian)",
+"bpm_lo": 105,
+"bpm_hi": 190,
+"mastering": {
+"lufs_lo": -9,
+"lufs_hi": -6,
+"band_order": "low>lowmid>mid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"dariacore": {
+"parent": "jerseyclub",
+"common_key": "C major (sample-dictated)",
+"bpm_lo": 150,
+"bpm_hi": 200,
+"mastering": {
+"lufs_lo": -8,
+"lufs_hi": -6,
+"band_order": "mid>low>lowmid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"motown": {
+"parent": "soul",
+"common_key": "C major",
+"bpm_lo": 90,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -11,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"doo_wop": {
+"parent": "rnb",
+"common_key": "Ab major",
+"bpm_lo": 55,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -12,
+"band_order": "mid>lowmid>low",
+"psr_floor": 8.0,
+"clipped_samples": 0
+}
+},
+"boogie": {
+"parent": "disco",
+"common_key": "D minor (Dorian)",
+"bpm_lo": 100,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -9,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"free_jazz": {
+"parent": "jazz",
+"common_key": "pantonal (C pedal)",
+"bpm_lo": 60,
+"bpm_hi": 320,
+"mastering": {
+"lufs_lo": -18,
+"lufs_hi": -13,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+},
+"hi_nrg": {
+"parent": "disco",
+"common_key": "A minor",
+"bpm_lo": 120,
+"bpm_hi": 142,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"qawwali": {
+"parent": null,
+"common_key": "D major (raga-modal)",
+"bpm_lo": 70,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -10,
+"band_order": "lowmid>mid>low",
+"psr_floor": 9.5,
+"clipped_samples": 0
+}
+},
+"carnatic": {
+"parent": null,
+"common_key": "C major (shankarabharanam)",
+"bpm_lo": 60,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -12,
+"band_order": "mid>lowmid>low",
+"psr_floor": 10.0,
+"clipped_samples": 0
+}
+},
+"hindustani": {
+"parent": null,
+"common_key": "D major (raga-modal)",
+"bpm_lo": 60,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -16,
+"lufs_hi": -12,
+"band_order": "mid>lowmid>low",
+"psr_floor": 10.0,
+"clipped_samples": 0
+}
+},
+"dangdut": {
+"parent": null,
+"common_key": "A minor (Hijaz color)",
+"bpm_lo": 90,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"luk_thung": {
+"parent": null,
+"common_key": "F minor",
+"bpm_lo": 60,
+"bpm_hi": 110,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -10,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"mor_lam": {
+"parent": null,
+"common_key": "G major (pentatonic)",
+"bpm_lo": 110,
+"bpm_hi": 145,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -9,
+"band_order": "mid>lowmid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"rebetiko": {
+"parent": null,
+"common_key": "D Phrygian (Ousak)",
+"bpm_lo": 60,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -15,
+"lufs_hi": -11,
+"band_order": "mid>lowmid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"rai": {
+"parent": null,
+"common_key": "E Phrygian (Bayati color)",
+"bpm_lo": 100,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"mbaqanga": {
+"parent": null,
+"common_key": "C major",
+"bpm_lo": 110,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -9,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"juju": {
+"parent": null,
+"common_key": "G major",
+"bpm_lo": 100,
+"bpm_hi": 125,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -10,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"benga": {
+"parent": null,
+"common_key": "D major",
+"bpm_lo": 100,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -9,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"chimurenga": {
+"parent": null,
+"common_key": "A minor (mbira wheel)",
+"bpm_lo": 110,
+"bpm_hi": 130,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -11,
+"band_order": "mid>lowmid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"coupe_decale": {
+"parent": null,
+"common_key": "F major",
+"bpm_lo": 100,
+"bpm_hi": 125,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"champeta": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 100,
+"bpm_hi": 170,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"morna": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 55,
+"bpm_hi": 90,
+"mastering": {
+"lufs_lo": -18,
+"lufs_hi": -13,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.5,
+"clipped_samples": 0
+}
+},
+"chaabi": {
+"parent": null,
+"common_key": "D Phrygian (Andalusi)",
+"bpm_lo": 90,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -11,
+"band_order": "lowmid>mid>low",
+"psr_floor": 8.0,
+"clipped_samples": 0
+}
+},
+"fuji": {
+"parent": null,
+"common_key": "C major (vocal-modal)",
+"bpm_lo": 100,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -9,
+"band_order": "lowmid>low>mid",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"ndombolo": {
+"parent": null,
+"common_key": "G major",
+"bpm_lo": 96,
+"bpm_hi": 120,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"sega": {
+"parent": null,
+"common_key": "F major",
+"bpm_lo": 105,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -10,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"maloya": {
+"parent": null,
+"common_key": "D minor",
+"bpm_lo": 100,
+"bpm_hi": 135,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -10,
+"band_order": "low>lowmid>mid",
+"psr_floor": 8.0,
+"clipped_samples": 0
+}
+},
+"dabke": {
+"parent": null,
+"common_key": "D Phrygian (Bayati/Hijaz)",
+"bpm_lo": 110,
+"bpm_hi": 140,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "mid>lowmid>low",
+"psr_floor": 7.0,
+"clipped_samples": 0
+}
+},
+"khaleeji": {
+"parent": null,
+"common_key": "C Bayati (maqam)",
+"bpm_lo": 95,
+"bpm_hi": 125,
+"mastering": {
+"lufs_lo": -12,
+"lufs_hi": -9,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"arabesk": {
+"parent": null,
+"common_key": "A Kurdi (Phrygian)",
+"bpm_lo": 70,
+"bpm_hi": 110,
+"mastering": {
+"lufs_lo": -13,
+"lufs_hi": -10,
+"band_order": "lowmid>mid>low",
+"psr_floor": 7.5,
+"clipped_samples": 0
+}
+},
+"freestyle": {
+"parent": "electro",
+"common_key": "A minor",
+"bpm_lo": 110,
+"bpm_hi": 122,
+"mastering": {
+"lufs_lo": -11,
+"lufs_hi": -8,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"eurobeat": {
+"parent": "italo_disco",
+"common_key": "A minor",
+"bpm_lo": 150,
+"bpm_hi": 160,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>mid>lowmid",
+"psr_floor": 6.0,
+"clipped_samples": 0
+}
+},
+"wave": {
+"parent": null,
+"common_key": "F# minor",
+"bpm_lo": 130,
+"bpm_hi": 145,
+"mastering": {
+"lufs_lo": -10,
+"lufs_hi": -7,
+"band_order": "low>lowmid>mid",
+"psr_floor": 6.5,
+"clipped_samples": 0
+}
+},
+"glitchcore": {
+"parent": "hyperpop",
+"common_key": "A minor",
+"bpm_lo": 150,
+"bpm_hi": 180,
+"mastering": {
+"lufs_lo": -8,
+"lufs_hi": -6,
+"band_order": "mid>low>lowmid",
+"psr_floor": 5.0,
+"clipped_samples": 0
+}
+},
+"psybient": {
+"parent": null,
+"common_key": "E Phrygian",
+"bpm_lo": 90,
+"bpm_hi": 105,
+"mastering": {
+"lufs_lo": -14,
+"lufs_hi": -11,
+"band_order": "low>lowmid>mid",
+"psr_floor": 9.5,
+"clipped_samples": 0
+}
+},
+"psychill": {
+"parent": null,
+"common_key": "A minor",
+"bpm_lo": 80,
+"bpm_hi": 95,
+"mastering": {
+"lufs_lo": -15,
+"lufs_hi": -12,
+"band_order": "low>lowmid>mid",
+"psr_floor": 9.0,
+"clipped_samples": 0
+}
+}
+}
+}

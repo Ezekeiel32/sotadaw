@@ -12,7 +12,9 @@ ROOT=$(pwd)
 DIST="${SOTADAW_DIST:-$ROOT/dist}"
 BUILD="${SOTADAW_BUILD:-$ROOT/app/build}"
 FAUSTLIBS="${SOTADAW_FAUSTLIBS:-}"   # faust stdlib dir -> /opt/sotadaw/faustlibs (JIT)
-VER="0.9.0+$(date +%Y%m%d)"
+# SOTADAW_VER: same-day re-cuts must NOT mint the deployed version string
+# (apt sees equal version = no upgrade) — the release lane stamps explicitly.
+VER="${SOTADAW_VER:-0.9.0+$(date +%Y%m%d)}"
 PKG=$DIST/debroot
 rm -rf "$PKG"
 mkdir -p "$PKG/DEBIAN" "$PKG/opt/sotadaw/bin" "$PKG/usr/bin" \

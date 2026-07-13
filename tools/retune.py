@@ -41,16 +41,26 @@ FRAME_MS = 5.0
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 STYLES = {
+    # center_amt/drift_amt = THE MELODYNE SPLIT (pros: center ~100%, drift ~80%,
+    # modulation kept — vibrato_keep). amount stays the fallback for both.
+    # flex_cents = FLEX-TUNE (Antares craft): a tolerance zone around the target —
+    # a note whose CENTER already sits inside it is left completely raw
+    # (reason held(in-tune)); slides/scoops survive, correction engages only
+    # when the singer actually strays.
     "tpain":       dict(amount=1.0,  retune_ms=3.0,   vibrato_keep=0.15, humanize=0.0,
+                        center_amt=1.0, drift_amt=1.0, flex_cents=0.0,
                         split_cents=55.0, min_note_ms=35.0,
                         w_prox=0.7, w_chord=1.6, w_scale=0.9, w_bass=0.3, w_out=2.5, w_contour=0.6),
     "hard":        dict(amount=1.0,  retune_ms=12.0,  vibrato_keep=0.35, humanize=1.0,
+                        center_amt=1.0, drift_amt=0.9, flex_cents=10.0,
                         split_cents=60.0, min_note_ms=45.0,
                         w_prox=0.8, w_chord=1.4, w_scale=0.9, w_bass=0.25, w_out=2.2, w_contour=0.7),
     "natural":     dict(amount=0.85, retune_ms=90.0,  vibrato_keep=0.9,  humanize=2.5,
+                        center_amt=1.0, drift_amt=0.8, flex_cents=25.0,
                         split_cents=70.0, min_note_ms=60.0,
                         w_prox=1.2, w_chord=0.9, w_scale=0.8, w_bass=0.2, w_out=1.5, w_contour=0.8),
     "transparent": dict(amount=0.6,  retune_ms=150.0, vibrato_keep=1.0,  humanize=2.0,
+                        center_amt=0.8, drift_amt=0.5, flex_cents=35.0,
                         split_cents=80.0, min_note_ms=80.0,
                         w_prox=3.0, w_chord=0.3, w_scale=0.6, w_bass=0.1, w_out=1.0, w_contour=1.0),
 }
@@ -60,7 +70,11 @@ DRUM_RX = re.compile(r"kick|snare|clap|hat\b|hats|hihat|perc|ride|crash|shak|cym
 # Krumhansl-Kessler key profiles (major/minor), for symbolic scale fit
 KK_MAJ = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
 KK_MIN = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
-SCALE_PCS = {"major": [0, 2, 4, 5, 7, 9, 11], "minor": [0, 2, 3, 5, 7, 8, 10]}
+SCALE_PCS = {"major": [0, 2, 4, 5, 7, 9, 11], "minor": [0, 2, 3, 5, 7, 8, 10],
+             # "A harmonic minor" was unparseable (2026-07-13: the G# class — the
+             # tuner erased every leading tone to G natural on a harmonic-minor song)
+             "harmonic minor": [0, 2, 3, 5, 7, 8, 11],
+             "melodic minor": [0, 2, 3, 5, 7, 9, 11]}
 
 
 def midi_name(m):
@@ -118,15 +132,34 @@ def clip_beat_fn(clip, song):
     return lambda t: s2b(t0 + (t - off))
 
 
+def parse_note_name(s):
+    """'A3' / 'C#4' / 'Bb2' / 57 -> midi int (midi_name's convention, C4 = 60)."""
+    if isinstance(s, (int, float)):
+        return int(round(float(s)))
+    m = re.match(r"^([A-Ga-g])([#b]?)(-?\d+)$", str(s).strip())
+    if not m:
+        return None
+    base = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}[m.group(1).upper()]
+    acc = {"#": 1, "b": -1, "": 0}[m.group(2)]
+    return base + acc + (int(m.group(3)) + 1) * 12
+
+
 def parse_key(s):
     if not s:
         return None
-    m = re.match(r"\s*([A-Ga-g])\s*([b#]?)\s*(major|minor|maj|min|m\b)?", str(s))
+    m = re.match(r"\s*([A-Ga-g])\s*([b#]?)\s*(harmonic\s+minor|melodic\s+minor|"
+                 r"major|minor|maj|min|m\b)?", str(s), re.IGNORECASE)
     if not m:
         return None
     pc = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}[m.group(1).upper()]
     pc = (pc + (1 if m.group(2) == "#" else -1 if m.group(2) == "b" else 0)) % 12
-    mode = "minor" if (m.group(3) or "").lower().startswith(("min", "m")) else "major"
+    kind = (m.group(3) or "").lower()
+    if kind.startswith("harmonic"):
+        mode = "harmonic minor"
+    elif kind.startswith("melodic"):
+        mode = "melodic minor"
+    else:
+        mode = "minor" if kind.startswith(("min", "m")) else "major"
     return pc, mode
 
 
@@ -241,22 +274,92 @@ def _f0_neural(y, fs, t_grid, mode):
     return f0
 
 
+def _f0_consensus(y, fs, t_grid, f0_ref):
+    """THE CONSENSUS RAIL (2026-07-13, "get on par and surpass"): fcpe and crepe have
+    near-equal accuracy (MIR-1K RPA ~97-98%) but DECORRELATED error modes (mel-context
+    vs raw-waveform CNN) — voting kills exactly the octave flips and ghost voicing
+    that survive any single rail. Agreement (<=50c) -> geometric mean; one-sided
+    voicing -> that rail; disagreement -> harvest referees (closest wins), fcpe on a
+    silent referee. Returns (f0 | None, used_label, note)."""
+    outs, downs = {}, []
+    for m in ("fcpe", "crepe"):
+        try:
+            outs[m] = _f0_neural(y, fs, t_grid, m)
+        except Exception as e:
+            downs.append(f"{m} down ({type(e).__name__})")
+    if not outs:
+        return None, "harvest", "; ".join(downs) + " — harvest fallback"
+    if len(outs) == 1:
+        m = next(iter(outs))
+        return outs[m], m, f"consensus degraded ({'; '.join(downs)}) — {m} only"
+    a, b = outs["fcpe"], outs["crepe"]
+    va, vb = a > 0, b > 0
+    both = va & vb
+    sa = np.where(va, a, 1.0)
+    sb = np.where(vb, b, 1.0)
+    cents_ab = np.abs(1200.0 * np.log2(sa / sb))
+    agree = both & (cents_ab <= 50.0)
+    f0 = np.zeros_like(a)
+    f0[agree] = np.sqrt(a[agree] * b[agree])
+    f0[va & ~vb] = a[va & ~vb]
+    f0[vb & ~va] = b[vb & ~va]
+    dis = both & ~agree
+    if dis.any():
+        ref = np.where(f0_ref > 0, f0_ref, 1.0)
+        ca = np.abs(1200.0 * np.log2(sa / ref))
+        cb = np.abs(1200.0 * np.log2(sb / ref))
+        f0[dis] = a[dis]                                   # default: fcpe
+        pick_b = dis & (f0_ref > 0) & (cb < ca)
+        f0[pick_b] = b[pick_b]
+    pct = round(100.0 * float(dis.sum()) / max(int(both.sum()), 1), 1)
+    return f0, "consensus", f"fcpe+crepe agree on {100.0 - pct:.1f}% of voiced frames; harvest refereed {pct}%"
+
+
+def frame_energy(y, fs, nfr):
+    """Per-WORLD-frame RMS (the one energy truth: voicing sanity, gates, confidence)."""
+    hop = int(fs * FRAME_MS / 1000.0)
+    pads = np.pad(y ** 2, (0, hop * (nfr + 1)))
+    return np.sqrt(np.array([pads[i * hop:(i + 1) * hop].mean() for i in range(nfr)]) + 1e-12)
+
+
 def detect_world(y, fs, f0_mode="harvest"):
+    """f0/spectral analysis + THE OCTAVE COURT. Returns (f0, t, sp, ap, meta) where
+    meta carries the TRUTH the report and the agent need: which f0 rail actually ran
+    (stats.f0_mode used to echo the REQUEST even after a fallback — a lie), per-frame
+    RMS, the singer's register center, and the octave-court run flags."""
     import pyworld as pw
     f0, t = pw.harvest(y, fs, f0_floor=60.0, f0_ceil=1300.0, frame_period=FRAME_MS)
-    if f0_mode in ("fcpe", "crepe"):
+    used, note = "harvest", ""
+    if f0_mode == "consensus":
+        f0c, used, note = _f0_consensus(y, fs, t, f0)
+        if f0c is not None and (f0c > 0).sum() >= 8:
+            f0 = f0c
+        else:
+            used = "harvest"
+            note = note or "consensus found no voice — harvest fallback"
+        if note:
+            print(f"[retune] {note}")
+    elif f0_mode in ("fcpe", "crepe"):
         try:
             f0n = _f0_neural(y, fs, t, f0_mode)
             if (f0n > 0).sum() >= 8:
-                f0 = f0n
+                f0, used = f0n, f0_mode
             else:
-                print(f"[retune] {f0_mode} found no voice — falling back to harvest")
+                note = f"{f0_mode} found no voice — harvest fallback"
+                print(f"[retune] {note}")
         except Exception as e:
-            print(f"[retune] {f0_mode} unavailable ({type(e).__name__}: {e}) — harvest fallback")
+            note = f"{f0_mode} unavailable ({type(e).__name__}) — harvest fallback"
+            print(f"[retune] {note}: {e}")
     f0 = octave_guard(f0)
+    frame_rms = frame_energy(y, fs, len(f0))
+    v_ref = float(np.percentile(frame_rms[f0 > 0], 90)) if (f0 > 0).any() else 1.0
+    f0, run_flags, center = heal_octaves(f0, frame_rms, v_ref)
     sp = pw.cheaptrick(y, f0, t, fs)
     ap = pw.d4c(y, f0, t, fs)
-    return f0, t, sp, ap
+    meta = {"f0_used": used, "f0_requested": f0_mode, "f0_note": note,
+            "frame_rms": frame_rms, "v_ref": v_ref,
+            "run_flags": run_flags, "center_midi": center}
+    return f0, t, sp, ap, meta
 
 
 def octave_guard(f0):
@@ -276,6 +379,75 @@ def octave_guard(f0):
                     break
         hist.append(f0[i])
     return f0
+
+
+def heal_octaves(f0, frame_rms, v_ref):
+    """THE OCTAVE COURT (2026-07-13, "WHEN IT GOES TO LOWER AND HIGHER NOTES, ITS
+    STILL OFF KEY!"): octave_guard folds LONE flips, but a SUSTAINED subharmonic
+    lock (harvest at register extremes, breathy onsets) migrates the running median
+    and sails through — then the Viterbi candidates (±3 st of the halved median) put
+    the TARGET in the wrong octave and the tuner confidently lands garbage on a
+    wrong-octave scale tone. Judge whole voiced RUNS against the singer's register
+    center, on evidence only:
+      - pulsed low run (high frame jitter, f0<110Hz, well below center) = vocal FRY:
+        real periodicity, not an error — folding would mint a fake note. Flag "fry".
+      - WEAK far run that folds home by whole octaves = detector halving/doubling on
+        a breathy tail/onset. HEAL (shift the run's f0) + flag "healed±12".
+      - STRONG far run: could be deliberate (a real octave drop is usually sung with
+        intent) — never guess. Flag "octave?".
+    The law downstream: healed runs tune normally; fry/octave? runs are HELD
+    (passthrough — the singer's raw sound is never worse than a wrong correction)
+    and the flag reaches the report so the agent SEES why.
+    Returns (f0_healed, run_flags [(i0, i1, flag)], center_midi)."""
+    v = f0 > 0
+    if not v.any():
+        return f0, [], 0.0
+    f0 = f0.copy()
+    midi = midi_of(np.where(v, f0, 1.0))
+    strong = v & (frame_rms > v_ref * 10 ** (-20.0 / 20.0))
+    center = float(np.median(midi[strong if strong.any() else v]))
+    idx = np.flatnonzero(v)
+    cuts = np.flatnonzero(np.diff(idx) > 1)
+    runs = [(int(g[0]), int(g[-1]) + 1) for g in np.split(idx, cuts + 1)]
+    plans = []
+    for a, b in runs:
+        if b - a < 5:                                   # <25ms: too short to judge
+            continue
+        m = float(np.median(midi[a:b]))
+        d = m - center
+        jit = float(np.median(np.abs(np.diff(midi[a:b]))))
+        weak = float(np.median(frame_rms[a:b])) < v_ref * 10 ** (-26.0 / 20.0)
+        if d < -8.0 and jit > 0.6 and float(np.median(f0[a:b])) < 110.0:
+            plans.append((a, b, "fry", 0))
+        elif abs(d) >= 7.0:
+            shift = -12 * int(round(d / 12.0))
+            if shift != 0 and abs(d + shift) <= 4.0 and weak and jit <= 0.6:
+                plans.append((a, b, f"healed{'+' if shift > 0 else ''}{shift}", shift))
+            else:
+                plans.append((a, b, "octave?", 0))
+    heals = [p for p in plans if p[3]]
+    if len(heals) > max(3, int(len(runs) * 0.4)):       # center itself suspect:
+        plans = [(a, b, "octave?" if s else f, 0)       # heal NOTHING, flag instead
+                 for a, b, f, s in plans]
+    flags = []
+    for a, b, flag, shift in plans:
+        if shift:
+            f0[a:b] = f0[a:b] * (2.0 ** (shift / 12.0))
+        flags.append((a, b, flag))
+    return f0, flags, center
+
+
+def event_flags(events, run_flags):
+    """Map octave-court run flags onto note events (flag covering the event's majority)."""
+    out = []
+    for a, b in events:
+        best, cover = "", 0
+        for ra, rb, fl in run_flags:
+            ov = min(b, rb) - max(a, ra)
+            if ov > cover and ov * 2 > (b - a):
+                best, cover = fl, ov
+        out.append(best)
+    return out
 
 
 def segment_notes(midi, voiced, split_cents, min_note_ms, persist=3):
@@ -344,6 +516,57 @@ def segment_notes(midi, voiced, split_cents, min_note_ms, persist=3):
             continue
         out.append((ev[0], ev[1]))
     return [(a, b) for a, b in out if b - a >= max(2, hop_frames_min // 2)]
+
+
+def group_notes(events, targets, reasons, correct_mask, ev_fl, midi, t, spans,
+                frame_rms, v_ref):
+    """THE NOTE COURT (2026-07-13, "the actual notes from the audio need to be clear
+    as day"): correction EVENTS are style-granular by design (tpain's 35ms stairs ARE
+    the sound) — but the agent was reading those fragments as "the notes" (466 rows,
+    64% under 150ms, on untitled_43). Group adjacent gap-free events that share a
+    target/verdict into MUSICAL notes; name each by its STABLE CORE (central 60% of
+    frames when long enough — onset scoops and release falls stop biasing the name);
+    carry a confidence and the octave-court flag. One row = one note a human
+    producer would point at, to 128-MIDI precision."""
+    groups = []
+    for k, (a, b) in enumerate(events):
+        if groups and groups[-1]["i1"] == a and groups[-1]["target"] == targets[k] \
+           and groups[-1]["held"] == (not correct_mask[k]) and groups[-1]["flag"] == ev_fl[k]:
+            groups[-1]["i1"] = b
+            groups[-1]["k1"] = k
+            groups[-1]["sub"] += 1
+            continue
+        groups.append({"i0": a, "i1": b, "k0": k, "k1": k, "target": targets[k],
+                       "reason": reasons[k], "held": not correct_mask[k],
+                       "flag": ev_fl[k], "sub": 1})
+    rows = []
+    for g in groups:
+        a, b = g["i0"], g["i1"]
+        seg = midi[a:b]
+        core = seg[int(len(seg) * 0.2):max(int(len(seg) * 0.8), int(len(seg) * 0.2) + 1)] \
+            if (b - a) * FRAME_MS >= 120.0 else seg
+        cm = float(np.median(core))
+        d0 = (cm - g["target"]) * 100.0
+        stability = max(0.0, 1.0 - float(np.std(core)))
+        energy = min(1.0, float(np.median(frame_rms[a:b])) / (v_ref * 10 ** (-12.0 / 20.0)))
+        register = 1.0 if not g["flag"] else 0.25
+        sign = "+" if d0 >= 0 else ""
+        row = {
+            "t0": round(float(t[a]), 3), "t1": round(float(t[min(b, len(t) - 1)]), 3),
+            "beat0": round(spans[g["k0"]][0], 3) if spans and spans[g["k0"]][0] is not None else None,
+            "beat1": round(spans[g["k1"]][1], 3) if spans and spans[g["k1"]][0] is not None else None,
+            "dur_ms": int(round((b - a) * FRAME_MS)),
+            "sung": f"{midi_name(cm)}{sign}{d0:.0f}c" if abs(d0) >= 1 else midi_name(cm),
+            "sung_midi": round(cm, 2),
+            "target": int(g["target"]), "target_name": midi_name(g["target"]),
+            "cents_moved": 0.0 if g["held"] else round(-d0, 1),
+            "reason": g["reason"], "sub": g["sub"],
+            "conf": round(0.35 * stability + 0.35 * energy + 0.3 * register, 2),
+        }
+        if g["flag"]:
+            row["flag"] = g["flag"]
+        rows.append(row)
+    return rows, [(g["k0"], g["k1"]) for g in groups]
 
 
 # ---------------------------------------------------------------- targets (Viterbi)
@@ -444,32 +667,124 @@ def medfilt1(x, k):
     return np.array([np.median(xp[i:i + k]) for i in range(len(x))])
 
 
-def build_curve(f0, events, targets, style, correct_mask, rng):
-    """Corrected f0 array (WORLD grid). Uncorrected/unvoiced frames pass through."""
+def build_curve(f0, events, targets, style, correct_mask, rng, ev_styles=None):
+    """Corrected f0 array (WORLD grid). Uncorrected/unvoiced frames pass through.
+    ev_styles: optional per-event style dicts (THE GRAPH MODE — a manual edit can
+    carry its own amount/retune_ms/vibrato_keep, and max_move_st widens the ±7 st
+    safety when the editor's intent is explicit)."""
     out = f0.copy()
     midi = midi_of(np.where(f0 > 0, f0, 1.0))
     hop_s = FRAME_MS / 1000.0
-    tau = max(style["retune_ms"], 1.0) / 1000.0
     slow_k = int(150.0 / FRAME_MS) | 1
-    for (i0, i1), T, corr in zip(events, targets, correct_mask):
+    for k, ((i0, i1), T, corr) in enumerate(zip(events, targets, correct_mask)):
         if not corr:
             continue
+        st = ev_styles[k] if (ev_styles and ev_styles[k]) else style
+        tau = max(st["retune_ms"], 1.0) / 1000.0
         seg = midi[i0:i1]
         dev = (seg - T) * 100.0                       # cents vs target
+        # THE MELODYNE SPLIT (2026-07-14 research): pros correct THREE things
+        # independently — pitch CENTER (where the note sits: correct hard),
+        # pitch DRIFT (slow intra-note wander, usually unintentional: correct
+        # ~80%), pitch MODULATION (vibrato/trills, usually intentional: keep).
+        # One "slow" band under one knob conflated center+drift — full snaps
+        # killed the drift character, gentle ones left notes off-center.
         slow = medfilt1(dev, slow_k)
-        fast = dev - slow
+        fast = dev - slow                             # modulation (vibrato)
+        center = float(np.median(slow))               # the note's seat
+        drift = slow - center                         # slow wander around it
+        c_amt = float(st.get("center_amt", st["amount"]))
+        d_amt = float(st.get("drift_amt", st["amount"]))
         walk = np.cumsum(rng.normal(0, 1, len(dev)))
-        if np.std(walk) > 1e-6 and style["humanize"] > 0:
+        if np.std(walk) > 1e-6 and st["humanize"] > 0:
             walk = medfilt1(walk, 5)
-            walk = walk / (np.std(walk) + 1e-9) * style["humanize"]
+            walk = walk / (np.std(walk) + 1e-9) * st["humanize"]
         else:
             walk = np.zeros(len(dev))
-        cdev = (1.0 - style["amount"]) * slow + style["vibrato_keep"] * fast + walk
+        cdev = (1.0 - c_amt) * center + (1.0 - d_amt) * drift \
+            + st["vibrato_keep"] * fast + walk
         g = np.exp(-(np.arange(len(dev)) * hop_s) / tau)
         cdev = cdev + g * (dev[0] - cdev[0])          # continuous entry, then snap
-        new_m = T + np.clip(cdev, -700.0, 700.0) / 100.0
-        new_m = np.clip(new_m, seg - 7.0, seg + 7.0)  # ±7 st safety vs sung
+        lim = float(st.get("max_move_st", 7.0))
+        new_m = T + np.clip(cdev, -700.0 * lim / 7.0, 700.0 * lim / 7.0) / 100.0
+        new_m = np.clip(new_m, seg - lim, seg + lim)  # ± safety vs sung
         out[i0:i1] = np.where(f0[i0:i1] > 0, hz_of(new_m), 0.0)
+    return out
+
+
+def psola_channel(yc, fs, f0, f0_new, spans):
+    """THE HILDEBRAND ENGINE (2026-07-14 research): Auto-Tune's own synthesis is
+    pitch-synchronous granular — single-period grains re-emitted at the target
+    rate; Melodyne edits notes the same time-domain way. TD-PSOLA is measured
+    preferable to WORLD resynthesis for singing naturalness (WORLD full-band
+    resynthesis was this rail's artifact source). Grains: 2 local periods,
+    Hann-windowed, centered on waveform peaks (phase coherence); output marks
+    walk at the CORRECTED period; the source pointer tracks output time
+    (duration preserved); overlap-sum normalized (no COLA ripple). Only the
+    splice spans are touched — everything else stays bit-exact original."""
+    out = yc.copy()
+    hop = int(fs * FRAME_MS / 1000.0)
+    nfr = len(f0)
+    wins = {}
+
+    def period(arr, smp):
+        v = arr[min(nfr - 1, max(0, smp // hop))]
+        return (fs / v) if v > 0 else 0.0
+
+    for s, e in spans:
+        # ONE COHERENT MARK TRAIN per span (v1 snapped a peak per output grain
+        # independently — adjacent grains carried arbitrary phase offsets: the
+        # selftest measured +25c error and ADDED wobble. The reference method
+        # marks the whole train first, then respaces it.)
+        marks = []
+        m = float(s)
+        while m < e:
+            Po = period(f0, int(m))
+            if Po <= 0:
+                m += hop
+                continue
+            c, q = int(m), max(2, int(Po // 4))
+            a, b = max(0, c - q), min(len(yc), c + q + 1)
+            if b - a > 3:
+                c = a + int(np.argmax(np.abs(yc[a:b])))
+            if not marks or c > marks[-1]:    # monotonic train, never backwards
+                marks.append(c)
+            m = max(m + Po * 0.5, float(c) + Po)   # advance one true period
+        if len(marks) < 2:
+            continue
+        marks_arr = np.array(marks, dtype=np.float64)
+        seg = np.zeros(e - s)
+        wsum = np.zeros(e - s)
+        t = float(s)
+        src_i = 0
+        guard = 0
+        while t < e and guard < 400000:
+            guard += 1
+            Pn, Po = period(f0_new, int(t)), period(f0, int(t))
+            if Pn <= 0 or Po <= 0:
+                t += hop
+                continue
+            # source mark: nearest to output time, monotonically advancing
+            j = int(np.searchsorted(marks_arr, t))
+            cand = [i for i in (j - 1, j) if 0 <= i < len(marks)]
+            src_i = max(src_i, min(cand, key=lambda i: abs(marks[i] - t)) if cand else src_i)
+            c = marks[min(src_i, len(marks) - 1)]
+            half = int(Po)
+            if half < 8 or c - half < 0 or c + half > len(yc):
+                t += max(Pn, 8.0)
+                continue
+            if half not in wins:
+                wins[half] = np.hanning(2 * half)
+            w = wins[half]
+            grain = yc[c - half:c + half] * w
+            o0 = int(t) - s - half
+            oa, ob = max(0, o0), min(e - s, o0 + 2 * half)
+            if ob > oa:
+                seg[oa:ob] += grain[oa - o0:ob - o0]
+                wsum[oa:ob] += w[oa - o0:ob - o0]
+            t += Pn
+        landed = wsum > 0.25
+        out[s:e] = np.where(landed, seg / np.maximum(wsum, 0.25), yc[s:e])
     return out
 
 
@@ -536,7 +851,8 @@ def splice(orig, world, spans, fs):
 # ---------------------------------------------------------------- driver
 def process(in_path, out_path, song_path=None, track=None, style_name="natural",
             overrides=None, key=None, guide_track=None, region=None, clip_index=0,
-            report_path=None, quiet=False, f0_mode="harvest"):
+            report_path=None, quiet=False, f0_mode="harvest", emit_midi_path=None,
+            note_edits=None, only_edits=False, engine="psola"):
     style = dict(STYLES[style_name])
     style.update({k: v for k, v in (overrides or {}).items() if v is not None})
     y_multi, fs = sf.read(in_path, always_2d=True)
@@ -569,8 +885,11 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
         ctx.field = lambda b0, b1: (set(), None)
         ctx.has_notes = False
 
-    f0, t, sp, ap = detect_world(y, fs, f0_mode=f0_mode)
-    voiced = f0 > 0
+    f0, t, sp, ap, f0meta = detect_world(y, fs, f0_mode=f0_mode)
+    frame_rms, v_ref = f0meta["frame_rms"], f0meta["v_ref"]
+    # ghost-frame gate: an f0 with no energy under it is not a voice (breath clicks
+    # and room rumble used to become "notes" and only get muted AFTER they voted)
+    voiced = (f0 > 0) & (frame_rms > v_ref * 10 ** (-40.0 / 20.0))
     midi = midi_of(np.where(voiced, f0, 1.0))
     events = segment_notes(midi, voiced, style["split_cents"], style["min_note_ms"])
     med_midi = [float(np.median(midi[a:b])) for a, b in events]
@@ -580,33 +899,104 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
     elif ctx:
         spans = [(None, None)] * len(events)
 
-    targets, reasons = choose_targets(events, med_midi, spans, ctx, style, guide_notes) \
-        if ctx else (list(map(lambda m: int(round(m)), med_midi)), ["nearest"] * len(events))
-
-    # energy gate: events buried >26 dB under the voiced body are breath/rumble —
-    # pass them through untouched (below-threshold input, classic tuner behavior)
-    hop = int(fs * FRAME_MS / 1000.0)
-    nfr = len(f0)
-    pads = np.pad(y ** 2, (0, hop * (nfr + 1)))
-    frame_rms = np.sqrt(np.array([pads[i * hop:(i + 1) * hop].mean() for i in range(nfr)]) + 1e-12)
-    v_ref = np.percentile(frame_rms[voiced], 90) if voiced.any() else 1.0
+    # THE HOLD COURT — BEFORE the Viterbi (2026-07-13): quiet/fry/octave-suspect
+    # events used to enter the DP and drag real neighbors through the contour
+    # cost (the -26 dB gate ran AFTER target choice, so garbage still voted).
+    ev_fl = event_flags(events, f0meta["run_flags"])
     correct_mask = [True] * len(events)
+    reasons = [""] * len(events)
     for k, (a, b) in enumerate(events):
-        ev_rms = float(np.median(frame_rms[a:b]))
-        if ev_rms < v_ref * 10 ** (-26.0 / 20.0):
-            correct_mask[k] = False
-            reasons[k] = "held(quiet)"
+        if float(np.median(frame_rms[a:b])) < v_ref * 10 ** (-26.0 / 20.0):
+            correct_mask[k], reasons[k] = False, "held(quiet)"
+        elif ev_fl[k] == "fry":
+            correct_mask[k], reasons[k] = False, "held(fry)"
+        elif ev_fl[k] == "octave?":
+            correct_mask[k], reasons[k] = False, "held(octave?)"
     if region and len(region) == 2:
         lo, hi = float(region[0]), float(region[1])
         for k, (a, b) in enumerate(events):
-            pos0, pos1 = (spans[k] if (spans and spans[k][0] is not None) else (t[a], t[min(b, len(t) - 1)]))
-            correct_mask[k] = pos1 > lo and pos0 < hi
-        for k in range(len(events)):
-            if not correct_mask[k]:
-                reasons[k] = "held(region)"
+            pos0, pos1 = (spans[k] if (spans and spans[k][0] is not None)
+                          else (t[a], t[min(b, len(t) - 1)]))
+            if not (pos1 > lo and pos0 < hi):
+                correct_mask[k], reasons[k] = False, "held(region)"
+
+    # Viterbi over the CORRECTABLE events only — contour links never cross garbage
+    live = [k for k in range(len(events)) if correct_mask[k]]
+    targets = [int(round(m)) for m in med_midi]
+    if ctx and live:
+        lt, lr = choose_targets([events[k] for k in live], [med_midi[k] for k in live],
+                                ([spans[k] for k in live] if spans else None),
+                                ctx, style, guide_notes)
+        for j, k in enumerate(live):
+            targets[k], reasons[k] = lt[j], lr[j]
+    else:
+        for k in live:
+            reasons[k] = "nearest"
+    # FLEX-TUNE (Antares craft, 2026-07-14 research): a note already seated inside
+    # the tolerance zone is left completely raw — slides and scoops survive,
+    # correction engages only where the singer actually strayed.
+    flex = float(style.get("flex_cents", 0.0))
+    if flex > 0:
+        for k in live:
+            if abs(med_midi[k] - targets[k]) * 100.0 <= flex:
+                correct_mask[k] = False
+                reasons[k] = f"held(in-tune<={flex:.0f}c)"
+
+    # THE GRAPH MODE (2026-07-13, "the LLM will do the manual edits to perfection"):
+    # per-note manual edits, addressed by the analyze map's beat0 (t0 seconds when
+    # no grid). A manual verdict OVERRIDES the courts — the editor saw the flag and
+    # decided — and may move further than auto's ±7 st safety. only_edits=True is
+    # pure graph mode: nothing tunes except what the editor named.
+    ev_styles = [None] * len(events)
+    edits_applied, edits_unmatched = [], []
+    if note_edits:
+        rows0, kmap = group_notes(events, targets, reasons, correct_mask, ev_fl,
+                                  midi, t, spans, frame_rms, v_ref)
+        if only_edits:
+            for k in range(len(events)):
+                if correct_mask[k]:
+                    correct_mask[k], reasons[k] = False, "held(manual-mode)"
+        anchors = [(r["beat0"] if r["beat0"] is not None else r["t0"]) for r in rows0]
+        tol = 0.3 if (spans and spans[0][0] is not None) else 0.08
+        for ed in note_edits:
+            try:
+                at = float(ed.get("at"))
+            except (TypeError, ValueError):
+                edits_unmatched.append({**ed, "why": "no 'at'"})
+                continue
+            dists = [abs(a0 - at) for a0 in anchors]
+            best = int(np.argmin(dists)) if dists else -1
+            if best < 0 or dists[best] > tol:
+                edits_unmatched.append({**ed, "why": f"no note within {tol} of {at}"})
+                continue
+            k0, k1 = kmap[best]
+            if ed.get("hold"):
+                for k in range(k0, k1 + 1):
+                    correct_mask[k], reasons[k] = False, "edited(hold)"
+                lab = "hold"
+            else:
+                T = parse_note_name(ed["target"]) if ed.get("target") is not None \
+                    else targets[k0]
+                if T is None or not (0 <= T <= 127):
+                    edits_unmatched.append({**ed, "why": f"bad target {ed.get('target')!r}"})
+                    continue
+                st2 = dict(style)
+                st2.update({kk: float(ed[kk]) for kk in
+                            ("amount", "retune_ms", "vibrato_keep", "center_amt", "drift_amt")
+                            if ed.get(kk) is not None})
+                st2["max_move_st"] = 24.0
+                st2["flex_cents"] = 0.0        # an explicit edit is intent — no zone
+                for k in range(k0, k1 + 1):
+                    targets[k], correct_mask[k] = T, True
+                    reasons[k] = f"edited({midi_name(T)})"
+                    ev_styles[k] = st2
+                lab = midi_name(T)
+            edits_applied.append({"at": at, "matched_beat0": rows0[best]["beat0"],
+                                  "matched_t0": rows0[best]["t0"],
+                                  "was": rows0[best]["sung"], "edit": lab})
 
     rng = np.random.default_rng(0xC0FFEE ^ len(y))
-    f0_new = build_curve(f0, events, targets, style, correct_mask, rng)
+    f0_new = build_curve(f0, events, targets, style, correct_mask, rng, ev_styles)
 
     rs_spans = splice_spans(f0, f0_new, fs, len(y)) if out_path else []
     resynth_smp = sum(e - s for s, e in rs_spans)
@@ -614,11 +1004,14 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
         chans = []
         for c in range(y_multi.shape[1]):
             yc = np.ascontiguousarray(y_multi[:, c], dtype=np.float64)
-            import pyworld as pw
-            spc = pw.cheaptrick(yc, f0, t, fs)
-            apc = pw.d4c(yc, f0, t, fs)
-            world_c = resynth(yc, fs, f0, spc, apc, f0_new)
-            chans.append(splice(yc, world_c, rs_spans, fs))
+            if engine == "psola":
+                shifted = psola_channel(yc, fs, f0, f0_new, rs_spans)
+            else:
+                import pyworld as pw
+                spc = pw.cheaptrick(yc, f0, t, fs)
+                apc = pw.d4c(yc, f0, t, fs)
+                shifted = resynth(yc, fs, f0, spc, apc, f0_new)
+            chans.append(splice(yc, shifted, rs_spans, fs))
         out = np.stack(chans, axis=1) if len(chans) > 1 else chans[0]
         # FLOAT DECK LAW: float inputs stay float (vocal_truth decks carry
         # sub-int16-LSB content; forcing PCM_16 truncated it to zero and made
@@ -632,48 +1025,64 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
         sf.write(_tmp_out, out, fs, subtype=info.subtype if keep else "PCM_16")
         os.replace(_tmp_out, out_path)
 
-    # report
-    notes_rep = []
-    moved = []
-    for k, (a, b) in enumerate(events):
-        d0 = (med_midi[k] - targets[k]) * 100.0
-        if correct_mask[k]:
-            moved.append(abs(d0))
-        sign = "+" if d0 >= 0 else ""
-        notes_rep.append({
-            "t0": round(float(t[a]), 3), "t1": round(float(t[min(b, len(t) - 1)]), 3),
-            "beat0": round(spans[k][0], 3) if spans and spans[k][0] is not None else None,
-            "beat1": round(spans[k][1], 3) if spans and spans[k][0] is not None else None,
-            "sung": f"{midi_name(med_midi[k])}{sign}{d0:.0f}c" if abs(d0) >= 1 else midi_name(med_midi[k]),
-            "sung_midi": round(med_midi[k], 2),
-            "target": int(targets[k]), "target_name": midi_name(targets[k]),
-            "cents_moved": round(-d0, 1) if correct_mask[k] else 0.0,
-            "reason": reasons[k],
-        })
+    # report v2: rows = THE NOTE COURT's musical notes (fragment truth in stats)
+    moved = [abs((med_midi[k] - targets[k]) * 100.0)
+             for k in range(len(events)) if correct_mask[k]]
+    notes_rep, _ = group_notes(events, targets, reasons, correct_mask, ev_fl,
+                               midi, t, spans, frame_rms, v_ref)
+    held = [r for r in notes_rep if r["cents_moved"] == 0.0 and r["reason"].startswith("held")]
     rep = {
-        "tool": "retune", "version": 1, "style": style_name,
+        "tool": "retune", "version": 2, "style": style_name,
         "params": {k: style[k] for k in ("amount", "retune_ms", "vibrato_keep", "humanize")},
         "input": in_path, "output": out_path, "song": song_path, "track": track,
         "scale": {"name": ctx.scale_name(), "source": getattr(ctx, "scale_src", "arg")} if ctx else None,
         "notes": notes_rep,
-        "stats": {"events": len(events), "corrected": int(sum(correct_mask)),
+        "stats": {"notes": len(notes_rep), "fragments": len(events),
+                  "corrected": int(sum(correct_mask)),
+                  "held": {r: sum(1 for x in held if x["reason"] == f"held({r})")
+                           for r in ("quiet", "fry", "octave?", "region")},
+                  "healed_runs": sum(1 for _, _, f in f0meta["run_flags"]
+                                     if f.startswith("healed")),
+                  "register_center": round(f0meta["center_midi"], 1),
+                  "register_center_name": midi_name(f0meta["center_midi"]),
                   "median_abs_cents_off": round(float(np.median(moved)), 1) if moved else 0.0,
                   "max_abs_cents_off": round(float(np.max(moved)), 1) if moved else 0.0,
-                  "f0_mode": f0_mode,
+                  "f0_mode": f0meta["f0_used"], "f0_requested": f0meta["f0_requested"],
+                  "f0_note": f0meta["f0_note"], "engine": engine,
                   "resynth_pct": round(100.0 * resynth_smp / max(len(y), 1), 1),
                   "passthrough_pct": round(100.0 - 100.0 * resynth_smp / max(len(y), 1), 1)},
     }
+    if note_edits is not None:
+        rep["edits_applied"] = edits_applied
+        rep["edits_unmatched"] = edits_unmatched
     if report_path:
         json.dump(rep, open(report_path, "w"), indent=1)
+    if emit_midi_path:
+        # the detected melody AS NOTES (and the tuner's targets beside it) — beats
+        # when the song grid is known, else seconds in start_s/len_s
+        det, tgt = [], []
+        for r in notes_rep:
+            vel = round(min(1.0, 0.35 + 0.65 * r["conf"]), 2)
+            if r["beat0"] is not None:
+                base = {"start": r["beat0"], "len": round(max(r["beat1"] - r["beat0"], 0.05), 3), "vel": vel}
+            else:
+                base = {"start_s": r["t0"], "len_s": round(max(r["t1"] - r["t0"], 0.02), 3), "vel": vel}
+            det.append({**base, "pitch": int(round(r["sung_midi"]))})
+            tgt.append({**base, "pitch": r["target"]})
+        json.dump({"tool": "retune", "version": 2, "input": in_path,
+                   "detected": det, "targets": tgt}, open(emit_midi_path, "w"), indent=1)
     if not quiet:
         sc = f" scale={ctx.scale_name()}({getattr(ctx, 'scale_src', 'arg')})" if ctx else ""
+        st = rep["stats"]
         print(f"[retune] {os.path.basename(in_path)} style={style_name}{sc} "
-              f"events={len(events)} corrected={sum(correct_mask)} "
-              f"median_off={rep['stats']['median_abs_cents_off']}c")
+              f"notes={st['notes']} (fragments={st['fragments']}) corrected={st['corrected']} "
+              f"median_off={st['median_abs_cents_off']}c f0={st['f0_mode']} "
+              f"register={st['register_center_name']}")
         for nr in notes_rep[:40]:
             bb = f"b{nr['beat0']:.2f}" if nr["beat0"] is not None else f"{nr['t0']:.2f}s"
+            fl = f" [{nr['flag']}]" if nr.get("flag") else ""
             print(f"  {bb:>8} {nr['sung']:>9} -> {nr['target_name']:<4} "
-                  f"({nr['cents_moved']:+.0f}c) {nr['reason']}")
+                  f"({nr['cents_moved']:+.0f}c) {nr['reason']}{fl}")
         if len(notes_rep) > 40:
             print(f"  ... +{len(notes_rep) - 40} more (see report)")
     return rep, f0, f0_new, t, events, targets
@@ -812,6 +1221,146 @@ def selftest(tmpdir):
               f"post_err={med_err:.1f}c vib_keep={vr:.2f} "
               f"resynth={rep['stats'].get('resynth_pct')}% (rest bit-exact)")
 
+    # ---- THE NOTE COURT legs (2026-07-13, "notes clear as day / 128-note precision")
+    # clean singer stays untouched by the octave court (over-healing regression)
+    if rep["stats"]["healed_runs"] != 0 or rep["stats"]["held"]["fry"] != 0:
+        fails.append(f"clean singer got courted: {rep['stats']['healed_runs']} heals, "
+                     f"{rep['stats']['held']['fry']} fry")
+    if rep["version"] != 2 or rep["stats"]["notes"] > rep["stats"]["fragments"]:
+        fails.append("report v2 shape wrong")
+
+    # heal_octaves unit: sustained halved run heals home; fry flagged, never folded
+    fr = np.concatenate([np.full(200, 220.0),          # A3 body (center)
+                         np.zeros(5),
+                         np.full(100, 110.0),          # sustained HALVED run (weak)
+                         np.zeros(5),
+                         55.0 * 2 ** (np.tile([0.0, 1.4], 30) / 12.0)])  # pulsed fry
+    rms = np.concatenate([np.full(200, 0.30), np.zeros(5), np.full(100, 0.004),
+                          np.zeros(5), np.full(60, 0.004)])
+    healed, rfl, center = heal_octaves(fr, rms, 0.30)
+    if not (56.0 < center < 58.5):
+        fails.append(f"octave court: center {center:.1f} not ~A3")
+    if abs(float(np.median(healed[205:305])) - 220.0) > 1.0:
+        fails.append("octave court: halved run NOT healed to 220Hz")
+    if not any(f.startswith("healed") for _, _, f in rfl):
+        fails.append("octave court: no healed flag")
+    if not any(f == "fry" for _, _, f in rfl):
+        fails.append("octave court: fry not flagged")
+    if abs(float(np.median(healed[310:370])) - float(np.median(fr[310:370]))) > 1.0:
+        fails.append("octave court: fry was FOLDED (must stay raw)")
+
+    # group_notes unit: same-target gap-free stairs merge into ONE note (sub counts)
+    gm = np.full(30, 60.2)
+    g_rows, g_kmap = group_notes([(0, 10), (10, 20), (20, 30)], [60, 60, 62],
+                                 ["scale(x)", "scale(x)", "scale(x)"], [True, True, True],
+                                 ["", "", ""], gm, np.arange(30) * FRAME_MS / 1000.0,
+                                 None, np.full(30, 0.3), 0.3)
+    if g_kmap != [(0, 1), (2, 2)]:
+        fails.append(f"note court: kmap wrong {g_kmap}")
+    if len(g_rows) != 2 or g_rows[0]["sub"] != 2 or g_rows[1]["sub"] != 1:
+        fails.append(f"note court: merge wrong ({[(r['target'], r['sub']) for r in g_rows]})")
+    if not (0.0 <= g_rows[0]["conf"] <= 1.0 and g_rows[0]["dur_ms"] == 100):
+        fails.append("note court: conf/dur wrong")
+
+    # analyze mode: EARS ONLY — no wav written, report still lands whole
+    an_rep_p = os.path.join(tmpdir, "_tune_selftest_analyze.json")
+    an_midi_p = os.path.join(tmpdir, "_tune_selftest_melody.json")
+    rep_a, *_ = process(wav, None, song_path=song_path, track="vox",
+                        style_name="hard", quiet=True, report_path=an_rep_p,
+                        emit_midi_path=an_midi_p)
+    if rep_a["output"] is not None or not os.path.exists(an_rep_p):
+        fails.append("analyze: output not None / report missing")
+    mel = json.load(open(an_midi_p))
+    if len(mel["detected"]) != rep_a["stats"]["notes"] or \
+       not all(0 <= n["pitch"] <= 127 and "start" in n for n in mel["detected"]):
+        fails.append("emit-midi: detected melody malformed")
+    if rep_a["stats"]["notes"] < 7:
+        fails.append(f"analyze: only {rep_a['stats']['notes']} notes heard (want >=7)")
+
+    # f0 truth: a fallen neural rail must be REPORTED, not echoed as requested
+    global _f0_neural
+    _orig_neural = _f0_neural
+    _f0_neural = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("rig: rail down"))
+    try:
+        rep_f, *_ = process(wav, None, song_path=song_path, track="vox",
+                            style_name="hard", quiet=True, f0_mode="fcpe")
+    finally:
+        _f0_neural = _orig_neural
+    if rep_f["stats"]["f0_mode"] != "harvest" or rep_f["stats"]["f0_requested"] != "fcpe" \
+       or "fallback" not in rep_f["stats"]["f0_note"]:
+        fails.append(f"f0 truth: {rep_f['stats']['f0_mode']}/{rep_f['stats']['f0_requested']}"
+                     f"/{rep_f['stats']['f0_note']!r}")
+    # parse_note_name: the editor's vocabulary
+    if [parse_note_name(x) for x in ("A3", "C#5", "Bb2", 57, "H9")] != [57, 73, 46, 57, None]:
+        fails.append("parse_note_name wrong")
+
+    # THE GRAPH MODE: manual edits land where ASKED (measured), holds stay raw
+    ed_out = os.path.join(tmpdir, "_tune_selftest_edit.wav")
+    rep_e, f0_e, _fn, _te, ev_e, _tg = process(
+        wav, ed_out, song_path=song_path, track="vox", style_name="hard", quiet=True,
+        note_edits=[{"at": 1.0, "target": "F4"},        # push note 1 (auto D4) to F4
+                    {"at": 3.0, "hold": True},          # leave note 3 (worst, +55c) RAW
+                    {"at": 99.0, "target": "C4"}])      # ghost edit -> honest unmatched
+    if len(rep_e["edits_applied"]) != 2 or len(rep_e["edits_unmatched"]) != 1:
+        fails.append(f"graph mode: applied={len(rep_e['edits_applied'])} "
+                     f"unmatched={len(rep_e['edits_unmatched'])}")
+    if not any(r["reason"] == "edited(F4)" and r["target"] == 65 for r in rep_e["notes"]):
+        fails.append("graph mode: F4 edit row missing")
+    if not any(r["reason"] == "edited(hold)" for r in rep_e["notes"]):
+        fails.append("graph mode: hold row missing")
+    yo2 = sf.read(ed_out)[0]
+    f0o, _t2 = pw.harvest(np.ascontiguousarray(yo2.astype(np.float64)), fs,
+                          f0_floor=60, f0_ceil=1300, frame_period=FRAME_MS)
+    def _land(ev):
+        a2, b2 = ev[0] + int(60 / FRAME_MS), ev[1] - int(60 / FRAME_MS)
+        seg = f0o[a2:b2]
+        return float(np.median(midi_of(seg[seg > 0])))
+    land1, land3 = _land(ev_e[1]), _land(ev_e[3])
+    if abs(land1 - 65.0) > 0.25:
+        fails.append(f"graph mode: asked F4(65), landed {land1:.2f}")
+    a3, b3 = ev_e[3]
+    sung3 = float(np.median(midi_of(f0_e[a3:b3][f0_e[a3:b3] > 0])))
+    if abs(land3 - sung3) > 0.2 or abs(land3 - 67.0) < 0.3:
+        fails.append(f"graph mode: hold leaked (landed {land3:.2f}, sung {sung3:.2f})")
+
+    # engine truth + WORLD regression (psola is the new default: the style loop
+    # above already proved psola's landings/vibrato/bit-exact gaps)
+    if rep_e["stats"].get("engine") != "psola":
+        fails.append(f"engine default not psola ({rep_e['stats'].get('engine')})")
+    w_out = os.path.join(tmpdir, "_tune_selftest_world.wav")
+    rep_w, _f0w, _fnw, _tw, ev_w, tg_w = process(
+        wav, w_out, song_path=song_path, track="vox", style_name="tpain",
+        quiet=True, engine="world")
+    yo3 = sf.read(w_out)[0]
+    f0w2, _t3 = pw.harvest(np.ascontiguousarray(yo3.astype(np.float64)), fs,
+                           f0_floor=60, f0_ceil=1300, frame_period=FRAME_MS)
+    errs_w = []
+    for k in range(7):
+        a2, b2 = ev_w[k][0] + int(60 / FRAME_MS), ev_w[k][1] - int(60 / FRAME_MS)
+        segw = f0w2[a2:b2]
+        segw = segw[segw > 0]
+        if len(segw) >= 4:
+            errs_w.append(abs(float(np.median(midi_of(segw))) - tg_w[k]) * 100.0)
+    med_w = float(np.median(errs_w))
+    if rep_w["stats"].get("engine") != "world" or med_w > 10.0:
+        fails.append(f"world engine regression: {med_w:.1f}c")
+
+    # THE CONSENSUS RAIL on the synth (both neural rails live in this venv)
+    rep_c, *_ = process(wav, None, song_path=song_path, track="vox",
+                        style_name="hard", quiet=True, f0_mode="consensus")
+    c_tg = [r["target"] for r in rep_c["notes"]][:7]
+    c_hit = sum(1 for x, y in zip(c_tg, intended) if x == y)
+    if rep_c["stats"]["f0_mode"] != "consensus" or rep_c["stats"]["notes"] < 7 or c_hit < 5:
+        fails.append(f"consensus: mode={rep_c['stats']['f0_mode']} "
+                     f"notes={rep_c['stats']['notes']} first7hit={c_hit}")
+
+    print(f"[selftest:note-court] center={center:.1f} healed+fry flagged, "
+          f"merge {[(r['target'], r['sub']) for r in g_rows]}, "
+          f"analyze notes={rep_a['stats']['notes']} f0-truth OK")
+    print(f"[selftest:graph-mode] F4 asked -> landed {land1:.2f}; hold stayed raw "
+          f"({land3:.2f} = sung {sung3:.2f}); ghost edit refused. "
+          f"consensus first7 {c_hit}/7 ({rep_c['stats']['f0_note'] or 'clean'})")
+
     hits = [(k, naive[k], intended[k]) for k in range(7) if naive[k] != intended[k]]
     print(f"[selftest] classic chromatic snap would hit WRONG notes at beats "
           f"{[k for k, _, _ in hits]}: " +
@@ -839,23 +1388,44 @@ def main():
     ap.add_argument("--region", nargs=2, type=float, metavar=("B0", "B1"),
                     help="only correct events inside this span (beats with --song, else sec)")
     ap.add_argument("--clip-index", type=int, default=0)
-    ap.add_argument("--f0", default="harvest", choices=["harvest", "fcpe", "crepe"],
-                    help="F0 rail: harvest (dry, default) | fcpe/crepe (wet/in-mix sources)")
+    ap.add_argument("--f0", default="harvest",
+                    choices=["harvest", "fcpe", "crepe", "consensus"],
+                    help="F0 rail: harvest (dry, default) | fcpe/crepe (neural) | "
+                         "consensus (fcpe+crepe vote, harvest referee — the accuracy rail)")
+    ap.add_argument("--engine", default="psola", choices=["psola", "world"],
+                    help="synthesis engine: psola (pitch-synchronous grains — Auto-Tune's "
+                         "own principle, superior singing naturalness, DEFAULT) | world "
+                         "(full vocoder resynthesis, the legacy path)")
+    ap.add_argument("--edits", help="THE GRAPH MODE: json file with per-note manual edits "
+                                    "[{at: <beat0 from the analyze map>, target: 'A3'|57, "
+                                    "hold: true, amount/retune_ms/vibrato_keep}]")
+    ap.add_argument("--only-edits", action="store_true",
+                    help="pure graph mode: ONLY the edited notes tune, everything else raw")
     ap.add_argument("--report", help="write per-note JSON report here")
+    ap.add_argument("--analyze", action="store_true",
+                    help="EARS ONLY: no audio written — the note map (sung vs target, "
+                         "flags, confidence) prints + lands in the report json")
+    ap.add_argument("--emit-midi", help="write the detected melody (and targets) as "
+                                        "note lists to this json — lanes-ready")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest:
         tmp = os.path.join(ROOT, "songs")
         sys.exit(selftest(tmp))
-    if not a.input or not a.output:
-        ap.error("input and output required (or --selftest)")
+    if not a.input or (not a.output and not a.analyze):
+        ap.error("input and output required (or --analyze / --selftest)")
     ov = dict(amount=a.strength, retune_ms=a.retune_ms,
               vibrato_keep=a.vibrato_keep, humanize=a.humanize_cents)
-    report = a.report or (os.path.splitext(a.output)[0] + ".report.json")
-    process(a.input, a.output, song_path=a.song, track=a.track, style_name=a.style,
+    out = None if a.analyze else a.output
+    report = a.report or (os.path.splitext(out or a.input)[0] + ".report.json")
+    edits = json.load(open(a.edits)) if a.edits else None
+    process(a.input, out, song_path=a.song, track=a.track, style_name=a.style,
             overrides=ov, key=a.key, guide_track=a.guide_track, region=a.region,
-            clip_index=a.clip_index, report_path=report, f0_mode=a.f0)
-    print(f"[retune] wrote {a.output} + {report}")
+            clip_index=a.clip_index, report_path=report, f0_mode=a.f0,
+            emit_midi_path=a.emit_midi, note_edits=edits, only_edits=a.only_edits,
+            engine=a.engine)
+    print(f"[retune] wrote {(out + ' + ') if out else '(analyze only) '}{report}"
+          + (f" + {a.emit_midi}" if a.emit_midi else ""))
 
 
 if __name__ == "__main__":
