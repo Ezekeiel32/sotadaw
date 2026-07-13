@@ -8,7 +8,21 @@
 
 #include <cstdio>
 #include <cstring>
-#include <dlfcn.h>
+#ifdef _WIN32
+ // PORT_SPEC.md: minimal dl* shim over LoadLibrary — a .clap on Windows is a DLL.
+ #ifndef WIN32_LEAN_AND_MEAN
+  #define WIN32_LEAN_AND_MEAN
+ #endif
+ #include <windows.h>
+ #define RTLD_LOCAL 0
+ #define RTLD_NOW 0
+ static void* dlopen (const char* p, int) { return (void*) ::LoadLibraryA (p); }
+ static int   dlclose (void* h) { return ::FreeLibrary ((HMODULE) h) ? 0 : 1; }
+ static void* dlsym (void* h, const char* s) { return (void*) ::GetProcAddress ((HMODULE) h, s); }
+ static const char* dlerror() { static char b[64]; std::snprintf (b, sizeof b, "win32 error %lu", ::GetLastError()); return b; }
+#else
+ #include <dlfcn.h>
+#endif
 #include <string>
 #include <vector>
 

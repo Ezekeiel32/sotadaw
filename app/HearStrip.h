@@ -179,8 +179,19 @@ private:
                 pendingWav = juce::File();
             }
             auto base = root.exists() ? root : juce::File::getCurrentWorkingDirectory();
-            auto py = base.getChildFile (".venv/bin/python");
-            juce::StringArray cmd { py.existsAsFile() ? py.getFullPathName() : juce::String ("python3"),
+            // self-contained python resolver: HearStrip is compiled by uismoke too,
+            // which never sees SongLoader.h (PORT_SPEC round-1 CI truth)
+            auto hearPy = [&base]() -> juce::String
+            {
+               #if JUCE_WINDOWS
+                auto venv = base.getChildFile (".venv/Scripts/python.exe");
+                return venv.existsAsFile() ? venv.getFullPathName() : juce::String ("python");
+               #else
+                auto venv = base.getChildFile (".venv/bin/python");
+                return venv.existsAsFile() ? venv.getFullPathName() : juce::String ("python3");
+               #endif
+            };
+            juce::StringArray cmd { hearPy(),
                                     base.getChildFile ("tools/hear.py").getFullPathName(),
                                     wav.getFullPathName(), "--json" };
             if (bpm > 0) { cmd.add ("--bpm"); cmd.add (juce::String (bpm)); }

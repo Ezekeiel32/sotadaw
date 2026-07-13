@@ -714,9 +714,15 @@ int main (int argc, char** argv)
     // exports keep human timestamps.
     if (std::getenv ("SOTADAW_RENDER_EPOCH") == nullptr)
     {
+       #ifdef _WIN32
+        _putenv_s ("SOTADAW_RENDER_EPOCH", "0");
+        _putenv_s ("TZ", "UTC");
+        _tzset();
+       #else
         ::setenv ("SOTADAW_RENDER_EPOCH", "0", 1);
         ::setenv ("TZ", "UTC", 1);
         ::tzset();
+       #endif
     }
 
     // V49: a stale flight file means the last session died inside a plugin op
