@@ -409,7 +409,11 @@ int main (int argc, char** argv)
             Stage()
             {
                 addAndMakeVisible (glass);
-                glass.setPanes ({ { 10, 12, 940, 66 }, { 10, 86, 940, 66 } }, GhostGlass::composing);
+                // keys EXERCISE the wave-2 keyed arrival path: never-ticked must
+                // still paint settled (a frame-0 regression here = pitch-dark panes
+                // through beginTransparencyLayer(~0) -> the lint's edge check dies)
+                glass.setPanes ({ { 10, 12, 940, 66 }, { 10, 86, 940, 66 } },
+                                GhostGlass::composing, { "kick", "bass" });
             }
             void resized() override { glass.setBounds (getLocalBounds()); }
             void paint (juce::Graphics& g) override

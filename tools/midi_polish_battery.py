@@ -161,6 +161,7 @@ def _grid_share(ns, grid=0.25, eps=0.02):
 
 def real():
     stems = os.path.join(ROOT, "songs", "_remix_demo_stems")
+    import torch  # noqa: F401 — CUDA PRELOAD before basic_pitch (law: tools/stems_import.py)
     from basic_pitch.inference import predict
     bpm = 120.0
     try:

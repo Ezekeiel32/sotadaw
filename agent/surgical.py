@@ -18,11 +18,15 @@ Note identity is the natural key (trackName, round(start,4), pitch) — song.jso
 no note ids and doesn't need them. A vel/len tweak keeps its key (reported as
 "changed"); a move is remove+add (both keys land in the receipt's touched set).
 
-Beats are pre-swing grid positions (swing is applied at the engine); 1 bar = 4 beats.
+Beats are pre-swing grid positions (swing is applied at the engine). Bar<->beat
+crossings route through tools/meter.py — THE WORLD GRID (#1): meterMap[] redefines
+what a bar is; mapless songs are bit-exact 4/4 identity (grid_lint is the law).
 """
-import bisect, json, math, os, random, re, time
+import bisect, json, math, os, random, re, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+from meter import bar_start_q, bar_at_q, song_meter   # the ONE bar<->beat resolver
 
 # ---------------------------------------------------------------- pitch names
 _NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -73,16 +77,17 @@ class TempoClock:
 
     def __init__(self, song):
         base = float(song.get("bpm", 120.0))
+        mm = song_meter(song)     # tempoMap points land TRUE under changing meters (#1)
         pts = [{"beat": 0.0, "bpm": base, "curve": 1.0}]
         for p in sorted(song.get("tempoMap") or [], key=lambda q: float(q.get("bar", 0))):
-            b = float(p.get("bar", 0)) * 4.0
+            b = bar_start_q(mm, float(p.get("bar", 0)))
             if b <= 0:
                 pts[0] = {"beat": 0.0, "bpm": float(p.get("bpm", base)),
                           "curve": float(p.get("curve", 1.0))}
             else:
                 pts.append({"beat": b, "bpm": float(p.get("bpm", base)),
                             "curve": float(p.get("curve", 1.0))})
-        self.total_beats = max(float(song.get("lengthBars", 4)) * 4.0,
+        self.total_beats = max(bar_start_q(mm, float(song.get("lengthBars", 4))),
                                pts[-1]["beat"] + 4.0)
         self.segs = []            # (b0, b1, bpm0, bpm1, curve) — bpm1 = value at b1
         self._cum = [0.0]         # seconds at each segment start
@@ -164,11 +169,12 @@ def parse_timestamp(s):
 def section_spans(song):
     """[(name, startBeat, endBeat)] — end = next section start or song end."""
     secs = sorted(song.get("sections") or [], key=lambda s: float(s.get("startBar", 0)))
-    total = float(song.get("lengthBars", 4)) * 4.0
+    mm = song_meter(song)
+    total = bar_start_q(mm, float(song.get("lengthBars", 4)))
     out = []
     for i, s in enumerate(secs):
-        b0 = float(s.get("startBar", 0)) * 4.0
-        b1 = float(secs[i + 1].get("startBar", 0)) * 4.0 if i + 1 < len(secs) else total
+        b0 = bar_start_q(mm, float(s.get("startBar", 0)))
+        b1 = bar_start_q(mm, float(secs[i + 1].get("startBar", 0))) if i + 1 < len(secs) else total
         out.append((str(s.get("name", f"section{i}")), b0, b1))
     return out
 
@@ -296,7 +302,7 @@ def resolve_time_point(song, spec, clock=None):
         if "beat" in spec:
             return float(spec["beat"])
         if "bar" in spec:
-            return float(spec["bar"]) * 4.0
+            return bar_start_q(song_meter(song), float(spec["bar"]))
         if "time" in spec:
             sec = spec["time"] if isinstance(spec["time"], (int, float)) else parse_timestamp(spec["time"])
             if sec is None:
@@ -307,7 +313,8 @@ def resolve_time_point(song, spec, clock=None):
             if not sp:
                 raise ValueError(f"no section '{spec['section']}' (have: "
                                  f"{[s[0] for s in section_spans(song)]})")
-            return sp[1] + float(spec.get("barOffset", 0)) * 4.0
+            mm = song_meter(song)
+            return bar_start_q(mm, bar_at_q(mm, sp[1]) + float(spec.get("barOffset", 0)))
     raise ValueError(f"bad time spec: {spec!r}")
 
 def _num_range(spec, lo_def, hi_def):
@@ -387,12 +394,13 @@ def resolve_tracks(song, spec):
 def resolve_range(song, sel, clock=None):
     """beats/bars/section/time/around -> (b0, b1, explain) or (None, None, note)."""
     clock = clock or TempoClock(song)
-    total = float(song.get("lengthBars", 4)) * 4.0
+    mm = song_meter(song)
+    total = bar_start_q(mm, float(song.get("lengthBars", 4)))
     if sel.get("beats") is not None:
         a, b = float(sel["beats"][0]), float(sel["beats"][1])
         return a, b, f"beats [{a:g}, {b:g})"
     if sel.get("bars") is not None:
-        a, b = float(sel["bars"][0]) * 4.0, float(sel["bars"][1]) * 4.0
+        a, b = bar_start_q(mm, float(sel["bars"][0])), bar_start_q(mm, float(sel["bars"][1]))
         return a, b, f"bars [{sel['bars'][0]:g}, {sel['bars'][1]:g}) = beats [{a:g}, {b:g})"
     if sel.get("section") is not None:
         spec = sel["section"]
@@ -400,7 +408,7 @@ def resolve_range(song, sel, clock=None):
         sp = find_section(song, nm, occ)
         if not sp:
             raise ValueError(f"no section '{nm}' (have: {[s[0] for s in section_spans(song)]})")
-        return sp[1], sp[2], f"section '{sp[0]}' = bars [{sp[1]/4:g}, {sp[2]/4:g}) = beats [{sp[1]:g}, {sp[2]:g})"
+        return sp[1], sp[2], f"section '{sp[0]}' = bars [{bar_at_q(mm, sp[1]):g}, {bar_at_q(mm, sp[2]):g}) = beats [{sp[1]:g}, {sp[2]:g})"
     if sel.get("time") is not None:
         tv = sel["time"]
         if isinstance(tv, (list, tuple)) and len(tv) == 2:
@@ -408,8 +416,9 @@ def resolve_range(song, sel, clock=None):
             b = resolve_time_point(song, {"time": tv[1]}, clock)
             return a, b, f"time [{tv[0]}, {tv[1]}] = beats [{a:g}, {b:g})"
         beat = resolve_time_point(song, {"time": tv}, clock)
-        a, b = math.floor(beat / 4.0) * 4.0, math.floor(beat / 4.0) * 4.0 + 4.0
-        return a, b, f"time {tv} = beat {beat:g} (sec {clock.seconds_at(beat):.2f}) -> bar [{a/4:g},{b/4:g})"
+        bb = math.floor(bar_at_q(mm, beat))
+        a, b = bar_start_q(mm, bb), bar_start_q(mm, bb + 1)
+        return a, b, f"time {tv} = beat {beat:g} (sec {clock.seconds_at(beat):.2f}) -> bar [{bb:g},{bb + 1:g})"
     if sel.get("around") is not None:
         ar = dict(sel["around"])
         w = float(ar.pop("widthBeats", 2.0))
@@ -536,15 +545,17 @@ def automation_value_at(points, beat):
 def whats_at(song, beat, halo=1.0):
     """The NOW snapshot: what is sounding / about to hit at `beat`, per track."""
     clock = TempoClock(song)
+    mm = song_meter(song)
     beat = float(beat)
     sec = clock.seconds_at(beat)
-    out = {"beat": round(beat, 3), "bar": round(beat / 4.0, 3), "seconds": round(sec, 3),
+    out = {"beat": round(beat, 3), "bar": round(bar_at_q(mm, beat), 3), "seconds": round(sec, 3),
            "clockTime": f"{int(sec // 60)}:{sec % 60:05.2f}", "bpm": round(clock.bpm_at(beat), 2),
            "section": None, "tracks": []}
     sc = section_at(song, beat)
     if sc:
-        out["section"] = {"name": sc[0], "barInSection": round((beat - sc[1]) / 4.0, 2),
-                          "bars": [sc[1] / 4.0, sc[2] / 4.0]}
+        out["section"] = {"name": sc[0],
+                          "barInSection": round(bar_at_q(mm, beat) - bar_at_q(mm, sc[1]), 2),
+                          "bars": [bar_at_q(mm, sc[1]), bar_at_q(mm, sc[2])]}
     for ti, t in enumerate(song.get("tracks", [])):
         role, _ = track_role(t)
         sounding, upcoming = [], []
@@ -885,9 +896,10 @@ def apply_ops(song, sel, ops, seed="scalpel"):
         tracks[ti].get("notes", []).sort(key=lambda n: (float(n["start"]), int(n["pitch"])))
     # keep the song valid if edits pushed past the end
     end = max([float(n["start"]) + float(n.get("len", 0)) for _, n in matched] or [0.0])
-    total = float(song.get("lengthBars", 4)) * 4.0
+    mm = song_meter(song)
+    total = bar_start_q(mm, float(song.get("lengthBars", 4)))
     if end > total:
-        song["lengthBars"] = int(math.ceil(end / 4.0))
+        song["lengthBars"] = int(math.ceil(bar_at_q(mm, end)))
         prop_changes.append("meta:lengthBars")
 
     after_keys = sorted({note_key(tname(ti), n) for ti, n in matched})
@@ -923,7 +935,7 @@ def edit_audio_clip(song, ti, ci, op, value=None):
     if ci < 0 or ci >= len(clips):
         raise ValueError(f"clip {ci} out of range (0..{len(clips) - 1})")
     ac = clips[ci]
-    total = float(song.get("lengthBars", 4)) * 4.0
+    total = bar_start_q(song_meter(song), float(song.get("lengthBars", 4)))
     bpm = float(song.get("bpm", 120) or 120)
     spb = 60.0 / (float(ac.get("sourceBpm", 0) or 0) or bpm)   # sec/beat at the clip's rate
     start = float(ac.get("startBeat", 0))
@@ -982,7 +994,7 @@ def summarize_receipt(rc):
     where = ""
     if sc.get("range"):
         a, b = sc["range"]
-        where = f" in bars {a/4:g}–{b/4:g}"
+        where = f" in bars {a/4:g}–{b/4:g}"   # grid-ok: receipt rows carry no song context
     return (f"{'+'.join(sc.get('tracks') or ['?'])}: {'; '.join(rc.get('ops') or ['(no ops)'])}"
             f"{where} [{len(rc.get('removed_keys', []))}→{len(rc.get('added_keys', []))} notes]")
 

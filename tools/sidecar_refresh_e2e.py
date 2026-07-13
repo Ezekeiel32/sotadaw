@@ -82,14 +82,26 @@ def run_once(idx):
         # THE MEMO FAMILY SEAM (2026-07-11, his genre-less accept row): the verb
         # above stamped last_prompts[SONG] in the live image; a SECOND refresh
         # must persist the whole ask-context family through the execv save.
+        # The storm guard (2026-07-12) spaces rebirths >=60s — this leg tests
+        # the EXECV SAVE, not the cooldown (refresh_guard_battery owns that):
+        # backdate the stamp so the second refresh fires inside the deadline.
         n_ref = sum(1 for e in events(ipc) if "self-refresh" in e.get("text", ""))
+        stamp = os.path.join(ipc, ".self_refresh_stamp")
+        try:
+            t_back = time.time() - 120
+            os.utime(stamp, (t_back, t_back))
+        except OSError:
+            pass
         os.utime(SIDE)
         deadline = time.time() + 15
+        refreshed2 = False
         while time.time() < deadline:
             if sum(1 for e in events(ipc)
                    if "self-refresh" in e.get("text", "")) > n_ref:
+                refreshed2 = True
                 break
             time.sleep(0.3)
+        ok(refreshed2, "SECOND refresh fires past the backdated cooldown")
         fs = {}
         deadline = time.time() + 10
         while time.time() < deadline:

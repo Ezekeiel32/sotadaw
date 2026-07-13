@@ -42,6 +42,15 @@ leg "delta_ear (revise Δ seam)"    python3 tools/delta_ear_e2e.py
 leg "blind_round (N-take A/B)"     python3 tools/blind_round_e2e.py
 leg "blind_card (UI pick seam)"    python3 tools/blind_card_e2e.py
 leg "world_grid (#1 den-8/16)"     python3 tools/world_grid_e2e.py
+leg "midi_meter (#1 FF58 bridge)"  python3 tools/midi_meter_battery.py
+leg "grid (#1 agent-layer bars)"   python3 tools/grid_battery.py
+leg "meter (#1 native_meter)"      python3 tools/meter_battery.py
+leg "grid_lint (ONE resolver)"     python3 tools/grid_lint.py
+leg "cuda_preload_lint (bp rail)"  python3 tools/cuda_preload_lint.py
+leg "refresh_guard (no storm)"     python3 tools/refresh_guard_battery.py
+leg "done_court (one done/run)"    python3 tools/done_court_battery.py
+leg "crash_pin (symbolize law)"    python3 tools/crash_symbolize.py --selftest
+leg "resurrection_court (zombies)" python3 tools/resurrection_battery.py
 leg "prop_fence (base immutable)"  python3 tools/prop_fence_e2e.py
 leg "living_cards (chat rolls)"    python3 tools/cards_e2e.py 1
 leg "ears_on_write"                python3 tools/ears_on_write_battery.py
@@ -71,9 +80,11 @@ leg "wall_lint"                    python3 tools/wall_lint.py
 leg "receipt_lint"                 python3 tools/receipt_lint.py
 leg "songname_lint"                python3 tools/songname_lint.py
 leg "card_lint"                    python3 tools/card_lint.py
+leg "uismoke_pixels (frame-0)"     python3 tools/uismoke_pixel_lint.py
 leg "sidecar_refresh"              python3 tools/sidecar_refresh_e2e.py 1
 leg "feel_born"                    python3 tools/feel_born_battery.py
 leg "face_census"                  python3 tools/face_census.py
+leg "flows (musicflow + QC probe)" "$VENVPY" tools/flow_battery.py
 leg "controller_profiles"          python3 tools/controller_profiles_lint.py
 leg "semantic_ears (V53)"          "$VENVPY" tools/semantic_battery.py
 leg "palettes_v2"                  "$VENVPY" tools/palette_battery.py

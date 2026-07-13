@@ -202,6 +202,15 @@ def transcribe(wav_path, bpm, max_notes=400, min_len_s=0.06, min_amp=0.15,
     events are soup (octave ghosts, shattered sustains, overlaps on mono sources,
     off-grid jitter — and the old cap truncated the song's TAIL). midi_polish
     fixes all of it role-aware; battery: tools/midi_polish_battery.py --real."""
+    # THE CUDA PRELOAD LAW (2026-07-12, the transcription rail was DEAD on Chezy's
+    # box): the onnxruntime that serves basic-pitch here is a CUDA build whose
+    # libcudart.so.13 ships inside the nvidia wheels — NOT on the dynamic loader
+    # path. Imported bare it raises ImportError, and basic_pitch's backend probe
+    # catches that as "onnxruntime is not installed": all four backends go False,
+    # _default_model_type never binds, and the import dies on a NameError that
+    # names nothing. torch loads libcudart first (this is why sing.py's CUDA voice
+    # always worked and this rail never did). Import torch BEFORE basic_pitch.
+    import torch  # noqa: F401  (side-effect import: preloads the CUDA runtime)
     from basic_pitch.inference import predict
     import midi_polish
     _, _, note_events = predict(wav_path)

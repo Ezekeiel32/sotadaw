@@ -44,6 +44,16 @@ def check_genre(genre, grid, do_render):
     pcs = pcs_for(song.get("key", "A minor"))
     fails = []
     tracks = {t["name"]: t for t in song["tracks"]}
+    # THE WORLD GRID (#1): every bar window below rides the song's OWN meter —
+    # raw `b*4` windows sliced a 7/8 song (bar = 3.5q) at wrong phases and
+    # convicted a bit-perfect kick anchor of ANCHOR (balkan_brass/rebetiko/
+    # math_rock, 2026-07-13). Mapless songs: bar_start_q(M,b) == b*4.0 exactly.
+    import meter
+    M = meter.song_meter(song)
+    barw = lambda tr, b: sorted(round(n["start"] - meter.bar_start_q(M, b), 3)
+                                for n in tr["notes"]
+                                if meter.bar_start_q(M, b) <= n["start"]
+                                < meter.bar_start_q(M, b + 1))
     if grid.get("lead"):
         lead = tracks.get("lead")
         if not lead or any(n["pitch"] % 12 not in pcs for n in lead["notes"]):
@@ -63,7 +73,8 @@ def check_genre(genre, grid, do_render):
                 i = d - 1
                 chord = {pcs[i % 7], pcs[(i + 2) % 7], pcs[(i + 4) % 7],
                          (pcs[i % 7] + 7) % 12, (pcs[i % 7] + 10) % 12, (pcs[i % 7] + 5) % 12}
-                broots = {n["pitch"] % 12 for n in bass["notes"] if bar * 4 <= n["start"] < (bar + 1) * 4}
+                blo, bhi = meter.bar_start_q(M, bar), meter.bar_start_q(M, bar + 1)
+                broots = {n["pitch"] % 12 for n in bass["notes"] if blo <= n["start"] < bhi}
                 if broots and not (broots & chord):
                     fails.append("CHANGES")
                     break
@@ -94,16 +105,16 @@ def check_genre(genre, grid, do_render):
     for lane in ("hat", "openhat", "ride", "ghost"):
         tr = tracks.get(lane)
         if tr and tr.get("notes"):
-            fp = lambda b: sorted((round(n["start"] % 4, 3), n["vel"])
-                                  for n in tr["notes"] if b * 4 <= n["start"] < b * 4 + 4)
+            fp = lambda b: sorted((round(n["start"] - meter.bar_start_q(M, b), 3), n["vel"])
+                                  for n in tr["notes"]
+                                  if meter.bar_start_q(M, b) <= n["start"]
+                                  < meter.bar_start_q(M, b + 1))
             if fp(1) and fp(2) and fp(1) == fp(2):
                 fails.append(f"CLONE({lane})")
             break
     ktr = tracks.get("kick")
     if ktr and ktr.get("notes"):
-        ko = lambda b: sorted(round(n["start"] % 4, 3)
-                              for n in ktr["notes"] if b * 4 <= n["start"] < b * 4 + 4)
-        if ko(0) and ko(2) and ko(0) != ko(2):
+        if barw(ktr, 0) and barw(ktr, 2) and barw(ktr, 0) != barw(ktr, 2):
             fails.append("ANCHOR")
     if grid.get("fill"):
         # a fill passes if ANY filled lane differs in the final bar (adding a
@@ -115,8 +126,7 @@ def check_genre(genre, grid, do_render):
             tr = tracks.get(lane)
             if tr is None:
                 continue
-            b1 = sorted(round(n["start"] % 4, 3) for n in tr["notes"] if 0 <= n["start"] < 4)
-            b4 = sorted(round(n["start"] % 4, 3) for n in tr["notes"] if 12 <= n["start"] < 16)
+            b1, b4 = barw(tr, 0), barw(tr, 3)
             if b1 != b4:
                 any_diff = True
                 break

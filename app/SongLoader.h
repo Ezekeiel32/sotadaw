@@ -246,6 +246,23 @@ struct Song
         return meterMap.empty() ? lengthBars * 4.0 : barStartBeat (lengthBars);
     }
 
+    // fractional bar index containing quarter-beat q (barStartBeat's inverse;
+    // the UI's bar counters / snap / "add at bar N" all read bars through this)
+    double barAtBeat (double q) const
+    {
+        if (meterMap.empty())
+            return q / 4.0;
+        double regionQ = 0.0, prevBar = 0.0, per = 4.0;
+        for (auto& mp : meterMap)
+        {
+            const double mq = barStartBeat (mp.bar);
+            if (mq >= q + 1e-9) break;
+            regionQ = mq; prevBar = mp.bar;
+            per = mp.num * (4.0 / mp.den);
+        }
+        return prevBar + (q - regionQ) / per;
+    }
+
     // THE CONVERSION BOUNDARY (#1, den 8/16): engine BeatPositions are
     // DENOMINATOR-beats (measured 2026-07-12: 18 quarter-beats fed under a 7/8
     // timesig rendered 4.5s — every unit became an eighth). The whole song

@@ -17,6 +17,7 @@ import argparse, copy, json, os, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+import meter                               # THE WORLD GRID: the ONE bar resolver
 from scene_strips import classify_track
 
 HAT_PITCHES = {42, 44, 46}
@@ -235,7 +236,16 @@ def form_family_for(genre):
 
 def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
     song = json.load(open(song_path))
-    loop_beats = float(song.get("lengthBars", 4)) * 4.0
+    # THE WORLD GRID (BEST_DAW_30 #1): _BQ = the bar's quarter-beats. Every
+    # bar<->beat crossing below rides it, so a 7/8 loop ARRANGES in 7/8 —
+    # sections, journeys, drops, fills and automation all land on real
+    # barlines. Mapless songs give _BQ = 4.0 and every formula is bit-for-bit
+    # what it was (the identity law; tools/meter_battery.py is the court).
+    # UNIFORM meters only: loop_gen stamps one meterMap row at bar 0. A
+    # mid-song meter change survives the copy but is not yet re-planned —
+    # that's the follow-on wave.
+    _BQ = meter.beats_in_bar(meter.song_meter(song), 0)
+    loop_beats = float(song.get("lengthBars", 4)) * _BQ
     g = (genre or str(song.get("comment", "")).split("loop:")[-1].strip()
          or (song.get("_loop") or {}).get("genre", "")).lower()   # _loop = birth provenance
 
@@ -258,7 +268,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
         seen, plan = {}, []
         for base, rw in zip(classes, raw):
             sec_s = float(_dur.get(rw, _DEF.get(rw, 20.0)))
-            bars = max(4, min(16, int(round(sec_s * _bpm / 60.0 / 4.0 / 4.0) * 4)))
+            bars = max(4, min(16, int(round(sec_s * _bpm / 60.0 / _BQ / 4.0) * 4)))  # grid-ok: /_BQ crossed to bars; the /4*4 quantizes to 4-BAR PHRASES (form, not meter)
             seen[base] = seen.get(base, 0) + 1
             plan.append((base if seen[base] == 1 else f"{base}{seen[base]}", bars))
     else:
@@ -314,10 +324,10 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             if secbase == "intro" and cls == "drums" and not any(w in name_l for w in ("kick", "hat")):
                 allowed = False            # real intros strip to kick+hat
             if allowed:
-                sec_beats = bars * 4.0
+                sec_beats = bars * _BQ
                 reps = int(sec_beats // loop_beats) or 1
-                sec_end = (cursor_bar + bars) * 4.0
-                song_end = total_bars * 4.0
+                sec_end = (cursor_bar + bars) * _BQ
+                song_end = total_bars * _BQ
                 # REPEAT CRIME (dr07): which INSTANCE of this section base is
                 # this (drop=0, drop2=1, chorus3=2)? Later instances vary.
                 _inst = 0
@@ -328,7 +338,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                         _inst = 0
                 _rv_on = os.environ.get("SOTADAW_REPEATVAR", "1") != "0"
                 for r in range(reps):
-                    base = cursor_bar * 4.0 + r * loop_beats
+                    base = cursor_bar * _BQ + r * loop_beats
                     rep_notes = vary_rep(src_notes, r, cls, loop_beats,
                                          inst=_inst if _rv_on else 0, vkey=sec)
                     for n in rep_notes:
@@ -366,12 +376,12 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                         if (_rv_on and _inst >= 1 and secbase == "verse"
                                 and cls == "other"
                                 and any(w in name_l for w in ("color", "arp", "pad"))
-                                and base + n["start"] < cursor_bar * 4.0 + bars * 2.0):
+                                and base + n["start"] < cursor_bar * _BQ + bars * _BQ * 0.5):
                             continue
                         if secbase in ("build", "prechorus"):
                             # ramp INSIDE this section's own bounds (any buildN; the old
                             # form normalized by plan[:2] = already 1.0 at build's start)
-                            prog = (base + n["start"] - cursor_bar * 4.0) / max(1.0, bars * 4.0)
+                            prog = (base + n["start"] - cursor_bar * _BQ) / max(1.0, bars * _BQ)
                             v = min(1.0, v * (0.62 + 0.38 * min(1.0, prog)))
                         if secbase == "drop" and sec != "drop":
                             v = min(1.0, v * 1.06)   # later drops HIT harder (escalation law)
@@ -380,7 +390,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                             # pass) — a fade is a demo tell. Song forms keep
                             # the gentle ramp under the tag.
                             if not (_outro_speaks and not _has_verse):
-                                done = (base + n["start"] - (total_bars - plan[-1][1]) * 4.0) / (plan[-1][1] * 4.0)
+                                done = (base + n["start"] - (total_bars - plan[-1][1]) * _BQ) / (plan[-1][1] * _BQ)
                                 v = max(0.15, v * (1.0 - 0.6 * max(0.0, done)))
                         nn = dict(n)
                         nn["start"] = round(base + n["start"], 4)
@@ -438,13 +448,13 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             if classes.get(t.get("name", "")) == "drums":
                 continue
             for n in t.get("notes", []):
-                _sh = _bar_shift[min(int(n["start"] // 4), total_bars)]
+                _sh = _bar_shift[min(int(n["start"] // _BQ), total_bars)]
                 if _sh:
                     n["pitch"] = int(max(24, min(103, _shift_pitch(n["pitch"], _sh))))
             if _last_drop and t.get("name", "").lower().startswith("lead"):
                 _lb, _nb = _last_drop
                 for n in t.get("notes", []):
-                    if _lb * 4.0 <= n["start"] < (_lb + _nb) * 4.0 and n["pitch"] <= 88:
+                    if _lb * _BQ <= n["start"] < (_lb + _nb) * _BQ and n["pitch"] <= 88:
                         n["pitch"] += 12
     except Exception:
         pass
@@ -473,7 +483,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _acc9b = 0
             for _sec, _bn in plan:
                 _isarr = _sec.rstrip("0123456789") in ("drop", "chorus")
-                _s0, _s1 = _acc9b * 4.0, (_acc9b + _bn) * 4.0
+                _s0, _s1 = _acc9b * _BQ, (_acc9b + _bn) * _BQ
                 _acc9b += _bn
                 if not _isarr or _bn < 8:
                     continue
@@ -492,7 +502,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                         _fr = n["start"] % 1.0
                         if _fr < 0.08 or _fr > 0.92:
                             continue                 # anchors stay (strong_ct law)
-                        _bj = min(int(n["start"] // 4), total_bars)
+                        _bj = min(int(n["start"] // _BQ), total_bars)
                         _cd = _deg9(_bj) + _bar_shift[_bj]
                         _tri = [(_root + _iv[(_cd + o - 1) % 7]) % 12
                                 for o in (0, 2, 4)]
@@ -515,7 +525,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
     try:
         if (os.environ.get("SOTADAW_PICKUP", "1") != "0" and _has_verse
                 and plan[0][0] == "intro"):
-            _i_end2 = plan[0][1] * 4.0
+            _i_end2 = plan[0][1] * _BQ
             lead_trP = next((t for t in out["tracks"]
                              if t.get("name", "").lower() == "lead"
                              and t.get("notes")), None)
@@ -560,11 +570,11 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
     try:
         if (os.environ.get("SOTADAW_TEASE", "1") != "0" and not _has_verse
                 and plan[0][0] == "intro" and plan[0][1] >= 8):
-            _i_end = plan[0][1] * 4.0
+            _i_end = plan[0][1] * _BQ
             _arr0, _accT = None, 0
             for _sec, _bn in plan:
                 if _sec.rstrip("0123456789") in ("drop", "chorus"):
-                    _arr0 = _accT * 4.0
+                    _arr0 = _accT * _BQ
                     break
                 _accT += _bn
             lead_tr3 = next((t for t in out["tracks"]
@@ -598,7 +608,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _bsp, _accR = [], 0
             for _sec, _bn in plan:
                 if _sec.rstrip("0123456789") == "break":
-                    _bsp.append((_accR * 4.0, (_accR + _bn) * 4.0))
+                    _bsp.append((_accR * _BQ, (_accR + _bn) * _BQ))
                 _accR += _bn
             if _bsp:
                 for t in out["tracks"]:
@@ -636,13 +646,13 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _spans, _acc = [], 0
             for _sec, _bn in plan:
                 if _sec.rstrip("0123456789") in ("chorus", "drop"):
-                    _spans.append((_acc * 4.0, (_acc + _bn) * 4.0, 1.0))
+                    _spans.append((_acc * _BQ, (_acc + _bn) * _BQ, 1.0))
                 # W37: THE SECOND VERSE ANSWERS — verse 1 recites bare, verse
                 # 2+ gains the counter softly (x0.72): the classic build
                 # across verses. SOTADAW_COUNTER2=0 keeps verses bare.
                 elif (_sec.rstrip("0123456789") == "verse" and _sec != "verse"
                       and os.environ.get("SOTADAW_COUNTER2", "1") != "0"):
-                    _spans.append((_acc * 4.0, (_acc + _bn) * 4.0, 0.72))
+                    _spans.append((_acc * _BQ, (_acc + _bn) * _BQ, 0.72))
                 _acc += _bn
             cnotes = []
             # W85 THE COUNTER VARIES: the census read 2 unique cells / 8
@@ -688,7 +698,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                     offs = _SHAPES[(_si * 3 + k) % len(_SHAPES)][:cnt]
                     for j, off in enumerate(offs):
                         tt = t0 + 0.5 * j
-                        bj = min(int(tt // 4), total_bars)
+                        bj = min(int(tt // _BQ), total_bars)
                         cd = _deg_at(bj) + _bar_shift[bj] + off
                         pc = (_root + _iv[(cd - 1) % 7]) % 12
                         pitch = pc + 12 * int(round((center - pc) / 12.0))
@@ -756,7 +766,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _vspans, _acc = [], 0
             for _sec, _bn in plan:
                 if _sec.rstrip("0123456789") == "verse":
-                    _vspans.append((_acc * 4.0, (_acc + _bn) * 4.0))
+                    _vspans.append((_acc * _BQ, (_acc + _bn) * _BQ))
                 _acc += _bn
             if _vspans:
                 _dna2, _ = _lg.genre_dna(g)
@@ -781,9 +791,9 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                         _med = _meds[len(_meds) // 2]
                         _last = max(vs, key=lambda n: n["start"])
                         for n in vs:
-                            _bj = min(int(n["start"] // 4), total_bars)
+                            _bj = min(int(n["start"] // _BQ), total_bars)
                             _cd = _deg2(_bj) + _bar_shift[_bj]
-                            _off = (0, 2, 4, 2)[int(n["start"] % 4.0)]
+                            _off = (0, 2, 4, 2)[int(n["start"] % _BQ) % 4]
                             if n is _last:
                                 _off = 0             # the phrase cadences home
                             _pc = (_root + _iv[(_cd + _off - 1) % 7]) % 12
@@ -811,7 +821,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _acc7 = 0
             for _sec, _bn in plan:
                 _lay = _PKT.get(_sec.rstrip("0123456789"))
-                _s0, _s1 = _acc7 * 4.0, (_acc7 + _bn) * 4.0
+                _s0, _s1 = _acc7 * _BQ, (_acc7 + _bn) * _BQ
                 _acc7 += _bn
                 if not _lay:
                     continue
@@ -845,7 +855,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _dsR9, _accR9 = [], 0
             for _sec, _bn in plan:
                 if _sec.rstrip("0123456789") in ("chorus", "drop"):
-                    _dsR9.append(_accR9 * 4.0)
+                    _dsR9.append(_accR9 * _BQ)
                 _accR9 += _bn
             if _leadR9 and _dsR9:
                 _rroot, _riv = _lg.key_scale(out.get("key") or "A minor")
@@ -898,7 +908,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _bsp2, _accB = [], 0
             for _sec, _bn in plan:
                 if _sec.rstrip("0123456789") == "break" and _bn >= 4:
-                    _bsp2.append((_accB * 4.0, (_accB + _bn) * 4.0))
+                    _bsp2.append((_accB * _BQ, (_accB + _bn) * _BQ))
                 _accB += _bn
             _leadB = next((t for t in out["tracks"]
                            if t.get("name") == "lead" and t.get("notes")), None)
@@ -908,7 +918,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                 _dsB, _accD = [], 0
                 for _sec, _bn in plan:
                     if _sec.rstrip("0123456789") == "drop":
-                        _dsB.append(_accD * 4.0)
+                        _dsB.append(_accD * _BQ)
                     _accD += _bn
                 _src0 = min(_dsB) if _dsB else 0.0
                 _phrase = sorted((n for n in _leadB["notes"]
@@ -957,7 +967,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _brsp, _accB = [], 0
             for _sec, _bn in plan:
                 if _sec.rstrip("0123456789") == "bridge":
-                    _brsp.append((_accB * 4.0, (_accB + _bn) * 4.0))
+                    _brsp.append((_accB * _BQ, (_accB + _bn) * _BQ))
                 _accB += _bn
             if _ctrT is not None and _brsp:
                 for t in out["tracks"]:
@@ -989,7 +999,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _acc8 = 0                                # beat (wave 43, ledger dr24)
             for _sec, _bn in plan:
                 _isv = _sec.rstrip("0123456789") == "verse"
-                _s0, _s1 = _acc8 * 4.0, (_acc8 + _bn) * 4.0
+                _s0, _s1 = _acc8 * _BQ, (_acc8 + _bn) * _BQ
                 _acc8 += _bn
                 if not _isv:
                     continue
@@ -1001,7 +1011,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                         kept = [n for n in t["notes"]
                                 if not (_s0 <= n["start"] < _s1)
                                 or (lambda fr: fr < 0.08 or abs(fr - 2.0) < 0.08
-                                    or fr > 3.92)(n["start"] % 4.0)]
+                                    or fr > 3.92)(n["start"] % _BQ)]
                         # never strip a verse to NO kick (odd meters/edge DNA)
                         if any(_s0 <= n["start"] < _s1 for n in kept):
                             t["notes"] = kept
@@ -1012,7 +1022,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                             if not (_s0 <= n["start"] < _s1
                                     and n.get("pitch") in SNARE_PITCHES)
                             or (lambda fr: abs(fr - 1.0) < 0.08
-                                or abs(fr - 3.0) < 0.08)(n["start"] % 4.0)]
+                                or abs(fr - 3.0) < 0.08)(n["start"] % _BQ)]
     except Exception:
         pass
 
@@ -1022,7 +1032,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
     acc = 0
     for nm, bars in plan:
         if nm.rstrip("0123456789") in ("drop", "chorus") and acc > 0:
-            drop_starts.append(acc * 4.0)
+            drop_starts.append(acc * _BQ)
         acc += bars
     snare_tr = next((t for t in out["tracks"]
                      if classes[t.get("name", "")] == "drums"
@@ -1037,7 +1047,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
     drop_only, acc2 = [], 0
     for nm, bars_ in plan:
         if nm.rstrip("0123456789") == "drop" and acc2 > 0:
-            drop_only.append(acc2 * 4.0)
+            drop_only.append(acc2 * _BQ)
         acc2 += bars_
     bpm_ = float(song.get("bpm", 120))
     # W20 TRANSITION VARIETY: the FIRST drop earns the riser; later drops
@@ -1078,7 +1088,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
         _acc3 = 0
         for nm, bars_ in plan:
             if nm.rstrip("0123456789") in ("break", "bridge") and _acc3 > 0:
-                _soft_marks.append(_acc3 * 4.0)
+                _soft_marks.append(_acc3 * _BQ)
             _acc3 += bars_
     _crash_ok = (fam in ("club", "pop")
                  or (fam in (None, "song") and g not in NO_CRASH_GENRES))
@@ -1101,7 +1111,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
         _cur, _chorspans = 0, []
         for _nm, _b in plan:               # sections land in out[] later (1638);
             if _nm.rstrip("0123456789") == "chorus":   # the plan IS the truth here
-                _chorspans.append((_cur * 4.0, (_cur + _b) * 4.0))
+                _chorspans.append((_cur * _BQ, (_cur + _b) * _BQ))
             _cur += _b
         if len(_chorspans) >= 3:
             _c0, _c1 = _chorspans[-1]
@@ -1176,22 +1186,22 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             # 32nd stutter burst into the wall; the snare keeps its backbeat.
             ht = hat_trs[0]
             hp = next((n["pitch"] for n in ht["notes"] if n.get("pitch") in HAT_PITCHES), 42)
-            burst = [{"pitch": hp, "start": round(ds - 4.0 + i * 0.25, 4),
-                      "len": 0.12, "vel": round(0.5 + 0.03 * i, 3)} for i in range(8)]
-            burst += [{"pitch": hp, "start": round(ds - 2.0 + i * 0.125, 4),
-                       "len": 0.1, "vel": round(0.62 + 0.022 * i, 3)} for i in range(16)]
+            burst = [{"pitch": hp, "start": round(ds - _BQ + i * 0.25, 4),
+                      "len": 0.12, "vel": round(0.5 + 0.03 * i, 3)} for i in range(int(_BQ * 2))]
+            burst += [{"pitch": hp, "start": round(ds - _BQ * 0.5 + i * 0.125, 4),
+                       "len": 0.1, "vel": round(0.62 + 0.022 * i, 3)} for i in range(int(_BQ * 4))]
             ht["notes"] = [n for n in ht["notes"]
-                           if not (ds - 4.0 <= n["start"] < ds and n.get("pitch") in HAT_PITCHES)]
+                           if not (ds - _BQ <= n["start"] < ds and n.get("pitch") in HAT_PITCHES)]
             ht["notes"].extend(burst)
         elif fill == "break_chop" and snare_tr is not None:
             # dnb/jungle: displaced snare chops (the Amen turnaround), not a ramp
             sp = next((n["pitch"] for n in snare_tr["notes"] if n.get("pitch") in SNARE_PITCHES), 38)
-            chops = [{"pitch": sp, "start": round(ds - 4.0 + o, 4), "len": 0.2,
+            chops = [{"pitch": sp, "start": round(ds - _BQ + o, 4), "len": 0.2,
                       "vel": v} for o, v in ((0.0, 0.7), (0.75, 0.62), (1.25, 0.66),
                                              (2.0, 0.74), (2.75, 0.68), (3.25, 0.72),
-                                             (3.5, 0.8), (3.75, 0.9))]
+                                             (3.5, 0.8), (3.75, 0.9)) if o < _BQ]
             snare_tr["notes"] = [n for n in snare_tr["notes"]
-                                 if not (ds - 4.0 <= n["start"] < ds and n.get("pitch") in SNARE_PITCHES)]
+                                 if not (ds - _BQ <= n["start"] < ds and n.get("pitch") in SNARE_PITCHES)]
             snare_tr["notes"].extend(chops)
         elif fill == "ghost_drag" and snare_tr is not None:
             # funk/soul: keep the groove; a ghost ruff drags into the downbeat
@@ -1204,14 +1214,14 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
         elif snare_tr is not None:                   # the classic roll (house/techno land)
             sp = next((n["pitch"] for n in snare_tr["notes"] if n.get("pitch") in SNARE_PITCHES), 38)
             roll = []
-            for i in range(8):                       # bar -2: eighths, rising
-                roll.append({"pitch": sp, "start": round(ds - 8.0 + i * 0.5, 4),
+            for i in range(int(_BQ * 2)):                       # bar -2: eighths, rising
+                roll.append({"pitch": sp, "start": round(ds - 2 * _BQ + i * 0.5, 4),
                              "len": 0.4, "vel": round(0.4 + 0.05 * i, 3)})
-            for i in range(16):                      # bar -1: sixteenths into the wall
-                roll.append({"pitch": sp, "start": round(ds - 4.0 + i * 0.25, 4),
+            for i in range(int(_BQ * 4)):                      # bar -1: sixteenths into the wall
+                roll.append({"pitch": sp, "start": round(ds - _BQ + i * 0.25, 4),
                              "len": 0.2, "vel": round(0.55 + 0.028 * i, 3)})
             snare_tr["notes"] = [n for n in snare_tr["notes"]
-                                 if not (ds - 8.0 <= n["start"] < ds and n.get("pitch") in SNARE_PITCHES)]
+                                 if not (ds - 2 * _BQ <= n["start"] < ds and n.get("pitch") in SNARE_PITCHES)]
             snare_tr["notes"].extend(roll)
         if fill not in ("hat_stutter", "dropout"):
             for t in hat_trs:                        # pull the air out: last half-bar
@@ -1246,7 +1256,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                 # sets the arrival up (the battery caught the conflict)
                 _cad = next((n for n in sorted(t.get("notes", []),
                                                key=lambda n: n["start"])
-                             if ds - 4.0 <= n["start"] <= ds - 3.0), None)
+                             if ds - _BQ <= n["start"] <= ds - _BQ + 1.0), None)
                 t["notes"] = [n for n in t.get("notes", [])
                               if n is _cad
                               or not (rl <= n["start"] < ds - 0.05)]
@@ -1276,7 +1286,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                 if n["start"] < ds - 2.0 and n["start"] + n.get("len", 0.5) > ds - 2.0:
                     n["len"] = round(max(0.1, ds - 2.0 - n["start"]), 4)
     # THE END: records END (final downbeat hit + ring-out), demos fade to thin.
-    end_beat = (total_bars - 1) * 4.0
+    end_beat = (total_bars - 1) * _BQ
     for t in out["tracks"]:
         nm = t.get("name", "")
         if nm == "crash":
@@ -1303,7 +1313,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
     try:
         if os.environ.get("SOTADAW_TURNAROUND", "1") != "0" and fill != "dropout":
             _excl = [(ds - 8.0, ds) for ds in drop_starts]
-            _outro_b0 = ((total_bars - plan[-1][1]) * 4.0
+            _outro_b0 = ((total_bars - plan[-1][1]) * _BQ
                          if plan[-1][0].rstrip("0123456789") == "outro" else None)
             _drum_trs = [t for t in out["tracks"]
                          if classes.get(t.get("name", "")) == "drums" and t.get("notes")]
@@ -1315,7 +1325,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                     return False
                 if _outro_b0 is not None and b >= _outro_b0:
                     return False
-                return b < (total_bars - 1) * 4.0        # the END bar is sacred
+                return b < (total_bars - 1) * _BQ        # the END bar is sacred
 
             def _med_vel(tr):
                 vs = sorted(n.get("vel", 0.8) for n in tr["notes"])
@@ -1330,8 +1340,8 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             def _spot_free(tr, at):
                 return not any(abs(n["start"] - at) < 0.2 for n in tr["notes"])
 
-            for _gi in range(total_bars // 4):
-                _b1 = (_gi * 4 + 4) * 4.0                # end of the turnaround bar
+            for _gi in range(total_bars // 4):   # grid-ok: 4-BAR phrase groups (the turnaround), not a bar->beat crossing
+                _b1 = (_gi * 4 + 4) * _BQ                # end of the turnaround bar
                 if not (_zone_free(_b1 - 0.5) and _zone_free(_b1 - 0.25)):
                     continue
                 if not any(any(_b1 <= n["start"] < _b1 + 1.0 for n in t["notes"])
@@ -1393,7 +1403,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _csp2, _acc9 = [], 0
             for _sec, _bn in plan:
                 if _sec.rstrip("0123456789") == "chorus":
-                    _csp2.append((_acc9 * 4.0, (_acc9 + _bn) * 4.0))
+                    _csp2.append((_acc9 * _BQ, (_acc9 + _bn) * _BQ))
                 _acc9 += _bn
             _names_l = {t.get("name", "").lower() for t in out["tracks"]}
             if _csp2 and "ride" not in _names_l:
@@ -1434,7 +1444,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _fin, _accA = None, 0
             for _sec, _bn in plan:
                 if _sec.rstrip("0123456789") in ("chorus", "drop"):
-                    _fin = (_accA * 4.0, (_accA + _bn) * 4.0)
+                    _fin = (_accA * _BQ, (_accA + _bn) * _BQ)
                 _accA += _bn
             if _fin:
                 for t in out["tracks"]:
@@ -1454,7 +1464,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _fin2, _accS = None, 0
             for _sec, _bn in plan:
                 if _sec.rstrip("0123456789") in ("chorus", "drop") and _accS > 0:
-                    _fin2 = _accS * 4.0
+                    _fin2 = _accS * _BQ
                 _accS += _bn
             if _fin2 is not None:
                 out["tracks"].append({
@@ -1480,7 +1490,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             _acc4 = 0
             for _sec, _bn in plan:
                 _base = _sec.rstrip("0123456789")
-                _s0, _s1 = _acc4 * 4.0, (_acc4 + _bn) * 4.0
+                _s0, _s1 = _acc4 * _BQ, (_acc4 + _bn) * _BQ
                 _acc4 += _bn
                 if _base == "verse":
                     # adaptive thin: 16th fabrics lose the e/a; fabrics that
@@ -1541,7 +1551,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                     _base = _sec.rstrip("0123456789")
                     if _base in ("drop", "chorus"):
                         if _sec == _base:            # the FIRST arrival only
-                            _s0, _s1 = _acc5 * 4.0, (_acc5 + _bn) * 4.0
+                            _s0, _s1 = _acc5 * _BQ, (_acc5 + _bn) * _BQ
                             _win = [n for t in out["tracks"]
                                     if t.get("name", "").lower().startswith("arp")
                                     for n in t["notes"] if _s0 <= n["start"] < _s1]
@@ -1576,7 +1586,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
     try:
         if _outro_speaks and plan[-1][0].rstrip("0123456789") == "outro":
             _ob = plan[-1][1]
-            _o0, _o1 = (total_bars - _ob) * 4.0, total_bars * 4.0
+            _o0, _o1 = (total_bars - _ob) * _BQ, total_bars * _BQ
             if not _has_verse:
                 _half = _o0 + (_o1 - _o0) / 2.0
                 _last2 = max(_o0, _o1 - 8.0)
@@ -1595,7 +1605,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                 _acc6 = 0
                 for _sec, _bn in plan:            # the LAST chorus span
                     if _sec.rstrip("0123456789") == "chorus":
-                        _csp = (_acc6 * 4.0, (_acc6 + _bn) * 4.0)
+                        _csp = (_acc6 * _BQ, (_acc6 + _bn) * _BQ)
                     _acc6 += _bn
                 lead_tr2 = next((t for t in out["tracks"]
                                  if t.get("name", "").lower() == "lead"
@@ -1645,7 +1655,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
     # the drop arc: filter opens into the first drop (late-bloom curve)
     names = [nm for nm, _ in plan]
     target = "drop" if "drop" in names else ("chorus" if "chorus" in names else None)
-    drop_start = (sum(b for nm, b in plan[:names.index(target)]) * 4.0) if target else 0.0
+    drop_start = (sum(b for nm, b in plan[:names.index(target)]) * _BQ) if target else 0.0
     lead = next((t for t in out["tracks"]                  # .get: riser/crash/counter are
                  if classes.get(t.get("name", "")) == "other"), None)   # born after classes{}
     if lead is not None:
@@ -1670,7 +1680,7 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
             for _sec, _bn in plan:
                 if _accW > 0 and _sec.rstrip("0123456789") in ("drop", "chorus",
                                                                "break", "bridge"):
-                    _tb.append(_accW * 4.0)
+                    _tb.append(_accW * _BQ)
                 _accW += _bn
             for t in out["tracks"]:
                 if not t.get("name", "").lower().startswith("lead"):
@@ -1723,12 +1733,12 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                 _pts91 = [{"beat": 0.0, "v": max(500.0, open_v * 0.14), "curve": 0.5},
                           {"beat": drop_start, "v": open_v}]
                 if os.environ.get("SOTADAW_PADBREATH", "1") != "0":
-                    _b91, _hi91 = drop_start + 32.0, True
-                    while _b91 < total_bars * 4.0 - 8.0:
+                    _b91, _hi91 = drop_start + 8 * _BQ, True
+                    while _b91 < total_bars * _BQ - 2 * _BQ:
                         _pts91.append({"beat": round(_b91, 4),
                                        "v": round(open_v * (0.82 if _hi91 else 1.0), 2)})
                         _hi91 = not _hi91
-                        _b91 += 32.0
+                        _b91 += 8 * _BQ
                 t.setdefault("automation", []).append(
                     {"target": "fx[0].cutoff", "points": _pts91})
     # ---- W81 THE MODULATION: the final chorus LIFTS A WHOLE STEP ----
@@ -1806,14 +1816,16 @@ if __name__ == "__main__":
     form = None
     if a.form == "pop":
         names, raw = sample_pop_form(a.seed)
-        bpm = float(json.load(open(a.song)).get("bpm", 120))
+        _s0 = json.load(open(a.song))
+        bpm = float(_s0.get("bpm", 120))
+        _bq = meter.beats_in_bar(meter.song_meter(_s0), 0)   # seconds -> the song's OWN bars
         dur = json.load(open(GRAMMAR)).get("mean_duration_s", {})
         DEF = {"intro": 15.5, "verse": 24.0, "chorus": 21.1, "build": 14.6,
                "bridge": 23.4, "break": 9.0, "outro": 18.6, "inst": 20.6}
         form = []
         for nm, rw in zip(names, raw):
             sec_s = float(dur.get(rw, DEF.get(rw, 20.0)))
-            bars = max(4, min(16, int(round(sec_s * bpm / 60.0 / 4.0 / 4.0) * 4)))
+            bars = max(4, min(16, int(round(sec_s * bpm / 60.0 / _bq / 4.0) * 4)))  # grid-ok: same as the in-arrange site — /_bq is the meter, /4*4 is the phrase
             form.append((nm, bars))
         print(f"[arrange] pop form (grammar seed {a.seed}): {' '.join(raw)}")
         print(f"[arrange] mapped: " + " ".join(f"{n}:{b}" for n, b in form))

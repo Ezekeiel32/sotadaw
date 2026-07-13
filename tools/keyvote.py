@@ -21,6 +21,7 @@ NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 
 def vote(path):
     import contextlib, io, os
+    import torch  # noqa: F401 — CUDA PRELOAD before basic_pitch (law: tools/stems_import.py)
     from basic_pitch.inference import predict
     with contextlib.redirect_stdout(io.StringIO()):   # bp prints "Predicting MIDI..." to stdout
         _, _, events = predict(path)

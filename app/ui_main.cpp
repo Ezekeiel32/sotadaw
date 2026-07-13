@@ -158,6 +158,15 @@ static juce::String noteKey (const SongNote& n)
          + ":" + juce::String ((int) std::lround (n.vel * 100));
 }
 
+// THE SETTLE (acceptal wave 3): one accept's just-landed notes, host-stamped so
+// the resettle survives the accept's own rebuildLanes. Keyed by track NAME +
+// noteKey (indices reshuffle when ghost lanes become real tracks).
+struct SettleWave
+{
+    juce::uint32 t0 = 0;                                     // 0 = no wave
+    std::map<juce::String, std::set<juce::String>> keys;     // track name -> note keys
+};
+
 static juce::String fxDesc (const std::vector<sotadaw::SongFx>& fx)
 {
     juce::StringArray a;
@@ -798,6 +807,7 @@ public:
     // hundred existing reads change nowhere.
     std::function<const SongTrack*()> resolveModel;
     std::function<const TrackDiff*()> resolveDiff;
+    std::function<const SettleWave*()> resolveSettle;   // the last accept's landing notes
     void syncModel()
     {
         if (resolveModel != nullptr)
@@ -1114,7 +1124,19 @@ public:
     // A silent, stopped lane costs literally zero paints.
     void tick()
     {
+        ticked = true;   // FRAME-0 LAW: we are ON a clock => motion may play (settled())
         syncModel();
+        // THE NOTES LAND (acceptal wave 2): while a ghost bloom / the base-dim ease
+        // is in flight, re-bake the note cache this frame — scoped to THIS lane,
+        // and only for the few frames a window is open; a settled lane costs zero.
+        if (diff == nullptr && ! ghostBorn.empty()) { ghostBorn.clear(); bloomUntil = 0; }
+        if (! instant())
+        {
+            const auto gt = nowMs();
+            syncGhostMotion (gt);
+            if (gt < bloomUntil || gt - dimT0 < (juce::uint32) DIM_MS || settleLive (gt))
+            { cacheDirty = true; repaint (canvasArea()); }
+        }
         if (measurer != nullptr)
         {
             auto l = meterClient.getAndClearAudioLevel (0).dB;
@@ -1455,19 +1477,26 @@ public:
         if (lo > hi) { lo = 60; hi = 72; }
         const int span = juce::jmax (1, hi - lo);
 
-        auto drawNote = [&] (const SongNote& n, juce::Colour c, bool hollow, bool lit = false)
+        auto drawNote = [&] (const SongNote& n, juce::Colour c, bool hollow, bool lit = false,
+                             float fade = 1.0f)
         {
             if (n.start + n.len < viewStart || n.start > vEnd) return;   // cull
             const float x = bx (n.start);
             const float w = juce::jmax (2.0f, (float) (n.len * p) - 1.0f);
             const float yFrac = 1.0f - (float) (n.pitch - lo) / (float) span;
-            const float y = 3 + yFrac * (ch - 12);
+            float y = 3 + yFrac * (ch - 12);
+            if (fade < 0.995f)
+            {   // a blooming arrival fades as ONE object (outline included) and
+                // LANDS: adds settle down into place as they brighten
+                c = c.withMultipliedAlpha (fade);
+                if (! hollow) y -= (1.0f - fade) * 4.0f;
+            }
             if (hollow) { g.setColour (c); g.drawRoundedRectangle (x, y, w, 8.0f, 2.0f, 1.4f); return; }
             g.setColour (c);
             g.fillRoundedRectangle (x, y, w, 8.0f, 2.5f);
             g.setColour (juce::Colours::white.withAlpha (0.22f * c.getFloatAlpha()));   // top light: notes read as pills
             g.fillRoundedRectangle (x + 0.5f, y + 0.5f, w - 1.0f, 3.0f, 1.8f);
-            g.setColour (juce::Colours::black.withAlpha (0.25f));
+            g.setColour (juce::Colours::black.withAlpha (0.25f * fade));
             g.drawRoundedRectangle (x, y, w, 8.0f, 2.5f, 0.8f);
             if (lit)                       // marquee-selected: white heat + halo ring
             {
@@ -1477,7 +1506,26 @@ public:
                 g.drawRoundedRectangle (x - 1.0f, y - 1.0f, w + 2.0f, 10.0f, 3.0f, 1.1f);
             }
         };
-        const bool dimBase = diff != nullptr && (! diff->added.empty() || ! diff->removed.empty());
+        // THE NOTES LAND (acceptal wave 2): every ghost this bake sees owns a birth
+        // stamp — fresh arrivals BLOOM in over BLOOM_MS (the adoption law keeps
+        // rebuilds silent). Base notes RECEDE behind the take on an ease, never a snap.
+        const auto tNow = nowMs();
+        syncGhostMotion (tNow);
+        stampGhosts (tNow);
+        const float dimQ = dimKAt (tNow);   // 0 = base speaks, 1 = ghosts speak
+        // THE SETTLE (acceptal wave 3): just-accepted notes land ghost-green and
+        // RESETTLE to the channel colour under the glass sweep — pixel-continuous:
+        // the lerp departs exactly where the ghost pill was.
+        const std::set<juce::String>* settleKeys = nullptr;
+        float settleK = 1.0f;
+        if (! settled() && resolveSettle != nullptr && track != nullptr)
+            if (const auto* sw = resolveSettle(); sw != nullptr && sw->t0 != 0
+                && tNow - sw->t0 < (juce::uint32) SETTLE_MS)
+                if (const auto it = sw->keys.find (track->name); it != sw->keys.end())
+                {
+                    settleKeys = &it->second;
+                    settleK = smooth01 ((float) (tNow - sw->t0) / (float) SETTLE_MS);
+                }
         if (cellMode())
         {
             // FL-style step cells: one per 16th, lit like pads where a hit exists
@@ -1487,30 +1535,35 @@ public:
                 juce::Rectangle<float> cell (bx (b) + 1.0f, cy, (float) (0.25 * p) - 2.0f, chh);
                 const bool beatHead = std::fmod (b, 1.0) < 1e-6;
                 bool hit = false, selHit = false; double vel = 0.9;
+                float setK = 1.0f;   // settle lerp for this cell's note (1 = home)
                 {
                     size_t ni = 0;
                     for (auto& n : track->notes)
                     {
                         if (n.start >= b - 1e-6 && n.start < b + 0.25 - 1e-6)
-                        { hit = true; vel = n.vel; selHit = noteSel.count (ni) > 0; break; }
+                        { hit = true; vel = n.vel; selHit = noteSel.count (ni) > 0;
+                          if (settleKeys != nullptr && settleKeys->count (noteKey (n))) setK = settleK;
+                          break; }
                         ++ni;
                     }
                 }
                 // proposal ghosts join the CELL language (no floating pills on drum lanes)
                 bool addHit = false, remHit = false; double addVel = 0.9;
+                float addA = 1.0f, remA = 1.0f;             // arrival bloom (1 = settled)
                 if (diff != nullptr)
                 {
                     for (auto& n : diff->added)
                         if (n.start >= b - 1e-6 && n.start < b + 0.25 - 1e-6)
-                        { addHit = true; addVel = n.vel; break; }
+                        { addHit = true; addVel = n.vel; addA = ghostA (noteKey (n), tNow); break; }
                     for (auto& n : diff->removed)
                         if (n.start >= b - 1e-6 && n.start < b + 0.25 - 1e-6)
-                        { remHit = true; break; }
+                        { remHit = true; remA = ghostA ("R" + noteKey (n), tNow); break; }
                 }
-                const float dim = dimBase ? 0.45f : 1.0f;   // base recedes while ghosts speak
+                const float dim = 1.0f - 0.55f * dimQ;      // base recedes while ghosts speak (eased)
                 if (hit)
                 {
-                    const auto c = trackCol();
+                    auto c = trackCol();
+                    if (setK < 1.0f) c = theme::good.interpolatedWith (c, setK);   // the accept lands
                     g.setColour (c.withAlpha ((0.16f + 0.14f * (float) vel) * dim));   // pad glow
                     g.fillRoundedRectangle (cell.expanded (1.5f), 4.0f);
                     g.setGradientFill ({ c.brighter (0.10f).withAlpha ((0.40f + 0.55f * (float) vel) * dim),
@@ -1536,20 +1589,20 @@ public:
                 }
                 if (remHit && ! addHit)    // removed: the pad dies — red ring + faint wash
                 {
-                    g.setColour (theme::bad.withAlpha (0.10f));
+                    g.setColour (theme::bad.withAlpha (0.10f * remA));
                     g.fillRoundedRectangle (cell, 3.0f);
-                    g.setColour (theme::bad.withAlpha (0.70f));
+                    g.setColour (theme::bad.withAlpha (0.70f * remA));
                     g.drawRoundedRectangle (cell.reduced (0.5f), 3.0f, 1.1f);
                 }
-                if (addHit)                // added: a green pad lands (inset when replacing)
-                {
-                    auto gc = cell.reduced (hit ? 2.5f : 0.0f);
-                    g.setGradientFill ({ theme::good.brighter (0.05f).withAlpha (0.50f + 0.40f * (float) addVel),
+                if (addHit)                // added: a green pad lands (inset when replacing;
+                {                          //  a blooming arrival grows in as it brightens)
+                    auto gc = cell.reduced ((hit ? 2.5f : 0.0f) + (1.0f - addA) * 2.5f);
+                    g.setGradientFill ({ theme::good.brighter (0.05f).withAlpha ((0.50f + 0.40f * (float) addVel) * addA),
                                          gc.getTopLeft(),
-                                         theme::good.darker (0.12f).withAlpha (0.40f + 0.35f * (float) addVel),
+                                         theme::good.darker (0.12f).withAlpha ((0.40f + 0.35f * (float) addVel) * addA),
                                          gc.getBottomLeft(), false });
                     g.fillRoundedRectangle (gc, 3.0f);
-                    g.setColour (theme::good.brighter (0.25f).withAlpha (0.85f));
+                    g.setColour (theme::good.brighter (0.25f).withAlpha (0.85f * addA));
                     g.drawRoundedRectangle (gc, 3.0f, 1.0f);
                 }
             }
@@ -1559,24 +1612,33 @@ public:
             size_t ni = 0;
             for (auto& n : track->notes)
             {
-                drawNote (n, trackCol().withAlpha ((dimBase ? 0.20f : 0.40f) + 0.45f * (float) n.vel),
-                          false, noteSel.count (ni) > 0);
+                auto c = trackCol().withAlpha ((0.40f - 0.20f * dimQ) + 0.45f * (float) n.vel);
+                if (settleKeys != nullptr && settleKeys->count (noteKey (n)))
+                    c = theme::good.withAlpha (0.92f).interpolatedWith (c, settleK);
+                drawNote (n, c, false, noteSel.count (ni) > 0);
                 ++ni;
             }
         }
         if (diff != nullptr && ! cellMode())   // cell lanes drew their ghosts as cells above
         {
-            for (auto& n : diff->removed) drawNote (n, theme::bad.withAlpha (0.75f), true);
-            for (auto& n : diff->added)   drawNote (n, theme::good.withAlpha (0.92f), false);
+            for (auto& n : diff->removed)
+                drawNote (n, theme::bad.withAlpha (0.75f), true, false, ghostA ("R" + noteKey (n), tNow));
+            for (auto& n : diff->added)
+                drawNote (n, theme::good.withAlpha (0.92f), false, false, ghostA (noteKey (n), tNow));
         }
 
-        auto drawCurves = [&] (const std::vector<sotadaw::SongAuto>& autos, juce::Colour col, bool dashed)
+        auto drawCurves = [&] (const std::vector<sotadaw::SongAuto>& autos, juce::Colour col,
+                               bool dashed, bool ghosts = false)
         {
             int ai = 0;
             for (auto& a : autos)
             {
                 if (a.points.empty()) continue;
                 if (a.points.back().beat < viewStart || a.points.front().beat > vEnd) { ++ai; continue; }
+                // a PROPOSED curve blooms in WHOLE — path, handles, chip as ONE object
+                // (the chip paints its label at full alpha: layer, never colour math)
+                const float cfade = ghosts ? ghostA ("C" + a.target, tNow) : 1.0f;
+                if (cfade < 0.995f) g.beginTransparencyLayer (cfade);
                 const auto [vmin, vmax] = curveFrame (a);
                 juce::Path path;
                 for (size_t pi = 0; pi < a.points.size(); ++pi)
@@ -1619,12 +1681,13 @@ public:
                                       2.0f + (float) ai * 12.0f, lw, 11.0f }, c, a.target, f,
                                  0.20f, 0.0f, false);
                 }
+                if (cfade < 0.995f) g.endTransparencyLayer();
                 ++ai;
             }
         };
         drawCurves (track->automation, theme::warn, false);
         if (diff != nullptr && ! diff->propAutomation.empty())
-            drawCurves (diff->propAutomation, theme::good, true);
+            drawCurves (diff->propAutomation, theme::good, true, true);
     }
 
     static constexpr int headerW = 210;
@@ -1644,6 +1707,73 @@ private:
     int peakHoldAge = 0;
     juce::Image cache;
     bool cacheDirty = true;
+
+    // ---- THE NOTES LAND (acceptal wave 2): wall-clock bloom kernel -------------
+    // Ghost notes / cells / proposed curves BLOOM in per streamed batch instead of
+    // popping, and the base-note recession EASES. Birth stamps are LANE-LOCAL on
+    // the canonical noteKey + THE ADOPTION LAW: a lane not yet on the clock (fresh
+    // from rebuildLanes — audition re-streams rebuild per batch) adopts every ghost
+    // its first bake sees as already settled, so a rebuild can NEVER restart a
+    // bloom; only arrivals seen by a LIVE lane are born now. FRAME-0 LAW: NEVER
+    // TICKED => PAINT SETTLED (uismoke bakes with no clock; cameras via instant()).
+    static juce::uint32 nowMs() { return juce::Time::getMillisecondCounter(); }
+    static float smooth01 (float v) { v = juce::jlimit (0.0f, 1.0f, v); return v * v * (3.0f - 2.0f * v); }
+    static bool instant()
+    {
+        static const bool b = std::getenv ("SOTADAW_SNAPSHOT") != nullptr
+                           || std::getenv ("SOTADAW_SNAP_GHOST") != nullptr
+                           || std::getenv ("SOTADAW_SNAP_AUDSTREAM") != nullptr;
+        return b;
+    }
+    bool settled() const { return instant() || ! ticked; }
+    bool ghostsLive() const
+    { return diff != nullptr && (! diff->added.empty() || ! diff->removed.empty()); }
+    // eased 0..1 base recession: a retarget mid-flight departs from the in-flight
+    // value (never a snap); a fresh lane ADOPTS the current truth without motion
+    void syncGhostMotion (juce::uint32 t)
+    {
+        const bool live = ghostsLive();
+        if (! dimInit) { dimInit = true; dimTgt = live; return; }
+        if (live != dimTgt) { dimFrom = dimKAt (t); dimTgt = live; dimT0 = t; }
+    }
+    float dimKAt (juce::uint32 t) const
+    {
+        if (settled()) return ghostsLive() ? 1.0f : 0.0f;
+        const float tgt = dimTgt ? 1.0f : 0.0f;
+        return dimFrom + (tgt - dimFrom) * smooth01 ((float) (t - dimT0) / (float) DIM_MS);
+    }
+    void stampGhosts (juce::uint32 t)   // every ghost this bake sees owns a birth
+    {
+        if (diff == nullptr || instant()) return;
+        const juce::uint32 born = ticked ? t : t - (juce::uint32) BLOOM_MS;   // adoption law
+        auto stamp = [&] (const juce::String& k)
+        {
+            if (ghostBorn.emplace (k, born).second && ticked)
+                bloomUntil = juce::jmax (bloomUntil, born + (juce::uint32) BLOOM_MS);
+        };
+        for (auto& n : diff->added)   stamp (noteKey (n));
+        for (auto& n : diff->removed) stamp ("R" + noteKey (n));
+        for (auto& a : diff->propAutomation) stamp ("C" + a.target);
+    }
+    float ghostA (const juce::String& k, juce::uint32 t) const   // arrival alpha, 1 = settled
+    {
+        if (settled()) return 1.0f;
+        const auto it = ghostBorn.find (k);
+        if (it == ghostBorn.end()) return 1.0f;
+        return smooth01 ((float) (t - it->second) / (float) BLOOM_MS);
+    }
+    bool settleLive (juce::uint32 t) const   // an accept's green is still settling here
+    {
+        if (resolveSettle == nullptr || track == nullptr) return false;
+        const auto* sw = resolveSettle();
+        return sw != nullptr && sw->t0 != 0 && t - sw->t0 < (juce::uint32) SETTLE_MS
+            && sw->keys.count (track->name) > 0;
+    }
+    enum { BLOOM_MS = 240, DIM_MS = 180, SETTLE_MS = 470 };   // settle rides the glass sweep
+    std::map<juce::String, juce::uint32> ghostBorn;   // this take's births, this lane
+    juce::uint32 bloomUntil = 0, dimT0 = 0;
+    float dimFrom = 0.0f;
+    bool ticked = false, dimInit = false, dimTgt = false;
 };
 
 //==============================================================================
@@ -2391,8 +2521,10 @@ public:
     void open (Song& s, int ti, bool ro = false)
     {
         song = &s; trackIndex = ti; vs = 0; rppb = 0;
+        vy = 0; vRowPx = 14.0; vFramePending = true;   // the tower opens ON the music (first paint frames)
         readOnly = ro;                      // GHOST ROLL: look, toggle hunks, touch nothing
         selection.clear(); selected = -1;
+        auditionPitch = -1;                 // fresh open: no key lit (close silenced the engine)
         playheadBeats = -1;                 // fresh take: no stale beam
         noteColour = ti < (int) s.tracks.size() ? channelColour (s.tracks[(size_t) ti], ti)
                                                  : theme::trackColour (ti);
@@ -2434,6 +2566,7 @@ public:
         hasKey = parseKeyMask (s.key, keyMask, keyRoot);
         rebuildRows();
         clampView();
+        clampViewV();                       // the producer's pitch view survives the stream
         repaint();
     }
 
@@ -2441,14 +2574,15 @@ public:
     // write-head beam with the roll's OWN transform (no duplicated math to drift)
     juce::Rectangle<float> noteRect (const SongNote& n) const
     {
-        if (rows.empty()) return {};
+        const int ri = rowIndexOf (n.pitch);
+        if (ri < 0) return {};
         const auto r = gridArea();
         const double p = effPpb();
         const double vEnd = vs + r.getWidth() / p;
-        if (n.start + n.len < vs || n.start > vEnd) return {};
-        if (n.pitch > rows.front() || n.pitch < rows.back()) return {};
-        const float rh = (float) r.getHeight() / (float) rows.size();
-        const float gy = (float) r.getY() + (float) (rows.front() - n.pitch) * rh;
+        if (n.start + n.len < vs || n.start > vEnd) return {};      // time cull
+        const float rh = effRowPx();
+        const float gy = yOfRow (ri);
+        if (gy + rh < (float) r.getY() || gy > (float) r.getBottom()) return {};   // pitch cull
         return { xOf (n.start), gy + 1.5f,
                  juce::jmax (4.0f, (float) (n.len * p) - 1.0f),
                  juce::jmax (4.0f, rh - 3.0f) };
@@ -2466,6 +2600,30 @@ public:
     }
     std::set<size_t> ghostDrops;            // indices into ghost->added (owner maps keys)
     std::function<void (size_t)> onGhostToggle;
+    // THE KEYS SOUND (H13): while a finger is down on a pitch, that pitch SOUNDS
+    // through the track's REAL instrument — full fx/bus/master chain, live over
+    // playback. One law on every path: gutter key press (velocity from the press
+    // point), note grab, note place, brush paint, pitch drag (mono retrigger =
+    // the gliss). Release = silence: mouseUp and roll-close both fire the off
+    // (the stuck-note law) — the host owns the engine call (guide notes).
+    std::function<void (int, int)> onAudition;   // (pitch, midiVel 1..127) -> guide note ON
+    std::function<void()> onAuditionOff;         // ALL guide notes off
+    int auditionPitch = -1;                      // the sounding key — LIT on the keyboard
+    void auditionOn (int pitch, double vel01)
+    {
+        if (readOnly || pitch < 0 || pitch > 127) return;    // ghost roll: eyes only
+        auditionPitch = pitch;
+        if (onAudition)
+            onAudition (pitch, juce::jlimit (1, 127, (int) std::lround (vel01 * 127.0)));
+        repaint (0, 0, keyGutterW(), getHeight());
+    }
+    void auditionOff()
+    {
+        if (auditionPitch < 0) return;
+        auditionPitch = -1;
+        if (onAuditionOff) onAuditionOff();
+        repaint (0, 0, keyGutterW(), getHeight());
+    }
     void setGhostDrops (std::set<size_t> d)
     {
         if (d == ghostDrops) return;
@@ -2485,6 +2643,8 @@ public:
     bool hasKey = false, keyMask[12] = {};
     int keyRoot = 0;
     double vs = 0, rppb = 0;   // roll viewport (0 = auto: fit, or 16 bars on long songs)
+    double vy = 0, vRowPx = 14.0;   // THE PITCH TOWER: vertical scroll (px) + fixed row height
+    bool vFramePending = false;     // first paint centers the tower on the music
     double snapBeats = 0.25;   // toolbar snap selector
     juce::Colour noteColour = theme::good;
     // transport presence — the roll is ALIVE during playback (FL/Live law):
@@ -2534,14 +2694,24 @@ public:
             for (auto it = used.rbegin(); it != used.rend(); ++it) rows.push_back (*it);
             return;
         }
-        const int lo = juce::jmax (0, *used.begin() - 6), hi = juce::jmin (127, *used.rbegin() + 6);
-        for (int p = hi; p >= lo; --p) rows.push_back (p);
+        if (chatSurface)   // CHAT CARD: a tight content band, squeezed to the card's height
+        {
+            const int lo = juce::jmax (0, *used.begin() - 6), hi = juce::jmin (127, *used.rbegin() + 6);
+            for (int p = hi; p >= lo; --p) rows.push_back (p);
+            return;
+        }
+        // THE STAGE: EVERY OCTAVE, ALWAYS (Chezy law 2026-07-12). The roll is no
+        // longer a keyhole cut to the notes that happen to be there — it is the
+        // whole instrument, C-2..G8, and the viewport (vy/vRowPx) decides what you
+        // see. Notes can be written anywhere; nothing is unreachable by design.
+        for (int p = 127; p >= 0; --p) rows.push_back (p);
     }
 
     juce::Rectangle<int> gridArea() const
     {
         auto r = getLocalBounds();
         r.removeFromLeft (keyGutterW());
+        r.removeFromRight (pitchNavW());        // the pitch navigator's own band
         r.removeFromBottom (velLaneH());
         return r;
     }
@@ -2562,18 +2732,150 @@ public:
         const double beats = song != nullptr ? song->totalBeats() : 16.0;
         vs = juce::jlimit (0.0, juce::jmax (0.0, beats - gridArea().getWidth() / effPpb()), vs);
     }
+
+    // ================= THE PITCH TOWER (vertical viewport) =================
+    // The stage roll used to SQUEEZE its rows to fit the panel — so it could only
+    // ever show the handful of octaves the notes already lived in. Now the rows ARE
+    // the instrument (0..127) and the pitch axis gets a real viewport, exactly like
+    // time has one: vRowPx is the vertical zoom (px per semitone), vy is the scroll.
+    // Every pitch<->y conversion goes through yOfRow/rowAtY/rowIndexOf so nothing can
+    // drift (the xOf/beatOfX law, applied to pitch).
+    //
+    // Chat cards + the drum machine KEEP squeeze-to-fit: their rows are a small
+    // content band inside a tiny surface, and there is nothing to scroll. useTower()
+    // is the ONE gate; for cards effRowPx() collapses to the old rh and vy pins to 0,
+    // so their geometry is byte-identical to before.
+    bool useTower() const { return ! chatSurface && ! drumMode; }
+    float effRowPx() const
+    {
+        if (! useTower())                     // cards/drum: the old squeeze-to-fit
+            return (float) gridArea().getHeight() / (float) juce::jmax ((size_t) 1, rows.size());
+        return (float) juce::jlimit (6.0, 40.0, vRowPx);
+    }
+    // rows run contiguously HIGH->LOW for melodic rolls (tower 127..0, card band hi..lo),
+    // so the row of a pitch is O(1) — and -1 says "not on this roll" (card band edges).
+    int rowIndexOf (int pitch) const
+    {
+        if (rows.empty() || pitch > rows.front() || pitch < rows.back()) return -1;
+        return rows.front() - pitch;
+    }
+    float yOfRow (int i) const { return (float) gridArea().getY() + (float) i * effRowPx() - (float) vy; }
+    int rowAtY (int py) const
+    {
+        if (rows.empty()) return 0;
+        return juce::jlimit (0, (int) rows.size() - 1,
+                             (int) std::floor ((py - gridArea().getY() + vy) / effRowPx()));
+    }
+    double maxScrollV() const
+    {
+        if (! useTower()) return 0.0;
+        return juce::jmax (0.0, (double) rows.size() * effRowPx() - gridArea().getHeight());
+    }
+    void clampViewV() { vy = juce::jlimit (0.0, maxScrollV(), vy); }
+    void frameContentV()          // OPEN ON THE MUSIC: the tower centers on the notes
+    {
+        vFramePending = false;
+        if (! useTower()) { vy = 0; return; }
+        int lo = 127, hi = 0;
+        bool any = false;
+        if (song != nullptr && trackIndex >= 0 && trackIndex < (int) song->tracks.size())
+            for (auto& n : song->tracks[(size_t) trackIndex].notes)
+                { lo = juce::jmin (lo, n.pitch); hi = juce::jmax (hi, n.pitch); any = true; }
+        if (ghost != nullptr)                 // a take's new notes frame too
+            for (auto& n : ghost->added)
+                { lo = juce::jmin (lo, n.pitch); hi = juce::jmax (hi, n.pitch); any = true; }
+        if (! any) { lo = hi = 60; }          // an empty lane opens at middle C
+        // THE OPEN LAW: a roll NEVER opens with the track's own notes hiding off
+        // screen. If the music's range is taller than the panel at the readable
+        // default, the rows shrink until it ALL fits (down to the 6px floor) — a
+        // 6-octave harpsichord line opens whole. Anything narrower keeps the
+        // comfortable default height and simply centers. (FL/Reason both make you
+        // go find your own notes; the tower brings them to you.)
+        const double fit = (double) gridArea().getHeight() / (double) (hi - lo + 5);   // +2 rows of air
+        vRowPx = juce::jlimit (6.0, 14.0, fit);
+        const int midRow = rowIndexOf (juce::jlimit (0, 127, (lo + hi) / 2));
+        vy = ((double) midRow + 0.5) * effRowPx() - gridArea().getHeight() * 0.5;
+        clampViewV();
+    }
+    void scrollPitchIntoView (int pLo, int pHi)   // the view FOLLOWS the hand (transpose)
+    {
+        if (! useTower()) return;
+        const int rHi = rowIndexOf (juce::jlimit (0, 127, pHi));   // high pitch = upper row
+        const int rLo = rowIndexOf (juce::jlimit (0, 127, pLo));
+        if (rHi < 0 || rLo < 0) return;
+        const auto r = gridArea();
+        const float top = yOfRow (rHi), bot = yOfRow (rLo) + effRowPx();
+        if (top < (float) r.getY())              vy -= (double) ((float) r.getY() - top);
+        else if (bot > (float) r.getBottom())    vy += (double) (bot - (float) r.getBottom());
+        clampViewV();
+    }
+    void zoomRowsAround (int py, double factor)   // ctrl+shift wheel = pitch DENSITY
+    {
+        if (! useTower()) return;
+        const auto r = gridArea();
+        const double rowUnderCursor = (py - r.getY() + vy) / effRowPx();
+        vRowPx = juce::jlimit (6.0, 40.0, vRowPx * factor);
+        vy = rowUnderCursor * effRowPx() - (py - r.getY());   // the pitch under the cursor stays put
+        clampViewV();
+        repaint();
+    }
+    // THE PITCH NAVIGATOR: a 12px minimap of the WHOLE tower on the right edge —
+    // note-density ticks (the music's shape at a glance), octave marks, and the
+    // visible band as a bright handle you can grab. No DAW gives you the whole
+    // instrument in your peripheral vision; this one does.
+    int pitchNavW() const { return useTower() ? 12 : 0; }
+    juce::Rectangle<float> pitchNavBand() const
+    {
+        auto r = gridArea();
+        return { (float) r.getRight(), (float) r.getY(), (float) pitchNavW(), (float) r.getHeight() };
+    }
+    void dragPitchNav (const juce::MouseEvent& e)
+    {
+        const auto nb = pitchNavBand();
+        const double frac = juce::jlimit (0.0, 1.0,
+                                          (double) (e.y - nb.getY()) / (double) juce::jmax (1.0f, nb.getHeight()));
+        vy = frac * (double) rows.size() * effRowPx() - gridArea().getHeight() * 0.5;   // center on the click
+        clampViewV();
+        repaint();
+    }
+    void resized() override { clampView(); clampViewV(); }
+
+    // THE WHEEL LAW (arrange parity, pitch edition):
+    //   plain      = pitch scroll (the tower overflows by nature; falls back to time pan)
+    //   shift      = time pan
+    //   ctrl       = time zoom (around the beat under the cursor)
+    //   ctrl+shift = pitch density (around the pitch under the cursor)
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
-        const double dy = w.deltaY != 0 ? w.deltaY : -w.deltaX;
-        if (e.mods.isCtrlDown() || e.mods.isCommandDown())
+        const bool ctrl  = e.mods.isCtrlDown() || e.mods.isCommandDown();
+        const bool shift = e.mods.isShiftDown();
+        const double dy = w.deltaY, dx = w.deltaX;
+        if (dy == 0 && dx == 0) return;
+        const double zd = dy != 0 ? dy : -dx;    // a trackpad's sideways still zooms
+        if (ctrl && shift)
+        {
+            zoomRowsAround (e.y, zd > 0 ? 1.18 : 1.0 / 1.18);
+            return;
+        }
+        if (ctrl)
         {
             const double mouseBeat = beatOfX (e.x);
             const double oldP = effPpb();
-            rppb = juce::jlimit (0.02, 120.0, oldP * (dy > 0 ? 1.18 : 1.0 / 1.18));
+            rppb = juce::jlimit (0.02, 240.0, oldP * (zd > 0 ? 1.18 : 1.0 / 1.18));
             vs = mouseBeat - (mouseBeat - vs) * (oldP / juce::jmax (0.02, effPpb()));
+            clampView();
+            repaint();
+            return;
         }
-        else
-            vs -= dy * (gridArea().getWidth() / effPpb()) * 0.25;
+        if (! shift && useTower() && maxScrollV() > 0.0 && std::abs (dy) >= std::abs (dx))
+        {
+            vy -= dy * (double) gridArea().getHeight() * 0.15;      // fly the octaves
+            clampViewV();
+            repaint();
+            return;
+        }
+        const double d = dy != 0 ? dy : -dx;                        // shift, or a trackpad's sideways
+        vs -= d * (gridArea().getWidth() / effPpb()) * 0.25;
         clampView();
         repaint();
     }
@@ -2667,17 +2969,23 @@ public:
         if (song == nullptr || trackIndex < 0
             || trackIndex >= (int) song->tracks.size() || rows.empty()) return;
         if (drumMode && chatSurface) { paintDrumGrid (g); return; }   // the sequencer floor
+        if (vFramePending && gridArea().getHeight() > 4) frameContentV();   // once: center on the music
         auto& t = song->tracks[(size_t) trackIndex];
         auto r = gridArea();
         const double p = effPpb();
         const double vEnd = vs + r.getWidth() / p;
-        const float rh = (float) r.getHeight() / (float) rows.size();
+        const float rh = effRowPx();
 
         static const char* names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-        for (size_t i = 0; i < rows.size(); ++i)
+        // THE TOWER IS CULLED, not squeezed: only the rows in the viewport are drawn,
+        // so 128 rows cost the same as the 20 the old keyhole showed.
+        const int firstRow = juce::jlimit (0, (int) rows.size() - 1, (int) std::floor (vy / rh));
+        const int lastRow  = juce::jlimit (0, (int) rows.size() - 1,
+                                           (int) std::floor ((vy + (double) r.getHeight()) / rh));
+        for (int i = firstRow; i <= lastRow; ++i)
         {
-            const int pn = rows[i];
-            const float y = r.getY() + (float) i * rh;
+            const int pn = rows[(size_t) i];
+            const float y = yOfRow (i);
             const bool black = juce::String (names[pn % 12]).containsChar ('#');
             // grid row shading + octave line under every C
             g.setColour (black ? theme::bg : theme::panel.brighter (0.04f));
@@ -2733,6 +3041,11 @@ public:
                     g.drawText ("C" + juce::String (pn / 12 - 1), 4, (int) y, 40,
                                 (int) juce::jmax (10.0f, rh), juce::Justification::centredRight);
                 }
+            }
+            if (pn == auditionPitch)
+            {   // THE KEYS SOUND: the SOUNDING key is lit — truth (what you hear), not hover
+                g.setColour (theme::accent.withAlpha (0.55f));
+                g.fillRoundedRectangle (key.withWidth (black ? 34.0f : 46.0f), 2.0f);
             }
         }
         for (double b = std::floor (vs / 8.0) * 8.0; b <= vEnd; b += 8.0)
@@ -2797,8 +3110,10 @@ public:
             for (auto& n : song->tracks[gi].notes)
             {
                 if (n.start + n.len < vs || n.start > vEnd) continue;
-                if (n.pitch > rows.front() || n.pitch < rows.back()) continue;
-                const float gy = r.getY() + (float) (rows.front() - n.pitch) * rh;
+                const int ri = rowIndexOf (n.pitch);
+                if (ri < 0) continue;
+                const float gy = yOfRow (ri);
+                if (gy + rh < (float) r.getY() || gy > (float) r.getBottom()) continue;
                 g.fillRoundedRectangle (xOf (n.start), gy + 2.5f,
                                         juce::jmax (3.0f, (float) (n.len * p) - 1.0f),
                                         juce::jmax (3.0f, rh - 5.0f), 2.0f);
@@ -2807,10 +3122,11 @@ public:
         for (size_t i = 0; i < t.notes.size(); ++i)
         {
             auto& n = t.notes[i];
-            if (n.start + n.len < vs || n.start > vEnd) continue;   // cull
-            const auto it = std::find (rows.begin(), rows.end(), n.pitch);
-            if (it == rows.end()) continue;
-            const float y = r.getY() + (float) std::distance (rows.begin(), it) * rh;
+            if (n.start + n.len < vs || n.start > vEnd) continue;   // time cull
+            const int ri = rowIndexOf (n.pitch);
+            if (ri < 0) continue;
+            const float y = yOfRow (ri);
+            if (y + rh < (float) r.getY() || y > (float) r.getBottom()) continue;   // pitch cull
             const float x = xOf (n.start);
             const float w = juce::jmax (4.0f, (float) (n.len * p) - 1.0f);
             const bool sel = selection.count (i) > 0 || (int) i == selected;
@@ -2945,7 +3261,7 @@ public:
         {
             const juce::String hint = selection.size() > 1
                 ? juce::String ((int) selection.size()) + " notes | Q=quantize  H=humanize  ctrl+B=repeat  ctrl+rclick=OPS  arrows=nudge/transpose  del"
-                : "hold B=brush  K=knife | drag=move  edge=resize  right-DRAG=erase  dbl-click=same pitch  ctrl+drag=marquee  ctrl+rclick=OPS";
+                : "wheel=OCTAVES  drag the keys=fly  ctrl+wheel=zoom  ctrl+shift+wheel=row size | hold B=brush  K=knife  drag=move  edge=resize  right-DRAG=erase  ctrl+rclick=OPS";
             const auto f = theme::ui (9.0f);
             const float tw = theme::measure (f, hint) + 18.0f;
             juce::Rectangle<float> chip ((float) r.getRight() - tw - 8.0f, (float) r.getY() + 6.0f, tw, 17.0f);
@@ -2957,6 +3273,56 @@ public:
             g.setFont (f);
             g.drawText (hint, chip.toNearestInt().reduced (9, 0), juce::Justification::centredLeft);
         }
+        // THE PITCH NAVIGATOR: the whole instrument in your peripheral vision — the
+        // music's shape as ticks across all 128 semitones, octave marks, and the
+        // visible band as a grabbable handle. Click/drag it to fly to any octave.
+        if (useTower() && pitchNavW() > 0)
+        {
+            const auto nb = pitchNavBand();
+            const float sz = (float) juce::jmax ((size_t) 1, rows.size());
+            g.setColour (theme::inset.withAlpha (0.72f));
+            g.fillRect (nb);
+            g.setColour (juce::Colours::white.withAlpha (0.05f));
+            g.drawVerticalLine ((int) nb.getX(), nb.getY(), nb.getBottom());
+            for (int oct = 0; oct <= 10; ++oct)                       // every C, faintly
+            {
+                const int ri = rowIndexOf (juce::jlimit (0, 127, oct * 12));
+                if (ri < 0) continue;
+                const float yy = nb.getY() + nb.getHeight() * ((float) ri / sz);
+                g.setColour (juce::Colours::white.withAlpha (0.07f));
+                g.drawHorizontalLine ((int) yy, nb.getX() + 1.0f, nb.getRight() - 1.0f);
+            }
+            g.setColour (noteColour.withAlpha (0.6f));
+            for (auto& n : t.notes)                                  // where the music LIVES
+            {
+                const int ri = rowIndexOf (n.pitch);
+                if (ri < 0) continue;
+                g.fillRect (nb.getX() + 1.5f, nb.getY() + nb.getHeight() * ((float) ri / sz),
+                            nb.getWidth() - 3.0f, 1.4f);
+            }
+            if (ghost != nullptr)                                    // ...and where the take is going
+            {
+                g.setColour (theme::good.withAlpha (0.65f));
+                for (auto& n : ghost->added)
+                {
+                    const int ri = rowIndexOf (n.pitch);
+                    if (ri < 0) continue;
+                    g.fillRect (nb.getX() + 1.5f, nb.getY() + nb.getHeight() * ((float) ri / sz),
+                                nb.getWidth() - 3.0f, 1.4f);
+                }
+            }
+            const float tot = sz * rh;                               // the tower's full height
+            if (tot > 1.0f)
+            {
+                const float vTop = nb.getY() + nb.getHeight() * (float) (vy / (double) tot);
+                const float vHt  = juce::jmax (10.0f, nb.getHeight() * (float) r.getHeight() / tot);
+                const juce::Rectangle<float> handle (nb.getX() + 1.0f, vTop, nb.getWidth() - 2.0f, vHt);
+                g.setColour (theme::accent.withAlpha (0.20f));
+                g.fillRoundedRectangle (handle, 2.5f);
+                g.setColour (theme::accent.withAlpha (0.80f));
+                g.drawRoundedRectangle (handle.reduced (0.5f), 2.5f, 1.0f);
+            }
+        }
     }
 
     int noteAt (juce::Point<int> pos, bool& nearRightEdge)
@@ -2964,15 +3330,14 @@ public:
         nearRightEdge = false;
         if (song == nullptr) return -1;
         auto& t = song->tracks[(size_t) trackIndex];
-        auto r = gridArea();
         const double p = effPpb();
-        const float rh = (float) r.getHeight() / (float) rows.size();
+        const float rh = effRowPx();
         for (int i = (int) t.notes.size() - 1; i >= 0; --i)
         {
             auto& n = t.notes[(size_t) i];
-            const auto it = std::find (rows.begin(), rows.end(), n.pitch);
-            if (it == rows.end()) continue;
-            const float y = r.getY() + (float) std::distance (rows.begin(), it) * rh;
+            const int ri = rowIndexOf (n.pitch);
+            if (ri < 0) continue;
+            const float y = yOfRow (ri);
             const float x = xOf (n.start);
             const float w = juce::jmax (4.0f, (float) (n.len * p) - 1.0f);
             if (juce::Rectangle<float> (x, y, w, rh).contains (pos.toFloat()))
@@ -3002,6 +3367,28 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (song == nullptr || rows.empty()) return;
+        if (useTower() && ! e.mods.isPopupMenu()
+            && pitchNavBand().contains ((float) e.x, (float) e.y))
+        {   // THE NAVIGATOR: flying the octaves is a VIEW act — it works on a
+            // read-only ghost roll too (looking is not editing). Bounded to its own
+            // band: the velocity lane below it keeps its last 12px.
+            mode = Mode::pitchNav;
+            dragPitchNav (e);
+            return;
+        }
+        if (useTower() && ! e.mods.isPopupMenu() && ! readOnly && e.x < keyGutterW())
+        {   // GRAB THE KEYBOARD AND PULL (Logic law): the keys are a handle on the
+            // whole tower. dbl-click still selects the pitch — that's its own event.
+            mode = Mode::keyScroll;
+            keyScrollAnchorY = e.y;
+            keyScrollAnchorVy = vy;
+            // THE KEYS SOUND: the grabbed key SINGS while held — velocity from the
+            // press point (a real key's leverage: the lip is loud, the fulcrum soft)
+            // — and it rides the whole pull: grab semantics keep THIS key under the finger.
+            auditionOn (rows[(size_t) rowAtY (e.y)],
+                        0.35 + 0.65 * juce::jlimit (0.0, 1.0, e.x / (double) keyGutterW()));
+            return;
+        }
         if (readOnly)
         {   // GHOST ROLL: the only living gesture is the hunk toggle
             if (e.mods.isPopupMenu())
@@ -3068,6 +3455,8 @@ public:
             for (auto s : selection)
                 if (s < t.notes.size()) dragOrig.push_back ({ s, t.notes[s] });
             dragNote = t.notes[(size_t) idx];
+            if (mode == Mode::move)             // THE KEYS SOUND: grabbing a note plays it
+                auditionOn (dragNote.pitch, dragNote.vel);
             return;
         }
         if (! r.contains (e.getPosition())) return;
@@ -3088,8 +3477,7 @@ public:
             }
             erasing = true; return;                     // empty air: sweep starts here
         }
-        const float rh = (float) r.getHeight() / (float) rows.size();
-        const int row = juce::jlimit (0, (int) rows.size() - 1, (int) ((e.y - r.getY()) / rh));
+        const int row = rowAtY (e.y);
         const double div = snapBeats > 0 ? snapBeats : 0.25;
         const double beat = juce::jlimit (0.0, beats - div,
                                           std::floor (beatOfX (e.x) / div) * div);
@@ -3100,6 +3488,7 @@ public:
         selection.insert (t.notes.size());
         t.notes.push_back ({ beat, div, newPitch, 0.8 });
         stampAt (beat, div, newPitch);          // the armed chord lands whole
+        auditionOn (newPitch, 0.8);             // THE KEYS SOUND: a landed note speaks
         if (juce::KeyPress::isKeyCurrentlyDown ('b') || juce::KeyPress::isKeyCurrentlyDown ('B'))
         {   // THE BRUSH (H12): hold B and drag — notes fall on the grid as you go
             mode = Mode::brush;
@@ -3120,6 +3509,14 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (song == nullptr) return;
+        if (mode == Mode::pitchNav) { dragPitchNav (e); return; }
+        if (mode == Mode::keyScroll)
+        {   // pull the keyboard down and the higher octaves come to you
+            vy = keyScrollAnchorVy - (double) (e.y - keyScrollAnchorY);
+            clampViewV();
+            repaint();
+            return;
+        }
         if (erasing)                                      // the sweep mows every note it touches
         {
             auto& t = song->tracks[(size_t) trackIndex];
@@ -3148,7 +3545,6 @@ public:
         if (selected >= (int) t.notes.size()) return;
         armDragEdit();                                    // move/resize drag = one undo step
         const double beats = song->totalBeats();
-        auto r = gridArea();
         const double beat = beatOfX (e.x);
         if (mode == Mode::move)
         {
@@ -3156,23 +3552,25 @@ public:
             const double newStart = juce::jlimit (0.0, beats - 0.05,
                                                   snapTo (beat - dragNote.len / 2, snapBeats));
             const double dBeat = newStart - dragNote.start;
-            const float rh = (float) r.getHeight() / (float) rows.size();
-            const int row = juce::jlimit (0, (int) rows.size() - 1, (int) ((e.y - r.getY()) / rh));
-            const auto primIt = std::find (rows.begin(), rows.end(), dragNote.pitch);
-            const int dRow = primIt != rows.end() ? row - (int) std::distance (rows.begin(), primIt) : 0;
+            const int primRow = rowIndexOf (dragNote.pitch);
+            const int dRow = primRow >= 0 ? rowAtY (e.y) - primRow : 0;
             for (auto& [i, orig] : dragOrig)
             {
                 if (i >= t.notes.size()) continue;
                 auto& n = t.notes[i];
                 n.start = juce::jlimit (0.0, beats - 0.05, orig.start + dBeat);
-                const auto it = std::find (rows.begin(), rows.end(), orig.pitch);
-                if (it != rows.end())
+                const int oRow = rowIndexOf (orig.pitch);
+                if (oRow >= 0)
                 {
-                    const int nr = juce::jlimit (0, (int) rows.size() - 1,
-                                                 (int) std::distance (rows.begin(), it) + dRow);
+                    const int nr = juce::jlimit (0, (int) rows.size() - 1, oRow + dRow);
                     n.pitch = rows[(size_t) nr];
                 }
             }
+            // THE KEYS SOUND: dragging across pitches retriggers the note (the gliss
+            // law — mono, the engine kills the previous guide note); time-only moves
+            // stay silent because the pitch never leaves auditionPitch.
+            if (t.notes[(size_t) selected].pitch != auditionPitch)
+                auditionOn (t.notes[(size_t) selected].pitch, t.notes[(size_t) selected].vel);
         }
         else if (mode == Mode::resize)
         {
@@ -3193,6 +3591,7 @@ public:
 
     void mouseUp (const juce::MouseEvent&) override
     {
+        auditionOff();                       // THE KEYS SOUND: release = silence, always
         if (erasing)
         {
             erasing = false;
@@ -3223,11 +3622,7 @@ public:
         }
         if (e.x < keyGutterW())
         {   // dbl-click a KEY = that pitch everywhere (the semantic select, H12)
-            auto r = gridArea();
-            const float rh = (float) r.getHeight() / (float) rows.size();
-            const int row = juce::jlimit (0, (int) rows.size() - 1,
-                                          (int) ((e.y - r.getY()) / rh));
-            opSelectSamePitch (rows[(size_t) row],
+            opSelectSamePitch (rows[(size_t) rowAtY (e.y)],
                                e.mods.isCtrlDown() || e.mods.isCommandDown());
         }
     }
@@ -3313,15 +3708,18 @@ public:
                     t.notes[i].start = juce::jlimit (0.0, beats - 0.05, t.notes[i].start + step);
             }
             else
-            {   // transpose semitone; shift = octave
+            {   // transpose semitone; shift = octave — and the VIEW follows the hand
                 const int step = (shift ? 12 : 1) * (kc == juce::KeyPress::upKey ? 1 : -1);
+                int plo = 127, phi = 0;
                 for (auto i : selection) if (i < t.notes.size())
+                {
                     t.notes[i].pitch = juce::jlimit (0, 127, t.notes[i].pitch + step);
-                bool out = false;                    // left the visible range? re-frame
-                for (auto i : selection) if (i < t.notes.size())
-                    if (t.notes[i].pitch > rows.front() || t.notes[i].pitch < rows.back())
-                        { out = true; break; }
-                if (out) rebuildRows();
+                    plo = juce::jmin (plo, t.notes[i].pitch);
+                    phi = juce::jmax (phi, t.notes[i].pitch);
+                }
+                if (plo > phi) { /* nothing moved */ }
+                else if (useTower()) scrollPitchIntoView (plo, phi);   // the tower scrolls to them
+                else if (phi > rows.front() || plo < rows.back()) rebuildRows();   // card band re-fits
             }
             if (onChanged) onChanged();
             repaint(); return true;
@@ -3796,7 +4194,8 @@ public:
     }
 
 private:
-    enum class Mode { none, move, resize, velocity, marquee, brush };
+    enum class Mode { none, move, resize, velocity, marquee, brush, pitchNav, keyScroll };
+    double keyScrollAnchorY = 0, keyScrollAnchorVy = 0;   // grabbing the keyboard
     std::pair<int, double> lastBrush { -1, -1.0 };
     void brushAt (const juce::MouseEvent& e)   // THE BRUSH (H12): hold B, drag the grid
     {
@@ -3805,8 +4204,7 @@ private:
         if (! r.contains (e.getPosition())) return;
         const double div = snapBeats > 0 ? snapBeats : 0.25;
         const double beats = song->totalBeats();
-        const float rh = (float) r.getHeight() / (float) rows.size();
-        const int row = juce::jlimit (0, (int) rows.size() - 1, (int) ((e.y - r.getY()) / rh));
+        const int row = rowAtY (e.y);
         const double beat = juce::jlimit (0.0, beats - div,
                                           std::floor (beatOfX (e.x) / div) * div);
         if (row == lastBrush.first && std::abs (beat - lastBrush.second) < div * 0.5) return;
@@ -3821,6 +4219,7 @@ private:
             selection.insert (t.notes.size());
             t.notes.push_back ({ beat, div, p, 0.8 });
             stampAt (beat, div, p);
+            auditionOn (p, 0.8);                 // THE KEYS SOUND: every brushed note speaks
             changedWhileDragging = true;
             repaint();
         }
@@ -3859,16 +4258,15 @@ private:
         if (song == nullptr) return;
         auto& t = song->tracks[(size_t) trackIndex];
         auto mr = marqueeRect().toFloat();
-        auto r = gridArea();
         const double p = effPpb();
-        const float rh = (float) r.getHeight() / (float) rows.size();
+        const float rh = effRowPx();
         selection.clear();
         for (size_t i = 0; i < t.notes.size(); ++i)
         {
             auto& n = t.notes[i];
-            const auto it = std::find (rows.begin(), rows.end(), n.pitch);
-            if (it == rows.end()) continue;
-            const float y = r.getY() + (float) std::distance (rows.begin(), it) * rh;
+            const int ri = rowIndexOf (n.pitch);
+            if (ri < 0) continue;
+            const float y = yOfRow (ri);
             juce::Rectangle<float> nr (xOf (n.start), y, juce::jmax (4.0f, (float) (n.len * p) - 1.0f), rh);
             if (mr.intersects (nr)) selection.insert (i);
         }
@@ -9140,6 +9538,10 @@ public:
             rejectButton.setButtonText ("Reject");
             decideProposal (false, r);
         };
+        // THE DECK RETIRES: its exit is a FADE, not a cut — the stage reclaims the
+        // strip only once the fade lands, so the arrangement never jumps 44px the
+        // instant you decide (the deck stays layoutAlive() through the fade).
+        deck.onExitDone = [this] { resized(); };
         auditionButton.onClick = [this] { toggleAudition(); };
         backButton.onClick = [this] { closeRoll(); };
         roll.onSnapshot = [this] { snapshot(); };            // PRE-edit state (correct undo)
@@ -9147,6 +9549,24 @@ public:
         roll.sharedClip  = &noteClip;               // H24: one clipboard, two surfaces
         roll.onClipWrite = [this] { noteClipLane.clear(); };   // roll copies carry no lanes
         roll.onGhostToggle = [this] (size_t gi) { toggleTakeHunk (gi); };
+        // THE KEYS SOUND: roll auditions ride the track's REAL engine chain — a guide
+        // note injected into the live graph (instrument + fx + sends + master), heard
+        // exactly as the song would sound it, over playback if it's rolling. forceNote
+        // bypasses the behaviour gate; stopOtherFirst = mono retrigger (the gliss law).
+        roll.onAudition = [this] (int pitch, int vel)
+        {
+            if (edit == nullptr || roll.readOnly) return;
+            auto ats = te::getAudioTracks (*edit);
+            if (roll.trackIndex >= 0 && roll.trackIndex < (int) ats.size())
+                ats[(size_t) roll.trackIndex]->playGuideNote (pitch, te::MidiChannel (1), vel,
+                                                              true, true, false);
+        };
+        roll.onAuditionOff = [this]
+        {
+            if (edit == nullptr) return;
+            for (auto* at : te::getAudioTracks (*edit))
+                at->turnOffGuideNotes();
+        };
 
         bpmLabel.setEditable (true, true);   // single OR double click edits (was double-only = "broken")
         bpmLabel.setTooltip ("click to edit tempo");
@@ -10044,6 +10464,7 @@ public:
                 return (proposalStreaming || proposalPending)
                        && ti < (int) diff.tracks.size() ? &diff.tracks[(size_t) ti] : nullptr;
             };
+            lane->resolveSettle = [this]() -> const SettleWave* { return &settleWave; };
             lane->setFlags (muted.count ((int) i) > 0, soloed.count ((int) i) > 0);
             lane->bpm = cs.bpm;
             lane->onToggleCell = [this, ti] (double beat) { toggleCell (ti, beat); };
@@ -10916,8 +11337,8 @@ public:
         r.removeFromTop (5);
         // THE PROPOSAL DECK: the take's whole decision surface, ON the stage —
         // full-width under the transport in EVERY view while a take is alive
-        deck.setVisible (deck.alive());
-        if (deck.alive())
+        deck.setVisible (deck.layoutAlive());   // layoutAlive() stays true through the
+        if (deck.layoutAlive())                 // exit fade: no stage-jump on decide
         {
             if (surgicalBadge.isVisible())      // badge width feeds deck layout
                 surgicalBadge.setSize (surgicalBadge.preferredWidth(), 24);
@@ -12127,7 +12548,7 @@ public:
 
     void snapSetView (const juce::String& v)
     {
-        if (roll.isVisible() && v != "roll") showRoll (false);   // views are exclusive
+        if (roll.isVisible() && ! v.startsWith ("roll")) showRoll (false);   // views are exclusive
         if (v != "agent" && v != "morph" && (agentMode || agentMix > 0.001f)
             && std::getenv ("SOTADAW_SNAP_AGENTMODE") == nullptr)
         {   // agent mode never leaks into other rig shots — EXCEPT the ghost
@@ -12215,6 +12636,17 @@ public:
                 roll.loopA = 4.0; roll.loopB = 12.0;        // prove the brace...
                 roll.setPlayheadBeats (6.0);                // ...and the beam, in pixels
             }
+        }
+        else if (v == "rolltop" || v == "rollbot")
+        {   // THE PITCH TOWER camera (SOTADAW_SNAP_TOWER): the same open roll, flown
+            // to the ceiling (G8) and the floor (C-2). Proof that every octave is
+            // reachable and that the pitch transform holds at both extremes — the
+            // old squeeze-to-fit roll had no such place to go.
+            roll.vy = (v == "rollbot") ? roll.maxScrollV() : 0.0;
+            roll.clampViewV();
+            if (v == "rollbot")                 // KEYS SOUND leg: a lit key + a REAL guide-note
+                roll.auditionOn (12, 0.8);      // call through the engine, in-frame at the floor
+            roll.repaint();
         }
         else if (v == "agent")   // AGENT MODE beauty shot: chat-first over a composing take
         {
@@ -17097,7 +17529,8 @@ private:  // (restores the section the HANDS burst was in)
             rejectButton.setEnabled (false);
             auditionButton.setEnabled (false);
             acceptButton.setButtonText ("Accepting...");
-        }
+            deck.setBusy (true);                 // the commit is in flight: a catch-light
+        }                                        // rides the deck edge until it lands
         // transcript cards freeze NOW — before cherry/hunk merges reshape
         // proposal+diff under their pointers (verdict optimistic; an error
         // re-arms the deck, a fresh take makes fresh cards)
@@ -17136,8 +17569,9 @@ private:  // (restores the section the HANDS burst was in)
         writeRequest (accept ? "accept" : "reject", extra);
         if (! accept)
         {
-            clearProposal();
-            swapEngine (song);   // rejecting mid-audition walks back by delta too
+            ghostGlass.flash (false);   // THE TAKE DROPS AWAY: the panes it touched
+            clearProposal();            // dissolve red (fired BEFORE the teardown —
+            swapEngine (song);          // flash() captures the panes by value)
             rebuildLanes();
         }
     }
@@ -17305,6 +17739,7 @@ private:  // (restores the section the HANDS burst was in)
                     rejectButton.setEnabled (true);
                     auditionButton.setEnabled (true);
                     acceptButton.setButtonText ("Accept");
+                    deck.setBusy (false);        // the catch-light stops with the flight
                 }
             }
             else if (kind == "analysis")
@@ -17469,6 +17904,22 @@ private:  // (restores the section the HANDS burst was in)
                     continue;
                 }
                 const auto merged = diff;
+                // THE SETTLE: capture the landing notes BEFORE teardown — the lanes
+                // repaint them ghost-green easing into the channel colour while the
+                // glass sweep plays (one continuous story, never a snap recolour)
+                settleWave.t0 = juce::Time::getMillisecondCounter();
+                settleWave.keys.clear();
+                for (size_t i = 0; i < merged.tracks.size(); ++i)
+                    if (! merged.tracks[i].added.empty())
+                    {
+                        const auto nm = i < song.tracks.size() ? song.tracks[i].name
+                                      : i < proposal.tracks.size() ? proposal.tracks[i].name
+                                      : juce::String ((int) i);
+                        auto& ks = settleWave.keys[nm];
+                        for (auto& n : merged.tracks[i].added) ks.insert (noteKey (n));
+                    }
+                ghostGlass.flash (true);   // THE TAKE LANDS: a light sweeps the panes it
+                                           // changed as the ghosts settle into the project
                 clearProposal();
                 reloadAcceptedSong();   // THE INSTANT ACCEPT: delta when provable —
                                         // the music never stops for a 6-note take
@@ -18267,6 +18718,7 @@ private:  // (restores the section the HANDS burst was in)
         historyPanel.setActive ({});
         rejectButton.setButtonText ("Reject");   // the WHY moment ended either way
         decisionInFlight = false;                // the round-trip ended (any outcome)
+        deck.setBusy (false);                    // ...and so does the in-flight catch-light
         acceptButton.setEnabled (true);
         rejectButton.setEnabled (true);
         auditionButton.setEnabled (true);
@@ -18672,6 +19124,7 @@ private:  // (restores the section the HANDS burst was in)
     void refreshGhostGlass()
     {
         std::vector<juce::Rectangle<int>> panes;
+        juce::StringArray paneKeys;   // pane i belongs to lane paneKeys[i] (bloom identity)
         // glass lives on the ARRANGE lanes only — never over mixer/live/roll chrome
         // (alwaysOnTop made stray panes float over foreign UI: bubble dossier #3)
         const bool arrangeOn = ! roll.isVisible() && ! mixer.isVisible() && ! liveGrid.isVisible();
@@ -18703,6 +19156,11 @@ private:  // (restores the section the HANDS burst was in)
                                             // state lives on the ENGINE ROOM porthole and
                                             // the transcript cards; no glass on the hull
                             panes.push_back (pane);
+                            paneKeys.add ((size_t) i < song.tracks.size()
+                                              ? song.tracks[(size_t) i].name
+                                          : (size_t) i < proposal.tracks.size()
+                                              ? proposal.tracks[(size_t) i].name
+                                              : juce::String (i));
                         }
                 }
         }
@@ -18713,7 +19171,7 @@ private:  // (restores the section the HANDS burst was in)
                          panes.front().getY(), panes.front().getHeight());
             std::fflush (stdout);
         }
-        ghostGlass.setPanes (std::move (panes), ghostMode);
+        ghostGlass.setPanes (std::move (panes), ghostMode, std::move (paneKeys));
         if (ghostMode != GhostGlass::off) ghostGlass.toFront (false);
     }
 
@@ -19387,6 +19845,7 @@ private:  // (restores the section the HANDS burst was in)
     }
     void closeRoll()
     {
+        roll.auditionOff();                 // a held key never outlives the roll (stuck-note law)
         saveNow();
         stopPlayback();
         rebuildEngine (song);
@@ -19932,7 +20391,10 @@ private:  // (restores the section the HANDS burst was in)
     void timerCallback() override
     {
         const auto perfT0 = perfOn ? juce::Time::getHighResolutionTicks() : (juce::int64) 0;
-        if (ghostMode != 0) ghostGlass.tick();     // the glass breathes on the host clock
+        ghostGlass.tick();   // the glass breathes on the host clock — UNCONDITIONAL now:
+                             // it self-gates on isVisible(), and the decision one-shots
+                             // (accept sweep / reject dissolve) must keep animating AFTER
+                             // ghostMode has already gone off (the take is decided)
         if (historyPanel.isVisible()) historyPanel.tick();   // shimmer + hearing bars
         if (tunePanel.isVisible()) tunePanel.tick();         // busy breath + scan beam
         if (listenStream && proposalStreaming && edit != nullptr)
@@ -20003,6 +20465,8 @@ private:  // (restores the section the HANDS burst was in)
             }
         }
         deck.tick();                          // the deck breathes on the host clock
+        surgicalBadge.tick();                 // ...and the scalpel verdict ARRIVES (one
+                                              // light sweeps the chip; self-gates when settled)
         for (auto* c : allCards) c->tick();
         if (++uiBeatTick % 32 == 0)           // THE CONSOLE BEAT (~1/s): the daemon
         {                                     // cancels runs whose console is gone —
@@ -21166,6 +21630,7 @@ private:  // (restores the section the HANDS burst was in)
     Song song, proposal;
     Song lastBuiltSong;   // THE ENGINE DELTA: the snapshot the live edit was built from
     SongDiff diff;
+    SettleWave settleWave;   // the last accept's landing notes (THE SETTLE)
     bool proposalPending = false, auditioningProposal = false, exporting = false;
     bool proposalStreaming = false;       // GHOST STREAM: agent mid-flight, diff growing live
     bool listenStream = false;            // LISTEN LIVE: transport follows the growing ghost
@@ -22041,7 +22506,16 @@ public:
                 if (want ("morph"))      shoot ("morph", "morph_out.png");
                 if (want ("live"))       shoot ("live", "live.png");
                 if (want ("mix"))        shoot ("mix", "mix.png");
-                if (want ("roll"))       shoot ("roll", "roll.png");
+                if (want ("roll"))
+                {
+                    shoot ("roll", "roll.png");
+                    if (std::getenv ("SOTADAW_SNAP_TOWER") != nullptr)
+                    {   // the tower's extremes: every octave is reachable, and the
+                        // pitch transform holds at the ceiling and the floor
+                        shoot ("rolltop", "roll_top.png");
+                        shoot ("rollbot", "roll_bottom.png");
+                    }
+                }
                 if (want ("history"))    shoot ("history", "history.png");
                 if (want ("rack"))       shoot ("rack", "rack.png");
                 if (want ("rackmaster")) shoot ("rackmaster", "rack_master.png");

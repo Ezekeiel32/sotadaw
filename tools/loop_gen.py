@@ -12,6 +12,7 @@ import argparse, json, math, os, random, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kg import KG, esc, eligible_recipe_voice
+from meter import parse_meter, default_groups
 
 DNA_CACHE = os.path.join(ROOT, "agent", "dna_cache.json")
 PALETTES_PATH = os.path.join(ROOT, "library", "palettes.json")
@@ -78,13 +79,14 @@ def genre_dna(genre):
         try:
             kg = KG()
             row = kg.q(f"MATCH (g:Genre {{name: '{esc(genre)}'}})-[:CHARACTERIZED_BY]->(p:PatternArchetype) "
-                       f"WHERE p.grid IS NOT NULL RETURN p.name, p.grid, g.bpm_lo, g.bpm_hi, g.common_key")
+                       f"WHERE p.grid IS NOT NULL RETURN p.name, p.grid, g.bpm_lo, g.bpm_hi, "
+                       f"g.common_key, g.native_meter")
             if not row:
                 return None, (f"no executable PatternArchetype for '{genre}' — loop DNA exists for: "
                               + ", ".join(r[0] for r in kg.q(
                                   "MATCH (g:Genre)-[:CHARACTERIZED_BY]->(p:PatternArchetype) "
                                   "WHERE p.grid IS NOT NULL RETURN g.name ORDER BY g.name")))
-            pname, gjson, lo, hi, gkey = row[0]
+            pname, gjson, lo, hi, gkey, nmeter = row[0]
             # THE TASTE LAW (2026-07-12): first ELIGIBLE voice — drum-zone
             # recipes (snare_zones/hat_zones/kick_*) once handed boombap's
             # chord lane a SNARE. kg.eligible_recipe_voice is the one predicate
@@ -110,7 +112,10 @@ def genre_dna(genre):
                     "band_order": mix[0][0] if mix and mix[0] else None,
                     "lufs_lo": mix[0][1] if mix and mix[0] and len(mix[0]) > 1 else None,
                     "voicing": json.loads(vc[0][0]) if vc and vc[0] and vc[0][0] else None,
-                    "groove": grv[0][0] if grv and grv[0] else None}, None
+                    "groove": grv[0][0] if grv and grv[0] else None,
+                    # THE WORLD GRID (#1): the genre's native meter (KG-field
+                    # law — this key rides BOTH the live query and the cache)
+                    "native_meter": nmeter}, None
         except Exception:
             pass                                   # no graph on this machine -> baked DNA
     try:
@@ -125,7 +130,8 @@ def genre_dna(genre):
             "bpm_hi": g.get("bpm_hi"), "key": g.get("key"), "voice": g.get("voice"),
             "band_order": g.get("band_order"), "lufs_lo": g.get("lufs_lo"),
             "voicing": g.get("voicing"),
-            "groove": g.get("groove")}, None
+            "groove": g.get("groove"),
+            "native_meter": g.get("native_meter")}, None
 
 NOTE_PC = {"C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3, "E": 4, "F": 5,
            "F#": 6, "Gb": 6, "G": 7, "G#": 8, "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11}
@@ -235,9 +241,11 @@ LANE_PAN = {"hat": 0.22, "openhat": -0.18, "ride": 0.30, "rim": -0.20,
             "clap": 0.08, "ghost": -0.12, "lead": 0.08, "arp": -0.18}
 
 
-def four_on_floor(kick_steps):
-    """Data-true 4-on-the-floor: the grid itself says so (no genre guessing)."""
-    return {0, 4, 8, 12} <= {int(s) % 16 for s in (kick_steps or [])}
+def four_on_floor(kick_steps, heads=None, bar_steps=16):
+    """Data-true 4-on-the-floor: a kick on EVERY pulse of the bar, said by the
+    grid itself (no genre guessing). 4/4 = the classic 0/4/8/12."""
+    return set(heads or (0, 4, 8, 12)) <= {int(s) % bar_steps
+                                           for s in (kick_steps or [])}
 
 
 # voices with a detune zone -> (left value, right value); the two sides run
@@ -313,7 +321,7 @@ def color_character(genre, voice):
 
 
 def hook_notes(cell, lead_bars, iv, root, base_oct, deg_at, bars, rng,
-               seventh=False):
+               seventh=False, bar_steps=16, heads=None):
     """THE HOOK ENGINE (W14): melody with INTENT instead of a seeded walk —
     the human verdict on 13 mix-waves was "still sucks"; the gap was HERE.
     The genre's cell (grid lead steps) keeps its RHYTHM — identity — but the
@@ -330,7 +338,9 @@ def hook_notes(cell, lead_bars, iv, root, base_oct, deg_at, bars, rng,
                    for st, dg, ln in cell), key=lambda e: e[0])
     if not cell:
         return []
-    phrase16 = lead_bars * 16
+    bar_q = bar_steps * 0.25                    # THE WORLD GRID: the bar's quarters
+    head_set = set(heads or (0, 4, 8, 12))      # its STRONG steps (4/4: st % 4 == 0)
+    phrase16 = lead_bars * bar_steps
     n_groups = max(1, bars // lead_bars)
     shape = rng.choice(("arch", "ramp", "valley"))
     lo_d, hi_d = 1, 11                          # melodies live within ~a tenth
@@ -373,19 +383,19 @@ def hook_notes(cell, lead_bars, iv, root, base_oct, deg_at, bars, rng,
         anchors = {}
         for i, (st, dg, ln) in enumerate(ev):
             final = i == len(ev) - 1
-            if not (st % 4 == 0 or final):
+            if not ((st % bar_steps) in head_set or final):
                 continue
             h = contour(plan_pos(st))
             if kind == "B":
                 h = 1.0 - h                     # the ANSWER inverts the call
             tdeg = lo_d + h * (hi_d - lo_d)
-            bar = bar0 + st // 16
+            bar = bar0 + st // bar_steps
             cdeg = deg_at(bar + lead_bars) if (final and kind == "B") else deg_at(bar)
             anchors[i] = nearest(ctones(cdeg), tdeg, top=hi_d - 2)
         # THE CLIMAX: one anchor in the late phrase owns the window top
         if anchors and n_groups >= 2 and g % 4 == climax_phrase % 4:
             ci = max(anchors, key=lambda i: anchors[i])
-            anchors[ci] = max(ctones(deg_at(bar0 + ev[ci][0] // 16)))
+            anchors[ci] = max(ctones(deg_at(bar0 + ev[ci][0] // bar_steps)))
         # pass 2 — weak notes APPROACH the next anchor (passing tones fill thirds)
         a_idx = sorted(anchors)
         for i, (st, dg, ln) in enumerate(ev):
@@ -420,8 +430,8 @@ def hook_notes(cell, lead_bars, iv, root, base_oct, deg_at, bars, rng,
             _breath_skip = set(_tail[:-1])
         # emit through the PERFORMANCE layer
         for i, (st, dg, ln) in enumerate(ev):
-            beat = bar0 * 4 + st * 0.25
-            if beat >= bars * 4.0 or i in _breath_skip:
+            beat = bar0 * bar_q + st * 0.25
+            if beat >= bars * bar_q or i in _breath_skip:
                 continue
             h = contour(plan_pos(st))
             if kind == "B":
@@ -643,9 +653,28 @@ def key_to_pcs(key):
     root, iv = key_scale(key)
     return root, [(root + i) % 12 for i in iv]
 
-def bass_notes(style, root, pcs, bars, rng, kick_steps, spb16=0.25, bar_degrees=None):
+def bar_heads16(num, den, groups=None):
+    """THE WORLD GRID (#1): the 16th-STEP positions of a bar's own PULSE.
+    4/4 -> [0,4,8,12] (the quarters — every historical formula's assumption),
+    7/8 aksak -> [0,4,8] (2+2+3), 6/8 -> [0,6], 9/8 zeibekiko -> [0,4,8,12]
+    (2+2+2+3, via the grid's `groups`). Procedural lanes lean where the METER
+    leans instead of where 4/4 would."""
+    unit = 16 // den if den in (2, 4, 8, 16) else 4
+    gs = [int(g) for g in (groups or []) if int(g) > 0]
+    if sum(gs) != num:                          # a grid's groups must sum to the meter
+        gs = default_groups(num, den)
+    heads, acc = [], 0
+    for g in gs:
+        heads.append(acc * unit)
+        acc += g
+    return heads
+
+def bass_notes(style, root, pcs, bars, rng, kick_steps, spb16=0.25, bar_degrees=None,
+               bar_steps=16, heads=None):
     """A seeded bass line in the key. Returns (voice, notes).
-    bar_degrees: per-bar scale degree (1-based) — the bass FOLLOWS THE CHANGES."""
+    bar_degrees: per-bar scale degree (1-based) — the bass FOLLOWS THE CHANGES.
+    bar_steps/heads: THE WORLD GRID — the bar's 16th-count and its pulse heads
+    (4/4 = 16 / [0,4,8,12], so every offset below is the historical one)."""
     def base_for(bar):
         deg = 1
         if bar_degrees:
@@ -656,25 +685,37 @@ def bass_notes(style, root, pcs, bars, rng, kick_steps, spb16=0.25, bar_degrees=
     base = base_for(0)
     n = lambda s, l, p, v: {"start": round(s * spb16, 4), "len": round(l * spb16, 4),
                             "pitch": p, "vel": round(v, 3)}
-    notes, total = [], bars * 16
+    heads = list(heads or [0, 4, 8, 12])
+    head_set = set(heads)
+    gaps = [(heads[i + 1] if i + 1 < len(heads) else bar_steps) - h
+            for i, h in enumerate(heads)]
+    notes, total = [], bars * bar_steps
+    def put(b, off, l, p, v):
+        """THE BARLINE GUARD: a bass ONSET may never cross into the next bar —
+        a hit past the barline is a wrong bar, not a syncopation. (In 4/4 every
+        offset below is < 16, so this never fires: the identity law.)"""
+        if off < bar_steps:
+            notes.append(n(b + off, l, p, v))
     fifth, four, seven = base + 7, base + 5, base + 10
     def harm(i):
-        b = base_for(i // 16)
+        b = base_for(i // bar_steps)
         return b, b + 7, b + 5, b + 10
     if style == "offbeat":
-        for i in range(2, total, 4):
-            b_, f_, _, _ = harm(i)
-            notes.append(n(i, 1.6, b_ if rng.random() < 0.8 else f_, 0.85))
+        for bar in range(bars):                # 4/4: steps 2, 6, 10, 14 — the
+            b = bar * bar_steps                # &-of-every-pulse, whatever the meter
+            for h, g in zip(heads, gaps):
+                b_, f_, _, _ = harm(b + h)
+                put(b, h + g // 2, 1.6, b_ if rng.random() < 0.8 else f_, 0.85)
     elif style == "roots":
         for bar in range(bars):
-            b = bar * 16
+            b = bar * bar_steps
             b_, f_, q_, s_ = harm(b)
             pool = [b_, b_, f_, q_]
-            notes.append(n(b, 3.5, b_, 0.9))
-            notes.append(n(b + 6, 1.5, rng.choice(pool), 0.7))
-            notes.append(n(b + 10, 2.0, rng.choice(pool), 0.8))
+            put(b, 0, 3.5, b_, 0.9)
+            put(b, 6, 1.5, rng.choice(pool), 0.7)
+            put(b, 10, 2.0, rng.choice(pool), 0.8)
             if rng.random() < 0.5:
-                notes.append(n(b + 14, 1.5, rng.choice([s_, f_]), 0.6))
+                put(b, 14, 1.5, rng.choice([s_, f_]), 0.6)
     elif style == "sliding":                   # the 808 IS the bassline
         # W19: notes LEGATO-OVERLAP inside the bar (0.4-16th lap) — the mono
         # engine ignores the old note's off once a new note owns the voice,
@@ -682,46 +723,48 @@ def bass_notes(style, root, pcs, bars, rng, kick_steps, spb16=0.25, bar_degrees=
         # FL-porta GLIDE. The bar's last note keeps its tail (the 808
         # breathes at bar seams). SOTADAW_SLIDE808=0 = legacy discrete kicks.
         slide_on = os.environ.get("SOTADAW_SLIDE808", "1") != "0"
+        _pool16 = [s for s in (0, 6, 10, 12) if s < bar_steps]
         for bar in range(bars):
-            b = bar * 16
+            b = bar * bar_steps
             b_, f_, q_, _ = harm(b)
             pool = [b_, b_, b_ - 5, q_, f_ - 12 if f_ - 12 > 24 else f_]
-            picks = sorted(rng.sample([0, 6, 10, 12], k=3))
+            picks = sorted(rng.sample(_pool16, k=min(3, len(_pool16))))
             for i, s in enumerate(picks):
                 ln = 5.0 if i == 0 else 3.0
                 if slide_on and i + 1 < len(picks):
                     ln = (picks[i + 1] - s) + 0.4
-                notes.append(n(b + s, ln, rng.choice(pool), 0.9))
-    elif style == "psy_rolling":               # bass on every 16th EXCEPT the kicks
-        kicks = {k % 16 for k in kick_steps}
-        for bar in range(bars):
-            for i in range(16):
-                if i % 4 != 0 or i not in kicks and i % 4 == 0:
-                    if i % 4 != 0:
-                        notes.append(n(bar * 16 + i, 0.9, harm(bar * 16)[0], 0.8))
+                put(b, s, ln, rng.choice(pool), 0.9)
+    elif style == "psy_rolling":               # bass on every 16th BETWEEN the pulses
+        for bar in range(bars):                # (4/4: every step but 0/4/8/12)
+            b = bar * bar_steps
+            for i in range(bar_steps):
+                if i not in head_set:
+                    put(b, i, 0.9, harm(b)[0], 0.8)
     elif style == "wub":                       # W94: the dnb pocket — the
         # reese MOVES (critic round: "bass near-extinct, 0.4 notes/bar").
         # Syncopated stabs locked to the break's pocket with a long anchor
         # on bar 1 of each pair: hold... wub-wub — jump-up/rolling middle
         # ground, ~2.5 notes/bar of real movement.
         for bar in range(bars):
-            b = bar * 16
+            b = bar * bar_steps
             b_, f_, q_, s_ = harm(b)
             if bar % 2 == 0:
-                notes.append(n(b, 10.0, b_, 0.85))          # the anchor hold
-                notes.append(n(b + 11, 2.0, rng.choice([b_, q_]), 0.7))
-                notes.append(n(b + 14, 1.6, rng.choice([f_, s_]), 0.72))
+                put(b, 0, 10.0, b_, 0.85)                   # the anchor hold
+                put(b, 11, 2.0, rng.choice([b_, q_]), 0.7)
+                put(b, 14, 1.6, rng.choice([f_, s_]), 0.72)
             else:
-                notes.append(n(b, 2.5, b_, 0.8))
-                notes.append(n(b + 3, 1.5, rng.choice([b_, f_]), 0.68))
-                notes.append(n(b + 6, 3.0, rng.choice([q_, b_]), 0.78))
-                notes.append(n(b + 10, 2.0, rng.choice([f_, s_]), 0.7))
-                notes.append(n(b + 13, 2.5, b_, 0.75))
+                put(b, 0, 2.5, b_, 0.8)
+                put(b, 3, 1.5, rng.choice([b_, f_]), 0.68)
+                put(b, 6, 3.0, rng.choice([q_, b_]), 0.78)
+                put(b, 10, 2.0, rng.choice([f_, s_]), 0.7)
+                put(b, 13, 2.5, b_, 0.75)
     elif style == "sustained":                 # reese/wobble holds
         for bar in range(0, bars, 2):
-            b_, _, q_, _ = harm(bar * 16)
+            b = bar * bar_steps
+            b_, _, q_, _ = harm(b)
             p = rng.choice([b_, b_ - 2 if b_ - 2 > 24 else b_, q_])
-            notes.append(n(bar * 16, 30.0 if bars - bar >= 2 else 14.0, p, 0.8))
+            put(b, 0, (2 * bar_steps - 2) if bars - bar >= 2 else (bar_steps - 2),
+                p, 0.8)
     elif style == "sub":                       # the 808 SUB is the floor
         # (worldclass ledger 2026-07-12: "sub" was UNHANDLED — plugg/rage/
         # jersey_drill/digicore, 12 genres, birthed with ZERO bass lane.)
@@ -729,43 +772,46 @@ def bass_notes(style, root, pcs, bars, rng, kick_steps, spb16=0.25, bar_degrees=
         # root anchor per bar, then ONE late-bar move that legato-overlaps
         # into the next downbeat — the hand-off IS the 808 glide (W19).
         slide_on = os.environ.get("SOTADAW_SLIDE808", "1") != "0"
+        _holds = [h for h in (10, 11, 12) if h < bar_steps] or [max(1, bar_steps - 2)]
         for bar in range(bars):
-            b = bar * 16
+            b = bar * bar_steps
             b_, f_, q_, s_ = harm(b)
-            hold = rng.choice([10, 11, 12])
+            hold = rng.choice(_holds)
             move = rng.choice([q_, f_ - 12 if f_ - 12 > 24 else f_, s_, b_])
-            notes.append(n(b, hold + (0.4 if slide_on else 0.0), b_, 0.88))
-            notes.append(n(b + hold, (16 - hold) + (0.4 if slide_on else 0.0),
-                           move, 0.8))
-    elif style == "walking":                   # jazz/bigband quarters w/ approach tones
-        for bar in range(bars):
-            b = bar * 16
+            put(b, 0, hold + (0.4 if slide_on else 0.0), b_, 0.88)
+            put(b, hold, (bar_steps - hold) + (0.4 if slide_on else 0.0),
+                move, 0.8)
+    elif style == "walking":                   # the pulse walked, w/ approach tones
+        for bar in range(bars):                # (4/4: quarters 0/4/8/12; 7/8: 2+2+3)
+            b = bar * bar_steps
             b_, f_, _, _ = harm(b)
-            nb, _, _, _ = harm((bar + 1) * 16)     # approach the NEXT bar's root
+            nb, _, _, _ = harm((bar + 1) * bar_steps)   # approach the NEXT bar's root
             walk = [b_, rng.choice([b_ + 4, b_ + 5]), f_,
                     rng.choice([nb + 1, nb - 1, nb + 2])]
-            for i, p_ in enumerate(walk):
-                notes.append(n(b + i * 4, 3.6, p_, 0.8 if i else 0.85))
+            # the approach tone always lands LAST (4/4 keeps walk itself)
+            tones = walk[:max(1, len(heads) - 1)] + [walk[-1]]
+            for i, (h, g) in enumerate(zip(heads, gaps)):
+                put(b, h, g * 0.9, tones[i % len(tones)], 0.8 if i else 0.85)
     elif style == "tumbao":                    # THE TUMBAO (ledger dr28: salsa
         # bass hit the DOWNBEAT — the exact opposite of the culture). The bass
         # lands on the AND-OF-2 (the fifth) and BEAT 4 (the NEXT bar's root,
         # anticipated, ringing over the barline). The downbeat stays empty —
         # that is where the clave lives.
         for bar in range(bars):
-            b = bar * 16
+            b = bar * bar_steps
             b_, f_, q_, s_ = harm(b)
-            nb = harm(((bar + 1) % bars) * 16)[0]
-            notes.append(n(b + 6, 5.5, f_, 0.82))
-            notes.append(n(b + 12, 7.5, nb, 0.88))
+            nb = harm(((bar + 1) % bars) * bar_steps)[0]
+            put(b, 6, 5.5, f_, 0.82)
+            put(b, 12, 7.5, nb, 0.88)
     elif style == "log":                       # log drum answers in the kick's holes
         holes = [3, 9, 14]
         for bar in range(bars):
-            b = bar * 16
+            b = bar * bar_steps
             b_, f_, q_, s_ = harm(b)
             pool = [f_, f_, s_, q_]
             for h in holes:
                 if rng.random() < 0.85:
-                    notes.append(n(b + h, 1.6, rng.choice(pool), 0.85))
+                    put(b, h, 1.6, rng.choice(pool), 0.85)
     # THE TURNAROUND: records breathe at the loop seam — the last 16th walks
     # into the loop-top root (chromatic leading tone, or the step above). The
     # walking style already approaches; sustained/log hold their role.
@@ -791,6 +837,23 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
         return None, err
     pname, grid = dna["archetype"], dna["grid"]
     rng = random.Random(f"{genre}/{seed}")   # name-independent: same genre+seed reproduces exactly
+    # THE WORLD GRID (BEST_DAW_30 #1): the genre's NATIVE METER. A bar is
+    # bar_steps 16ths (num*16/den) and bar_q quarter-beats; `heads` are the
+    # bar's own pulse. 4/4 -> 16 / 4.0 / [0,4,8,12], so EVERY formula below
+    # reduces to the historical literal byte-exactly (THE IDENTITY LAW: a
+    # mapless genre's take is bit-for-bit yesterday's). Odd meters lay their
+    # bars end-to-end at bar_q and lean where the METER leans — the aksak's
+    # 2+2+3, not a 4/4 wearing a Balkan name (which is exactly what
+    # aksak_oompah/zeibekiko/odd_meter_cell were until tools/kg_seed_meter.py).
+    mnum, mden = parse_meter(dna.get("native_meter"))
+    if mden not in (2, 4, 8, 16) or (mnum * 16) % mden:
+        mnum, mden = 4, 4                    # only meters with a whole 16th grid
+    bar_steps = mnum * 16 // mden
+    bar_q = bar_steps * 0.25
+    heads = bar_heads16(mnum, mden, grid.get("groups"))
+    head_set = set(heads)
+    gaps = [(heads[i + 1] if i + 1 < len(heads) else bar_steps) - h
+            for i, h in enumerate(heads)]
     # W87 THE PROGRESSION TAKES: one genre = one progression FOREVER was
     # the harmonic photocopier (the W84 census, harmony axis). A take may
     # substitute middle chords WITHIN their diatonic function (tonic 1<->6,
@@ -827,16 +890,17 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
             and not any(k in grid for k in ("clave", "cowbell", "conga"))
             and rng.random() < 0.55):
         _ks = list(_ks0)
-        _kk = [s for s in _ks if s % 16 != 0]
+        _kk = [s for s in _ks if s % bar_steps != 0]
         _move = rng.random()
         if _move < 0.45:
-            _free = [s for s in (3, 6, 7, 10, 11, 14) if s not in _ks]
+            _free = [s for s in (3, 6, 7, 10, 11, 14)
+                     if s not in _ks and s < bar_steps]     # never past the barline
             if _free and len(_ks) <= 6:
                 _ks = sorted(_ks + [rng.choice(_free)])
         elif _move < 0.75 and _kk:
             _v = rng.choice(_kk)
             _cand = _v + rng.choice((-1, 1))
-            if 0 < _cand < 16 and _cand not in _ks:
+            if 0 < _cand < bar_steps and _cand not in _ks:
                 _ks = sorted([s for s in _ks if s != _v] + [_cand])
         elif len(_kk) >= 2:
             _ks = [s for s in _ks if s != rng.choice(_kk)]
@@ -869,10 +933,14 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
         notes = []
         for bar in range(0, bars, pat_bars):
             for s in steps:
-                beat = bar * 4 + s * 0.25
-                if beat >= bars * 4:
+                if s >= pat_bars * bar_steps:
+                    continue          # a cell step past its own bar is a wrong bar
+                beat = bar * bar_q + s * 0.25
+                if beat >= bars * bar_q:
                     continue
-                v = float(vmap.get(str(s), bvel * ACCENT.get(s % 4, 0.7) / ACCENT[0]))
+                # the accent falls on the BAR'S pulse (4/4: s % 4 == 0 exactly)
+                _ai = 0 if (s % bar_steps) in head_set else (s % 4)
+                v = float(vmap.get(str(s), bvel * ACCENT.get(_ai, 0.7) / ACCENT[0]))
                 v = max(0.15, min(1.0, v * rng.uniform(0.94, 1.06)))   # human hands
                 notes.append({"start": round(beat, 4), "len": ln, "pitch": pitch, "vel": round(v, 3)})
         # THE FILL post-pass: replace this lane's turnaround bars with the fill
@@ -884,14 +952,17 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
         _fill_bars = set()
         if fsteps is not None and bars >= 2:
             _fill_bars = {b for b in range(3, bars, 4)} | {bars - 1}
-            notes = [nt for nt in notes if int(nt["start"] // 4) not in _fill_bars]
+            notes = [nt for nt in notes if int(nt["start"] // bar_q) not in _fill_bars]
             for fb in sorted(_fill_bars):
                 damp = 1.0 if fb == bars - 1 else 0.85
                 for s in fsteps:
-                    beat = fb * 4.0 + s * 0.25
-                    if beat >= bars * 4:
+                    if s >= bar_steps:
+                        continue                       # the fill owns ONE bar
+                    beat = fb * bar_q + s * 0.25
+                    if beat >= bars * bar_q:
                         continue
-                    v = float(fmap.get(str(s), bvel * ACCENT.get(s % 4, 0.7) / ACCENT[0]))
+                    _ai = 0 if s in head_set else (s % 4)
+                    v = float(fmap.get(str(s), bvel * ACCENT.get(_ai, 0.7) / ACCENT[0]))
                     v = max(0.15, min(1.0, v * damp * rng.uniform(0.94, 1.06)))
                     notes.append({"start": round(beat, 4), "len": ln, "pitch": pitch, "vel": round(v, 3)})
         # THE BREATHING BAR (worldclass ledger dr01, 2026-07-12): a 4-bar loop
@@ -913,11 +984,11 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
             # THE CHOP TAKE (ledger dr23, 2026-07-12) — breaks-family snares
             # re-chop per bar, backbeat anchors (2&4) sacred.)
             for _bar in range(1, bars):
-                _b0 = _bar * 4.0
+                _b0 = _bar * bar_q
                 if _bar in _fill_bars:
                     continue                     # every fill bar owns its shape
                 _brng = random.Random(f"{genre}/{seed}/{lane}/bar{_bar}")
-                _bn = [n for n in notes if _b0 <= n["start"] < _b0 + 4.0]
+                _bn = [n for n in notes if _b0 <= n["start"] < _b0 + bar_q]
                 if not _bn:
                     continue
                 for n in _bn:
@@ -932,13 +1003,13 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
                     if _roll < 0.40 and _free:
                         _v = _brng.choice(_free)            # re-CHOP: shift one
                         _cand = round(_v["start"] + _brng.choice((-0.25, 0.25)), 4)
-                        if (_b0 <= _cand < _b0 + 4.0
+                        if (_b0 <= _cand < _b0 + bar_q
                                 and all(abs(n["start"] - _cand) > 1e-6 for n in _bn)):
                             _v["start"] = _cand
                     elif _roll < 0.70 and _free:
                         _src = _brng.choice(_free)          # chop STUTTER double
                         _cand = round(_src["start"] + 0.25, 4)
-                        if (_cand < _b0 + 4.0
+                        if (_cand < _b0 + bar_q
                                 and all(abs(n["start"] - _cand) > 1e-6 for n in _bn)):
                             notes.append(dict(_src, start=_cand,
                                               vel=round(max(0.15, _src["vel"] * 0.55), 3)))
@@ -951,7 +1022,7 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
                 elif _roll < 0.80:
                     _src = _brng.choice(_bn)                # breathe IN
                     _cand = round(_src["start"] + _brng.choice((-0.25, 0.25)), 4)
-                    if (_b0 <= _cand < _b0 + 4.0
+                    if (_b0 <= _cand < _b0 + bar_q
                             and all(abs(n["start"] - _cand) > 1e-6 for n in _bn)):
                         notes.append(dict(_src, start=_cand,
                                           vel=round(max(0.15, _src["vel"] * 0.7), 3)))
@@ -1019,7 +1090,8 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
         _steps84 = rhythm_take(lead["steps"], rng)
         lnotes = hook_notes(_steps84, max(pat_bars, lead_bars), iv, root,
                             base_oct, _ldeg_at, bars, rng,
-                            seventh=genre.lower() in EXT_SEVENTH)
+                            seventh=genre.lower() in EXT_SEVENTH,
+                            bar_steps=bar_steps, heads=heads)
         if lnotes:
             _lgg = grid.get("lead_gain_db")    # W67: per-genre melodic staging
             ltrack = {"name": "lead", "source": {"kind": "faust", "id": lv},
@@ -1042,7 +1114,9 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
                 if b >= b0:
                     d = dd
             bar_degs.append(d)
-        bvoice, bnotes = bass_notes(bstyle, root, pcs, bars, rng, grid.get("kick", []), bar_degrees=bar_degs)
+        bvoice, bnotes = bass_notes(bstyle, root, pcs, bars, rng, grid.get("kick", []),
+                                    bar_degrees=bar_degs,
+                                    bar_steps=bar_steps, heads=heads)
         # W47: per-genre bass VOICE override (grid JSON field "bass_voice" —
         # rides the whole-blob grid through BOTH KG-query and cache paths, so
         # the KG-field law is satisfied by construction). Curation truth in
@@ -1129,16 +1203,21 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
             voiced = voice_pcs(per_bar, _vc.get("style", "smooth"),
                                lo=_lo, hi=_hi,
                                thirds=[t[1] for t in per_bar], roots=[t[0] for t in per_bar])
-            # articulation rides the family: chop where the genre chops
+            # articulation rides the family: chop where the genre chops.
+            # THE WORLD GRID: the afterbeat/offbeat live on the BAR'S pulse —
+            # 4/4 gives back (1.0, 3.0) and (0.5, 1.5, 2.5, 3.5) exactly.
+            _skank_offs = [h * 0.25 for h in heads[1::2]]
+            _stab_offs = [(h + g * 0.5) * 0.25 for h, g in zip(heads, gaps)]
             if g_l in SKANK_GENRES:                # the afterbeat chop on 2 & 4
-                cnotes = [{"start": round(b * 4.0 + off, 4), "len": 0.55, "pitch": p,
-                           "vel": 0.55 if off == 1.0 else 0.5}
-                          for b in range(bars) for off in (1.0, 3.0) for p in voiced[b]]
+                cnotes = [{"start": round(b * bar_q + off, 4), "len": 0.55, "pitch": p,
+                           "vel": 0.55 if k == 0 else 0.5}
+                          for b in range(bars) for k, off in enumerate(_skank_offs)
+                          for p in voiced[b]]
             elif g_l in STAB_GENRES:               # offbeat-8th stabs (the house organ)
-                cnotes = [{"start": round(b * 4.0 + off, 4), "len": 0.4, "pitch": p,
-                           "vel": v}
+                cnotes = [{"start": round(b * bar_q + off, 4), "len": 0.4, "pitch": p,
+                           "vel": (0.46, 0.4, 0.48, 0.4)[k % 4]}
                           for b in range(bars)
-                          for off, v in ((0.5, 0.46), (1.5, 0.4), (2.5, 0.48), (3.5, 0.4))
+                          for k, off in enumerate(_stab_offs)
                           for p in voiced[b]]
             elif g_l in CHUG_GENRES:               # W61: the metal WALL — power-
                 # chord chugs (root+5th, the two LOWEST voiced pcs; short
@@ -1158,14 +1237,16 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
                     "djent":     [(0.0, 1), (0.75, 1), (1.5, 1),
                                   (2.25, 1), (3.0, 1), (3.5, 0),
                                   (3.75, 0)],                       # 3+3+3+3+4
-                }.get(g_l, [(i * 0.5, 1 - (i % 2)) for i in range(8)])
-                cnotes = [{"start": round(b * 4.0 + off, 4), "len": 0.32,
+                }.get(g_l, [(i * 0.5, 1 - (i % 2)) for i in range(int(bar_q * 2))])
+                cnotes = [{"start": round(b * bar_q + off, 4), "len": 0.32,
                            "pitch": p,
                            "vel": 0.55 if acc else 0.48}
                           for b in range(bars) for off, acc in _chug_pat
+                          if off < bar_q                   # never past the barline
                           for p in sorted(voiced[b])[:2]]
             else:                                  # the held bed (pads breathe whole bars)
-                cnotes = [{"start": float(b * 4), "len": 3.9, "pitch": p, "vel": 0.4}
+                cnotes = [{"start": float(b * bar_q), "len": round(bar_q - 0.1, 4),
+                           "pitch": p, "vel": 0.4}
                           for b in range(bars) for p in voiced[b]]
             csrc = resolve_color_source(cvoice)
             # MEASURED (2026-07-09, synthwave A/B): a DOUBLED faust pad beats the
@@ -1217,8 +1298,8 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
                      60 + pcs[i % 7]]
             tones = [p + 12 if p < 48 else p for p in tones]
             seq = tones + (tones[-2:0:-1] if updown else [])
-            t, k = bar * 4.0, 0
-            while t < (bar + 1) * 4.0 - 1e-6:
+            t, k = bar * bar_q, 0
+            while t < (bar + 1) * bar_q - 1e-6:
                 on_beat = abs(t - round(t)) < 1e-6
                 anotes.append({"start": round(t, 4), "len": round(step_a * 0.9, 4),
                                "pitch": int(seq[k % len(seq)]),
@@ -1367,8 +1448,8 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
             i = cdeg_at(bar) - 1
             tones = [60 + pcs[i % 7], 60 + pcs[(i + 4) % 7], 67 + pcs[i % 7]]
             for off, v in positions:
-                if rng.random() < 0.85:
-                    chnotes.append({"start": round(bar * 4.0 + off, 4),
+                if rng.random() < 0.85 and off < bar_q:    # never past the barline
+                    chnotes.append({"start": round(bar * bar_q + off, 4),
                                     "len": 0.6, "pitch": int(rng.choice(tones)),
                                     "vel": round(v + rng.uniform(-0.04, 0.04), 3)})
         if chnotes:
@@ -1405,7 +1486,7 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
     # ---- THE PUMP LAW: 4-on-floor pump genres duck the sustained layers against
     # the kick (rate = one duck per beat). The kick's pocket is the genre's ENGINE;
     # born-static pads are the demo tell. Data-gated: the grid must actually stomp.
-    if genre.lower() in PUMP_GENRES and four_on_floor(grid.get("kick")):
+    if genre.lower() in PUMP_GENRES and four_on_floor(grid.get("kick"), heads, bar_steps):
         pump = {"id": "fx_pump", "params": {"rate": round(bpm / 60.0, 3),
                                             "depth": 0.42, "release": 0.22}}
         for t in tracks:
@@ -1485,6 +1566,10 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
     if dna.get("lufs_lo") is not None:
         trim = round(2.0 + max(0.0, min(4.0, float(dna["lufs_lo"]) + 13.6)), 1)
     song = {"version": 2, "bpm": bpm, "lengthBars": bars, "key": key,
+            # THE WORLD GRID: a bar MEANS the genre's meter (absent = 4/4 —
+            # the mapless identity every other genre keeps)
+            **({"meterMap": [{"bar": 0, "num": mnum, "den": mden}]}
+               if (mnum, mden) != (4, 4) else {}),
             "swing": {"grid": grid.get("swing_grid", "16th"), "amount": float(grid.get("swing", 0.5))},
             "masterGainDb": 0.0,
             "buses": buses,

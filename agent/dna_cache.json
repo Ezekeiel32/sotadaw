@@ -1368,17 +1368,19 @@
 1
 ]
 ],
+"groups": [
+2,
+2,
+3
+],
 "hat": [
 2,
 6,
-10,
-14
+10
 ],
 "kick": [
 0,
-4,
-8,
-12
+8
 ],
 "lead": {
 "octave": 4,
@@ -1445,6 +1447,7 @@
 "key": "D Phrygian dominant (Hijaz)",
 "lufs_hi": -7,
 "lufs_lo": -11,
+"native_meter": "7/8",
 "psr_floor": 8.5,
 "voice": "brass_stab",
 "voicing": {
@@ -14181,6 +14184,11 @@
 ]
 ],
 "color_gain_db": -5.0,
+"groups": [
+2,
+2,
+3
+],
 "hat": [
 0,
 2,
@@ -14188,8 +14196,7 @@
 6,
 8,
 10,
-12,
-14
+12
 ],
 "kick": [
 0,
@@ -14248,6 +14255,7 @@
 "lra_floor": 4.5,
 "lufs_hi": -10,
 "lufs_lo": -14,
+"native_meter": "7/8",
 "psr_floor": 7.0,
 "voice": "clean_chime_guitar",
 "voicing": {
@@ -17816,21 +17824,22 @@
 ]
 ],
 "color_gain_db": -8.0,
-"hat": [
-0,
+"groups": [
 2,
-4,
+2,
+2,
+3
+],
+"hat": [
+2,
 6,
-8,
 10,
-12,
-14
+14,
+16
 ],
 "kick": [
 0,
-4,
-8,
-12
+8
 ],
 "kick_gain_db": -4.0,
 "lead": {
@@ -17882,26 +17891,21 @@
 "lead_gain_db": -4.0,
 "lead_voice": "oud",
 "snare": [
-2,
-6,
-10
+4,
+12
 ],
 "swing": 0.5,
 "vel": {
 "hat": {
-"12": 0.6,
-"14": 0.6
+"16": 0.6
 },
 "kick": {
 "0": 1.0,
-"12": 0.95,
-"4": 0.85,
-"8": 0.85
+"8": 0.9
 },
 "snare": {
-"10": 0.4,
-"2": 0.4,
-"6": 0.4
+"12": 0.95,
+"4": 0.85
 }
 }
 },
@@ -17909,6 +17913,7 @@
 "lra_floor": 5.0,
 "lufs_hi": -11,
 "lufs_lo": -15,
+"native_meter": "9/8",
 "psr_floor": 8.5,
 "voice": "pluck2",
 "voicing": {

@@ -10,7 +10,7 @@ Protocol (agent/ipc/):
 
 --mock: apply canned transforms instead of calling the LLM (zero-token loop testing).
 """
-import hashlib, json, os, queue, re, shutil, signal, subprocess, sys, threading, time
+import filecmp, hashlib, json, os, queue, re, shutil, signal, subprocess, sys, threading, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IPC = os.environ.get("SOTADAW_IPC") or os.path.join(ROOT, "agent", "ipc")  # override = isolated test instance (own lockfile/events/request)
@@ -37,6 +37,7 @@ import chronicle           # THE CHRONICLE: per-project conversation memory + ch
 import ghost_stream        # TOKEN-RESOLUTION GHOSTS: notes from in-flight tool JSON (pass 5)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import psr_floors as _psr_floors   # THE PSR FLOOR single source: the universal crest brake
+import meter               # THE WORLD GRID (#1): the ONE bar<->beat resolver (grid_lint law)
 
 # W12 BYOK: in-app keys (agent/.byok, local-only, gitignored) feed the agents
 # via env — no terminal needed on a fresh machine. ONE box, BOTH dialects:
@@ -60,6 +61,7 @@ last_verdict_t = {}  # song -> t of the last consumed accept: a double-click ins
 # a sidecar restart (crash/dev cycle) must not amnesia them. The read-time
 # windows (600s/1800s in feedback_context_block) keep stale loads inert.
 FEEDBACK_STATE = os.path.join(IPC, "feedback_state.json")
+_FS_LOCK = threading.Lock()   # two lanes save (main finally + verdict thread)
 
 def save_feedback_state():
     try:
@@ -67,10 +69,15 @@ def save_feedback_state():
         # row landed genre-less, surgical-less, prompt-less — the 17:30 refresh
         # wiped every ask-context memo between ask and verdict; last_genres
         # alone was not enough, the telemetry row proved it live)
-        json.dump({"last_reject": last_reject, "last_curation": last_curation,
-                   "last_genres": last_genres, "last_prompts": last_prompts,
-                   "last_meta": last_meta},
-                  open(FEEDBACK_STATE, "w"))
+        # THE MEMO SAVE LAW (2026-07-13): saved at EVERY request end from two
+        # threads — locked + tmp/replace, a torn file loads as amnesia.
+        with _FS_LOCK:
+            tmp = FEEDBACK_STATE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"last_reject": last_reject, "last_curation": last_curation,
+                           "last_genres": last_genres, "last_prompts": last_prompts,
+                           "last_meta": last_meta}, f)
+            os.replace(tmp, FEEDBACK_STATE)
     except Exception:
         pass                                   # persistence must never kill a verdict
 
@@ -125,6 +132,21 @@ def emit(req_id, kind, **kw):
         s = getattr(_EMIT_CTX, "song", "")
         if s:
             kw["song"] = s
+    if kind == "done":
+        # THE DONE COURT (2026-07-13): ONE done per run — the FIRST is the run's
+        # word. Stop-KEEPS emitted ok=True inside keep_canceled_take, the lane
+        # returned None, and the prompt epilogue stamped ok=False ON TOP: the
+        # take the user was told was KEPT ended, seconds later, in a
+        # contradicting FAILURE (3 of the last 12 dones on the live bus were
+        # such pairs). Any lane that double-stamps — epilogues, exception
+        # handlers — is silently overruled here, at the one funnel every event
+        # passes through. Per-request scope: handle() re-arms the court (ids
+        # are small per-session ints that recycle across UI restarts, so a
+        # bare "last id seen" would false-drop a fresh session's first done).
+        if getattr(_EMIT_CTX, "done_for", None) == req_id:
+            print(f"[done-court] dropped duplicate done for req {req_id}", flush=True)
+            return
+        _EMIT_CTX.done_for = req_id
     with open(EVENTS, "a") as f:
         f.write(json.dumps({"id": req_id, "kind": kind, "t": round(time.time(), 1), **kw}) + "\n")
 
@@ -872,12 +894,12 @@ ACTION_FAMILY = {
     "prescribe": "master",
     "chop_sample": "notes", "harmonize": "notes", "humanize": "notes",
     "intensify": "notes", "infill_region": "notes", "loop_infill": "notes",
-    "transitions": "notes",
+    "transitions": "notes", "comp_take": "notes",
     "chords_from_audio": "ears", "match_reference": "ears",
     "color": "fx",
     "edit_clip": "track", "freeze_track": "track", "lock_track": "track",
     "edit_section": "song", "make_track": "song", "restyle": "song",
-    "time_machine": "song",
+    "time_machine": "song", "set_chords": "song",
     "keep_jam": "jam", "set_clip_slot": "jam",
     "use_preset": "sound",
 }
@@ -1373,7 +1395,7 @@ def mock_propose(req_id, text, song_name):
             emit_action(req_id, {"name": "update_track",
                                  "input": {"track": tr["name"], "gainDb": tr["gainDb"]}})
     if any(w in t for w in ("sweep", "filter", "automate", "build", "rise", "motion", "sidechain", "space")):
-        beats = float(base.get("lengthBars", 4)) * 4
+        beats = meter.bar_start_q(meter.song_meter(base), float(base.get("lengthBars", 4)))
         pitched = next((tr for tr in base["tracks"]
                         if tr.get("source", {}).get("kind") != "sample"
                         and "808" not in tr["name"].lower() and "kick" not in tr["name"].lower()),
@@ -1393,7 +1415,7 @@ def mock_propose(req_id, text, song_name):
     if "hat" in t or not changed:
         for tr in base["tracks"]:
             if "hat" in tr["name"].lower():
-                beats = float(base.get("lengthBars", 4)) * 4
+                beats = meter.bar_start_q(meter.song_meter(base), float(base.get("lengthBars", 4)))
                 b = 0.75
                 while b < beats:
                     tr["notes"].append({"start": b, "len": 0.1, "pitch": 42, "vel": 0.38})
@@ -1481,7 +1503,8 @@ def selection_block(context, song_path):
     a = rng.get("startBeat") if rng else None
     b = rng.get("endBeat") if rng else None
     in_rng = lambda n: a is None or (n.get("start", 0) < b and n.get("start", 0) + n.get("len", 0.25) > a)
-    bars = lambda x, y: f"bars {int(x // 4) + 1}-{int((y - 1e-9) // 4) + 1}"
+    _mm = meter.song_meter(song)   # meter-aware bar labels (#1)
+    bars = lambda x, y: f"bars {int(meter.bar_at_q(_mm, x)) + 1}-{int(meter.bar_at_q(_mm, y - 1e-9)) + 1}"
     lines = []
     for s in sels:
         k = s.get("type")
@@ -1814,12 +1837,15 @@ def transport_block(context, song_path):
         hearing = ears_now_line()
         if hearing:
             lines.append(hearing)
+        _mm = meter.song_meter(song)   # meter-aware bar labels (#1)
         la, lb = tp.get("loopStartBeat"), tp.get("loopEndBeat")
         if isinstance(la, (int, float)) and isinstance(lb, (int, float)) and lb > la >= 0:
-            lines.append(f"loop region armed: beats {la:g}-{lb:g} (bars {la/4:g}-{lb/4:g})")
+            lines.append(f"loop region armed: beats {la:g}-{lb:g} "
+                         f"(bars {meter.bar_at_q(_mm, la):g}-{meter.bar_at_q(_mm, lb):g})")
         va, vb = tp.get("viewStartBeat"), tp.get("viewEndBeat")
         if isinstance(va, (int, float)) and isinstance(vb, (int, float)) and vb > va:
-            lines.append(f"visible canvas window: beats {va:g}-{vb:g} (bars {va/4:g}-{vb/4:g})")
+            lines.append(f"visible canvas window: beats {va:g}-{vb:g} "
+                         f"(bars {meter.bar_at_q(_mm, va):g}-{meter.bar_at_q(_mm, vb):g})")
         lines.append("When the ask says 'here'/'now'/'this part' with NO selection, THIS moment "
                      "is the anchor — locate/select_notes around it before cutting.")
         return "\n".join(lines) + "\n"
@@ -1993,6 +2019,93 @@ def corpse_court(rid, song):
         pass
 
 
+def _same_bytes(a, b):
+    """Byte-identity with a size prefilter — the court's only evidence standard."""
+    try:
+        return os.path.getsize(a) == os.path.getsize(b) and filecmp.cmp(a, b, shallow=False)
+    except OSError:
+        return False
+
+
+def resurrection_sweep():
+    """THE RESURRECTION COURT (2026-07-13, the untitled_43 aftermath made law):
+    a run that dies inside a verdict's file sweep leaves a VALID pending prop —
+    corpse court can't judge it (it parses fine) — and the deck re-offers a
+    take the user already ruled on. Boot-only (nobody has seen a deck yet, so
+    this never touches live-run/revise semantics) and BYTE EVIDENCE only
+    (stat + cmp, never parses):
+      prop == .takes/<song>/*_rejected.json -> the reject verdict happened and
+        its file sweep died (archive -> remove is a real window). Finish it:
+        prop + ghost + wavs + receipts.
+      prop == the base song.json -> the content already landed (an accept's
+        base-write survived its prop-remove, or a dead _ensure_prop mint).
+        A zero-diff deck entry serves nobody: sweep it.
+      ghost/wav siblings with NO prop json (and a REAL base — sung
+        _prop_<song>_<track>_vocal.wav files are NOT orphans) -> a completed
+        verdict's unfinished sibling sweep. Finish it.
+      prop == .takes/<song>/*_superseded.json -> a REVISE died before
+        reshaping; the pending take is still the user's live subject. KEEP it
+        and file ONE honest chronicle note (keyed to the archive) that the
+        ask was never applied. (untitled_43's out-of-band variant — base
+        rewritten around a frozen prop — stays manual law.)
+    Anything else is a real pending decision with full deck rights.
+    Returns the verdict list (the battery's surface)."""
+    verdicts = []
+    try:
+        names = sorted(os.listdir(SONGS))
+    except OSError:
+        return verdicts
+    for n in [x for x in names if x.startswith("_prop_") and x.endswith(".json")
+              and not x.endswith(".ghost.json")]:
+        song = n[len("_prop_"):-len(".json")]
+        pj = os.path.join(SONGS, n)
+        tdir = os.path.join(SONGS, ".takes", song)
+        try:
+            takes = sorted(os.listdir(tdir)) if os.path.isdir(tdir) else []
+            why = next((f"already REJECTED (the verdict is archived as .takes/{song}/{t})"
+                        for t in takes if t.endswith("_rejected.json")
+                        and _same_bytes(pj, os.path.join(tdir, t))), None)
+            if not why and _same_bytes(pj, os.path.join(SONGS, f"{song}.json")):
+                why = "already LANDED (byte-identical to the base)"
+            if why:
+                os.remove(pj)
+                for sfx in (".ghost.json", ".wav", ".prev.wav"):
+                    p = os.path.join(SONGS, f"_prop_{song}{sfx}")
+                    os.path.exists(p) and os.remove(p)
+                surgical.clear_receipts(f"_prop_{song}")
+                chronicle.append(song, "note",
+                                 f"[court] a dead run left a take pending that was {why} — "
+                                 "cleared; the deck starts clean from the base")
+                verdicts.append((song, "swept", why))
+                continue
+            stalled = next((t for t in takes if t.endswith("_superseded.json")
+                            and _same_bytes(pj, os.path.join(tdir, t))), None)
+            if stalled and not any(r.get("court_key") == stalled
+                                   for r in (chronicle.read(song) or [])):
+                chronicle.append(song, "note",
+                                 "[court] the last revise of this pending take DIED mid-run — "
+                                 "the take is unchanged and that ask was never applied; "
+                                 "ask again to continue", court_key=stalled)
+                verdicts.append((song, "stalled-revise", stalled))
+        except Exception:
+            pass                       # one song's trouble never blocks the sweep
+    for n in names:
+        sfx = next((s for s in (".ghost.json", ".prev.wav", ".wav")
+                    if n.startswith("_prop_") and n.endswith(s)), None)
+        if not sfx:
+            continue
+        stem = n[len("_prop_"):-len(sfx)]
+        if (not os.path.exists(os.path.join(SONGS, f"_prop_{stem}.json"))
+                and os.path.exists(os.path.join(SONGS, f"{stem}.json"))
+                and os.path.exists(os.path.join(SONGS, n))):
+            try:
+                os.remove(os.path.join(SONGS, n))
+                verdicts.append((stem, "orphan-swept", n))
+            except OSError:
+                pass
+    return verdicts
+
+
 def scope_check(rid, base_json, prop_path, song):
     """THE SCOPE LAW: semantic-diff the proposal vs base; every change must be covered
     by an edit receipt (surgical_edit files exact note keys, blunt tools file coarse
@@ -2146,12 +2259,29 @@ RESIDENT = Resident()
 
 _SELF_PATH = os.path.abspath(__file__)
 _SELF_MTIME = os.path.getmtime(_SELF_PATH)
+_REFRESH_STAMP = os.path.join(IPC, ".self_refresh_stamp")
 
 def _self_refresh_due():
     """True when sidecar.py on disk is newer than the RUNNING image (a committed
-    ship this daemon predates). Checked ONLY between requests — never mid-flight."""
+    ship this daemon predates). Checked ONLY between requests — never mid-flight.
+    STORM GUARD (2026-07-12, "self-refresh x7/min" in the chat feed): parallel
+    sessions editing this file made every save an instant execv — each rebirth
+    reaps + re-warms three residents and blinks ipc/alive. Two brakes: the disk
+    mtime must be SETTLED (>=3s old — never exec a half-written file), and
+    rebirths are spaced >=60s (stamp file survives execv). A burst of saves now
+    costs ONE reload after the dust settles."""
     try:
-        return os.path.getmtime(_SELF_PATH) > _SELF_MTIME + 0.5
+        m = os.path.getmtime(_SELF_PATH)
+        if m <= _SELF_MTIME + 0.5:
+            return False
+        if time.time() - m < 3.0:        # still being written — let it settle
+            return False
+        try:
+            if time.time() - os.path.getmtime(_REFRESH_STAMP) < 60.0:
+                return False             # cooldown: one rebirth per minute max
+        except OSError:
+            pass
+        return True
     except OSError:
         return False
 
@@ -2574,7 +2704,7 @@ def real_propose(req_id, text, song_name, ctx_block="", persona_name="", model_o
                                [("intro", 0), ("build", 4), ("drop", 8), ("break", bars // 2),
                                 ("drop 2", bars // 2 + 4), ("outro", bars - 4)])
                     elif bars >= 8:
-                        arc = [("intro", 0), ("build", bars // 4), ("drop", bars // 2),
+                        arc = [("intro", 0), ("build", bars // 4), ("drop", bars // 2),  # grid-ok: bar-count arc, no beat crossing
                                ("outro", bars - max(2, bars // 8))]
                     else:
                         arc = [("groove", 0), ("turn", max(2, bars - 2))]
@@ -2617,9 +2747,9 @@ def real_propose(req_id, text, song_name, ctx_block="", persona_name="", model_o
                                 if str((st.get("source") or {}).get("id", "")).startswith("vst3:"):
                                     st = dict(st, source={"kind": "faust", "id": "strings_disco"})
                                 tiled = []
-                                for rep in range(max(1, bars_total // 4)):
+                                for rep in range(max(1, bars_total // 4)):  # grid-ok: mock tiling of generated 4/4 loops
                                     for n in st["notes"]:
-                                        if n["start"] + rep * 16.0 < bars_total * 4.0:
+                                        if n["start"] + rep * 16.0 < bars_total * 4.0:  # grid-ok: mock 4/4 loops
                                             m = dict(n); m["start"] = round(n["start"] + rep * 16.0, 4)
                                             tiled.append(m)
                                 st = dict(st, notes=tiled)
@@ -3028,7 +3158,7 @@ def mock_loops(req_id, text, song_name, bars, count):
     names = []
     t = text.lower()
     for i in range(count):
-        beats = bars * 4
+        beats = bars * 4   # grid-ok: mock loop-lab generates mapless 4/4 loops
         tracks = []
         if "hat" in t or "drum" in t or not any(w in t for w in ("bass", "melod", "chord", "pad")):
             notes = []
@@ -3054,7 +3184,8 @@ def mock_loops(req_id, text, song_name, bars, count):
 
 def slice_seed(base, seed_bars):
     """Extract the song's material inside [a,b) bars as loop-seed tracks (notes rebased to 0)."""
-    a, b = float(seed_bars[0]) * 4.0, float(seed_bars[1]) * 4.0
+    _mm = meter.song_meter(base)
+    a, b = meter.bar_start_q(_mm, float(seed_bars[0])), meter.bar_start_q(_mm, float(seed_bars[1]))
     out = []
     for tr in base.get("tracks", []):
         notes = [{"start": round(n["start"] - a, 3), "len": n["len"],
@@ -3073,11 +3204,12 @@ def real_loops(req_id, text, song_name, bars, count, seed=None, model=None, effo
         seed_block = ("\nSEED MATERIAL (the user selected this in the arrangement — make variations "
                       "OF THIS, keep its identity recognizable):\n"
                       + json.dumps(seed)[:4000] + "\n")
+    loop_beats = bars * 4   # grid-ok: loop-lab loops are mapless 4/4 by construction
     prompt = f"""You are the LOOP LAB of the DAW. The user wants {count} DIFFERENT {bars}-bar loop variations:
 "{text}"{seed_block}
 Context: current song is {bpm} bpm{f', key {key}' if key else ''}. Loops must be at {bpm} bpm and lengthBars={bars}.
 Rules:
-- Use ONLY daw MCP tools; no ToolSearch/Read/Bash. Call start_session once (loads skills), then for i in 1..{count}: write_song name "_loop_<i>" — a SMALL song (1-4 tracks, faust/sample sources per the sound-palette skill) that loops PERFECTLY (notes fill exactly {bars*4} beats, strong groove per genre skills).
+- Use ONLY daw MCP tools; no ToolSearch/Read/Bash. Call start_session once (loads skills), then for i in 1..{count}: write_song name "_loop_<i>" — a SMALL song (1-4 tracks, faust/sample sources per the sound-palette skill) that loops PERFECTLY (notes fill exactly {loop_beats} beats, strong groove per genre skills).
 - Make the {count} variations genuinely DIFFERENT (density, pattern, sound choice) — not tweaks.{' With seed material: vary rhythm/voicing/density per variation but keep the seed motif audible.' if seed else ''}
 - Do NOT render; the host renders. Finish with one line summarizing the {count} vibes."""
     if provider_kind(model) == "codex":
@@ -3602,6 +3734,7 @@ def handle(req):
     rtype = req.get("type")
     song = req.get("song", "")
     _EMIT_CTX.song = song      # every emit in this request carries its song (scoping law)
+    _EMIT_CTX.done_for = None  # the done court re-arms: ONE done per run (emit())
     base_json = os.path.join(SONGS, f"{song}.json")
     prop = f"_prop_{song}"
     prop_json = os.path.join(SONGS, f"{prop}.json")
@@ -4269,7 +4402,7 @@ def handle(req):
             except Exception:
                 pass
         if result is None:
-            emit(rid, "done", ok=False)
+            emit(rid, "done", ok=False)   # a stop-KEPT take already doned ok=True — the court drops this stamp
             return
         adopt_stranded_take(rid, song, result, t_ask)   # the arrange-pattern miss self-delivers
         enforce_locks(base_json, os.path.join(SONGS, f"{result}.json"), rid)   # THE GUARD
@@ -4670,6 +4803,18 @@ def main():
             pass  # stale lock (or our own after execv)
     open(lock, "w").write(str(os.getpid()))
 
+    # STALE-CRASH COURT (2026-07-12, the false "agent CRASHED: BrokenPipeError"
+    # banner): the UI shows sidecar_crash.log's LAST LINE on any outage blip —
+    # a Jul-9 traceback (pre-dating the _pipe_proof_stdio fix) haunted every
+    # restart for days. We are alive and own the lock: rotate the corpse aside
+    # (kept as .1 for forensics) so only a crash from THIS life reaches the chat.
+    try:
+        _cl = os.path.join(IPC, "sidecar_crash.log")
+        if os.path.exists(_cl):
+            os.replace(_cl, _cl + ".1")
+    except Exception:
+        pass
+
     def _die(_sig, _frm):
         # THE CONVERSATIONS LAW (Chezy 2026-07-11): closing the app ENDS the
         # session — NOTHING continues in the background. The old law SIGKILLed
@@ -4691,6 +4836,26 @@ def main():
         os._exit(0)
     signal.signal(signal.SIGTERM, _die)
     signal.signal(signal.SIGINT, _die)
+    # THE HEARTBEAT (the 23:30 lying chip): a POSITIVE liveness signal — the UI
+    # was doing /proc forensics on the lockfile pid and could stick OFFLINE
+    # while the daemon streamed a whole run. A 1s daemon thread touches
+    # ipc/alive (it must beat THROUGH long handle() runs, not between them);
+    # the watchdog gets ground truth that survives execv windows, pid reuse
+    # and cmdline read quirks. Dies with the process; execv restarts it.
+    # Started FIRST (2026-07-12): it used to start AFTER janitor + the daw_mcp
+    # import + prewarm's inline setup — every execv rebirth blinked ipc/alive
+    # for seconds, and a refresh storm tripped the UI's 6s outage watchdog.
+    alive_path = os.path.join(IPC, "alive")
+
+    def _beat_loop():
+        while True:
+            try:
+                with open(alive_path, "a"):
+                    os.utime(alive_path, None)
+            except Exception:
+                pass
+            time.sleep(1.0)
+    threading.Thread(target=_beat_loop, daemon=True).start()
     print(f"[sidecar] up (mock={MOCK}) ipc={IPC}", flush=True)
     janitor()                                   # I6: sweep the floor before work
     if not os.environ.get("SOTADAW_NO_UPLINK") and not MOCK:
@@ -4711,25 +4876,46 @@ def main():
             emit(0, "status", text=f"agent online - {len(_dm.TOOLS)} tools ready")
         except Exception:
             emit(0, "status", text="agent online")
-    prewarm()                                   # pay the defer tax off-screen
-    req_path = os.path.join(IPC, "request.json")
-    # THE HEARTBEAT (the 23:30 lying chip): a POSITIVE liveness signal — the UI
-    # was doing /proc forensics on the lockfile pid and could stick OFFLINE
-    # while the daemon streamed a whole run. A 1s daemon thread touches
-    # ipc/alive (it must beat THROUGH long handle() runs, not between them);
-    # the watchdog gets ground truth that survives execv windows, pid reuse
-    # and cmdline read quirks. Dies with the process; execv restarts it.
-    alive_path = os.path.join(IPC, "alive")
-
-    def _beat_loop():
-        while True:
+    # ORPHANED-RUN COURT (2026-07-12): a daemon death mid-run strands
+    # request.json.working and the ask vanishes SILENTLY (an 18-minute compose
+    # died and nobody said so — the next ask simply overwrote the corpse).
+    # CONVERSATIONS LAW forbids auto-resume (a closed session never continues);
+    # the debt we CAN pay is honesty: archive the corpse + one plain line.
+    _orphan = os.path.join(IPC, "request.json.working")
+    if os.path.exists(_orphan):
+        _note = ("note: the previous session ended mid-run - that take did not "
+                 "finish; ask again to continue")
+        try:
+            _o = json.load(open(_orphan))
+            _what = str(_o.get("text") or _o.get("type") or "request")[:80]
+            _note = (f"note: the previous session ended mid-run on "
+                     f"{_o.get('song') or '?'} ('{_what}') - that take did not "
+                     f"finish; ask again to continue")
+        except Exception:
+            pass
+        try:
+            os.replace(_orphan, os.path.join(IPC, "request_lost.json"))
+        except Exception:
             try:
-                with open(alive_path, "a"):
-                    os.utime(alive_path, None)
+                os.remove(_orphan)
             except Exception:
                 pass
-            time.sleep(1.0)
-    threading.Thread(target=_beat_loop, daemon=True).start()
+        emit(0, "status", text=_note)
+    # THE RESURRECTION COURT: pay the dead runs' OTHER debt — a verdict whose
+    # file sweep died leaves a valid-looking pending prop (the untitled_43
+    # zombie class); judge them on byte evidence before anyone sees a deck.
+    # Test instances skip (janitor's isolation law: a rig rebirth must never
+    # housekeep the real yard — a live one swept it mid-development, 2026-07-13).
+    try:
+        if not os.environ.get("SOTADAW_IPC") and not SANDBOX:
+            _zombies = resurrection_sweep()
+            if _zombies:
+                print("[sidecar] resurrection court: "
+                      + "; ".join(f"{s} {v}" for s, v, _ in _zombies[:8]), flush=True)
+    except Exception:
+        pass
+    prewarm()                                   # pay the defer tax off-screen
+    req_path = os.path.join(IPC, "request.json")
 
     # THE VERDICT SIDE-LANE (Chezy 2026-07-11, "accepting takes hours"): handle()
     # blocks through whole runs, so a verdict written mid-run sat unconsumed —
@@ -4775,6 +4961,7 @@ def main():
                 emit(vreq.get("id", 0), "done", ok=False)
             finally:
                 os.path.exists(vwork) and os.remove(vwork)
+                save_feedback_state()   # MEMO SAVE LAW (see main-lane finally)
     threading.Thread(target=_verdict_lane, daemon=True).start()
 
     while True:
@@ -4806,12 +4993,30 @@ def main():
                 busy.clear()
                 busy_song["name"] = None
                 os.path.exists(work) and os.remove(work)
+                # THE MEMO SAVE LAW (2026-07-13, the red refresh-e2e leg): the
+                # ask-context family (last_prompts/genres/meta) was stamped in
+                # memory by prompt/verb lanes but reached disk only on execv or
+                # SIGTERM — a hard kill (SIGKILL/OOM/segfault) amnesia'd it, the
+                # exact 2026-07-11 genre-less-accept class. On disk by the time
+                # ANY request ends; atomic + locked inside.
+                save_feedback_state()
         elif _self_refresh_due():
             # SELF-REFRESH (idle only): new sidecar code landed on disk — exec into
             # it. execv PRESERVES the PID (lockfile stays true); feedback state is
             # already disk-persistent; residents are reaped (children would outlive
             # the exec image). The daemon upgrades itself between requests.
             emit(0, "status", text="sidecar self-refresh: new code landed - reloading (state persists)")
+            try:
+                open(_REFRESH_STAMP, "w").close()   # storm-guard cooldown stamp
+            except Exception:
+                pass
+            if os.name == "nt":
+                # PORT_SPEC.md: Windows execv re-quotes argv badly; skip live
+                # self-refresh — staleness heals on the next app launch. Adopt
+                # the disk mtime so this announces ONCE per ship (it used to
+                # re-fire every 0.25s tick) — and keep the residents warm.
+                globals()["_SELF_MTIME"] = os.path.getmtime(_SELF_PATH)
+                continue
             try:
                 RESIDENT.kill()
             except Exception:
@@ -4820,10 +5025,6 @@ def main():
                 save_feedback_state()
             except Exception:
                 pass
-            if os.name == "nt":
-                # PORT_SPEC.md: Windows execv re-quotes argv badly; skip live
-                # self-refresh — staleness heals on the next app launch.
-                continue
             os.execv(sys.executable, [sys.executable, _SELF_PATH] + sys.argv[1:])
         dj_live_tick()                  # R4: the coach speaks while a set sounds
         vocal_follow_tick(busy)         # THE FOLLOWING VOICE: edited vocal MIDI re-sings

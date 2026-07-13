@@ -424,6 +424,7 @@ def other_notes(path, bpm, key=None, max_notes=None):
     spans the first pass left uncovered get re-transcribed at lower thresholds
     (windowed second listen), then one merged polish. Cap SCALES with length
     (~14 notes/bar) so an 8-min comp isn't truncated to a 2.5-min budget."""
+    import torch  # noqa: F401 — CUDA PRELOAD before basic_pitch (law: tools/stems_import.py)
     from basic_pitch.inference import predict
     import midi_polish
     spb = 60.0 / bpm

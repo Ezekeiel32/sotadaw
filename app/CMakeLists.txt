@@ -72,7 +72,9 @@ elseif(SOTADAW_FAUST_DIST)
   elseif(APPLE)
     set(SOTADAW_FAUST_LIB ${SOTADAW_FAUST_DIST}/lib/libfaust.a z)
   else()
-    set(SOTADAW_FAUST_LIB faust)
+    # Linux packaged builds (focal container): static interp libfaust — the
+    # deb/AppImage then need no libfaust package on ANY distro (t64 or not).
+    set(SOTADAW_FAUST_LIB ${SOTADAW_FAUST_DIST}/lib/libfaust.a z)
   endif()
   message(STATUS "JIT: external faust dist at ${SOTADAW_FAUST_DIST}")
 else()

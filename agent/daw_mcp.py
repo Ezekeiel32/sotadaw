@@ -9,6 +9,8 @@ import glob, hashlib, json, os, re, shutil, subprocess, sys, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import surgical            # THE SCALPEL kernel: selectors, ops, receipts, scope law
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+from meter import bar_start_q, bar_at_q, song_meter   # THE WORLD GRID (#1): the ONE bar<->beat resolver
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTRUMENTS = os.path.join(ROOT, "instruments")
@@ -292,7 +294,7 @@ def validate_song(song):
                 errs.append(f"master[{mi}].id '{mid}' not in scan cache {vsts}")
         elif m.get("type", "faustfx") == "faustfx" and m.get("id") not in avail:
             errs.append(f"master[{mi}].id '{m.get('id')}' not a faust instrument/fx")
-    total_beats = float(song.get("lengthBars", 4)) * 4
+    total_beats = bar_start_q(song_meter(song), float(song.get("lengthBars", 4)))
     for ti, t in enumerate(tracks):
         src = t.get("source")
         if src is None and t.get("instrument"):
@@ -353,9 +355,15 @@ _SESSION_FULL = {"tool-guide", "mix-headroom", "fx-usage", "surgical-edits"}
 # plugg...) that all fire for a trap ask — at 320 the dark-trap payload crossed
 # its 32K budget by 178 bytes. The essence is a HOOK, not the law (battery floor
 # is 60 chars); 256 re-opens ~2 siblings of headroom on the same budget.
-_ESSENCE_CH = 256
+# 256 -> 224 (2026-07-13): skill-version bumps (mix-headroom v5->v8, fx-usage
+# v2->v6) crossed the budget again by 15. The essence's frontmatter duplicated
+# ---/name:/version: lines the `--- name@vN ---` entry header already carries;
+# stripping them means 224 chars hold the SAME kind/tags/constraints content
+# the 256-char cut did — every entry char is a real hook now.
+_ESSENCE_CH = 224
 
 def _skill_essence(body):
+    body = re.sub(r"\A---\n(?:(?:name|version):[^\n]*\n)+", "", body)
     cut = body[:_ESSENCE_CH]
     nl = cut.rfind("\n")
     if nl > 160:
@@ -650,10 +658,11 @@ def t_get_song_summary(args):
     out["master"] = [f.get("id") or f.get("type") for f in song.get("master", [])]
     out["buses"] = [b.get("name") for b in song.get("buses", [])]
     out["tracks"] = []
+    mm = song_meter(song)
     for t in song.get("tracks", []):
         notes = t.get("notes", [])
-        span = (round(min(n["start"] for n in notes) / 4) + 1,
-                round(max(n["start"] + n.get("len", 0) for n in notes) / 4) + 1) if notes else None
+        span = (round(bar_at_q(mm, min(n["start"] for n in notes))) + 1,
+                round(bar_at_q(mm, max(n["start"] + n.get("len", 0) for n in notes))) + 1) if notes else None
         out["tracks"].append({
             "name": t.get("name"), "source": t.get("source", {}),
             "gainDb": t.get("gainDb"), "pan": t.get("pan"),
@@ -661,7 +670,18 @@ def t_get_song_summary(args):
             "fx": [f.get("id") or f.get("type") for f in t.get("fx", [])],
             "sends": t.get("sends"), "noteCount": len(notes), "barSpan": span,
             "automation": [a.get("target") for a in t.get("automation", [])],
-            "audioClips": len(t.get("audioClips", []))})
+            "audioClips": [{"file": os.path.basename(str(ac.get("file", ""))),
+                            "startBar": round(bar_at_q(mm, ac.get("startBeat", 0)), 1) + 1,
+                            "lenBeats": round(ac.get("lengthBeats", 0), 1),
+                            "offsetSec": round(ac.get("offsetSec", 0), 1),
+                            "warp": bool(ac.get("sourceBpm"))}
+                           for ac in (t.get("audioClips", []) or [])[:8]]})
+    # THE CLIP TRUTH (Chezy live 2026-07-12: an Opus run burned an HOUR + 3
+    # session limits unable to see that 'audio' held a 219MB export of ANOTHER
+    # song while the real vocal sat MUTED on 'vocals' — the summary showed a
+    # bare COUNT). Each audio clip now names its FILE + start/len/offset/warp
+    # so READ-THIS-FIRST answers 'where is the vocal / what is on this track'
+    # in ONE call instead of a probe storm.
     return json.dumps(out, indent=1)
 
 def t_get_song_region(args):
@@ -672,8 +692,9 @@ def t_get_song_region(args):
     if not os.path.exists(path):
         return f"no such song '{name}'"
     song = json.load(open(path))
-    b0 = (float(args.get("from_bar", 1)) - 1.0) * 4.0
-    b1 = float(args.get("to_bar", song.get("lengthBars", 1e9))) * 4.0
+    mm = song_meter(song)
+    b0 = bar_start_q(mm, float(args.get("from_bar", 1)) - 1.0)
+    b1 = bar_start_q(mm, float(args.get("to_bar", song.get("lengthBars", 1e9))))
     want = args.get("tracks")
     if isinstance(want, str):
         want = [w.strip() for w in want.split(",") if w.strip()]
@@ -769,7 +790,7 @@ def t_keep_jam(args):
     cur_bars = float(song.get("lengthBars", 4))
     at_bar = args.get("at_bar")
     at_bar = float(at_bar) if at_bar is not None else float(int(cur_bars + 0.999999))
-    off = at_bar * 4.0
+    off = bar_start_q(song_meter(song), at_bar)
     prefix = re.sub(r"[^a-z0-9_]", "", str(args.get("prefix", "jam"))) or "jam"
     existing = {t.get("name") for t in song.get("tracks", [])}
     tbuses = {b.get("id") for b in song.get("buses", [])}
@@ -1072,7 +1093,7 @@ def t_write_lyrics(args):
             lyr = json.loads(lyr)
         except json.JSONDecodeError as e:
             return f"lyrics is not valid JSON: {e}"
-    total = float(song.get("lengthBars", 4)) * 4
+    total = bar_start_q(song_meter(song), float(song.get("lengthBars", 4)))
     for ln in lyr:
         if not isinstance(ln.get("beat"), (int, float)) or not ln.get("text"):
             return "each lyric line needs {beat: <number>, text: <string>} (beat = absolute beat position)"
@@ -1174,8 +1195,9 @@ def t_duplicate_bars(args):
     if song is None:
         return f"no such song '{name}'"
     try:
-        a, b = float(args["fromBar"]) * 4.0, float(args["toBar"]) * 4.0
-        at = float(args["atBar"]) * 4.0
+        mm = song_meter(song)
+        a, b = bar_start_q(mm, float(args["fromBar"])), bar_start_q(mm, float(args["toBar"]))
+        at = bar_start_q(mm, float(args["atBar"]))
         times = max(1, min(64, int(args.get("times", 1))))
     except (KeyError, TypeError, ValueError) as e:
         return f"need numeric fromBar/toBar/atBar (+optional times): {e}"
@@ -1200,7 +1222,7 @@ def t_duplicate_bars(args):
                                    "pitch": n["pitch"], "vel": n["vel"]})
                 copied += 1
         t.get("notes", []).sort(key=lambda n: n["start"])
-    end_bar = (at + times * span) / 4.0
+    end_bar = bar_at_q(mm, at + times * span)
     if float(song.get("lengthBars", 4)) < end_bar:
         song["lengthBars"] = int(end_bar + 0.999)
     _awrite(path, song)
@@ -1218,7 +1240,8 @@ def t_clear_bars(args):
     if song is None:
         return f"no such song '{name}'"
     try:
-        a, b = float(args["fromBar"]) * 4.0, float(args["toBar"]) * 4.0
+        mm = song_meter(song)
+        a, b = bar_start_q(mm, float(args["fromBar"])), bar_start_q(mm, float(args["toBar"]))
     except (KeyError, TypeError, ValueError) as e:
         return f"need numeric fromBar/toBar: {e}"
     want = args.get("tracks")
@@ -1346,7 +1369,9 @@ def t_edit_section(args):
         span_bars = end - start
         if span_bars <= 0:
             return "section has zero length"
-        a, b, off = start * 4.0, end * 4.0, span_bars * 4.0
+        mm = song_meter(song)
+        a, b = bar_start_q(mm, start), bar_start_q(mm, end)
+        off = b - a
 
         def dup_points(auto_list):
             """Shift automation points at/after the span end; copy in-span points +off."""
@@ -1446,7 +1471,7 @@ def t_set_clip_slot(args):
         if args.get("notes"):
             notes = args["notes"]
         else:
-            fb = float(args.get("from_bar", 0)) * 4.0
+            fb = bar_start_q(song_meter(song), float(args.get("from_bar", 0)))
             notes = [dict(n, start=round(n["start"] - fb, 4)) for n in tr.get("notes", [])
                      if fb <= n["start"] < fb + length]
         for n in notes:
@@ -2394,7 +2419,8 @@ def t_comp_take(args):
     b1 = float(args.get("to_bar", song.get("lengthBars", 4)))
     if b1 <= b0:
         return "to_bar must be > from_bar"
-    s0, s1 = b0 * 4.0, b1 * 4.0            # quarter-beat bars (meterMap UI leg later)
+    s0, s1 = (bar_start_q(song_meter(song), b0),
+              bar_start_q(song_meter(song), b1))   # meter-aware bars (#1)
     take_notes = [n for n in takes[ti].get("notes", []) if s0 <= float(n["start"]) < s1]
     kept = [n for n in tr.get("notes", []) if not (s0 <= float(n["start"]) < s1)]
     tr["notes"] = sorted(kept + take_notes, key=lambda n: float(n["start"]))
@@ -2720,7 +2746,7 @@ def t_automate(args):
             points = json.loads(points)
         except json.JSONDecodeError as e:
             return f"points is not valid JSON: {e}"
-    total = float(song.get("lengthBars", 4)) * 4
+    total = bar_start_q(song_meter(song), float(song.get("lengthBars", 4)))
     norm = []
     for p in points:
         beat, v = (p[0], p[1]) if isinstance(p, list) else (p.get("beat"), p.get("v"))
@@ -2801,22 +2827,36 @@ def t_render_song(args):
     # load). max_bars=N renders a leading slice for the ears loop — the FINAL full
     # render is the sidecar's job after the proposal anyway.
     mb = args.get("max_bars")
+    # CLIP-TRUTH LENGTH (2026-07-13, import_qc blind ears): declared lengthBars
+    # lies SHORT when import clips overhang it — loadSong's world-grows heal
+    # renders the CLIP truth, so every preview decision below must key on it
+    # too (a "16-bar" QC probe rendered 209.92s through the declared check).
+    truth_bars = 0.0
+    try:
+        _doc0 = json.load(open(song))
+        truth_bars = float(_doc0.get("lengthBars", 0) or 0)
+        for _t in _doc0.get("tracks", []):
+            for _c in _t.get("audioClips", []) or []:
+                _sb = float(_c.get("startBeat", 0) or 0)
+                _lb = float(_c.get("lengthBeats", 0) or 0)
+                # unknown clip length = assume long (preview is the safe side)
+                truth_bars = max(truth_bars,
+                                 (_sb + (_lb if _lb > 0 else 1e9)) / 4.0)
+    except Exception:
+        pass
     if not mb and not args.get("full"):
         # THE PREVIEW CLAMP (BEST_DAW_30 #11b, CC4 §7.1): the 16-bar preview was
         # prompt LAW but never enforced — under load a >24-bar self-check render
         # was the compose loop's biggest swing. Server-side now: long songs
         # preview at 16 bars unless full:true (the sidecar's final render and
         # explicit full renders are untouched).
-        try:
-            if float(json.load(open(song)).get("lengthBars", 0)) > 24:
-                mb = 16
-        except Exception:
-            pass
+        if truth_bars > 24:
+            mb = 16
     if mb:
         try:
             doc = json.load(open(song))
             mb = max(4, int(mb))
-            if float(doc.get("lengthBars", 0)) > mb:
+            if truth_bars > mb:
                 lim = mb * 4.0
                 doc["lengthBars"] = mb
                 doc["sections"] = [x for x in doc.get("sections", [])
@@ -2826,6 +2866,18 @@ def t_render_song(args):
                     if "audioClips" in t:
                         t["audioClips"] = [c for c in t["audioClips"]
                                            if float(c.get("startBeat", 0)) < lim]
+                        # THE OVERHANG CLAMP (2026-07-13, import_qc blind ears):
+                        # a full-song import clip starts at beat 0 with hundreds
+                        # of beats — it passes the start filter, then loadSong's
+                        # world-grows heal re-extends the "16-bar" preview to the
+                        # clip's whole length (a 209.92s probe render; analyze's
+                        # wall then killed the QC flow). Clips must END inside
+                        # the window; note tails overhang by design, clips never.
+                        for c in t["audioClips"]:
+                            sb = float(c.get("startBeat", 0) or 0)
+                            lb = float(c.get("lengthBeats", 0) or 0)
+                            if lb <= 0 or sb + lb > lim:
+                                c["lengthBeats"] = max(0.25, lim - sb)
                 song = os.path.join(SONGS, f"_pv_{name}.json")
                 wav = os.path.join(SONGS, f"{name}.wav")   # same wav: analyze_wav path unchanged
                 _awrite(song, doc)
@@ -2850,7 +2902,21 @@ def t_analyze_wav(args):
     if not os.path.exists(path):
         return f"no such file: {path}"
     py = VENV_PY if os.path.exists(VENV_PY) else "python3"
-    rc, out, err = run([py, ANALYZE, path], timeout=120)
+    # 120 -> 600 + HONEST TIMEOUT (2026-07-13): a 210s import render blew the
+    # 120s wall and the raw TimeoutExpired escaped as TOOL EXCEPTION — the
+    # import_qc flow died ears-blind with no verdict. Long analyses are legal
+    # (full-song ears on a 7-min import); a timeout must come back as WORDS.
+    try:
+        rc, out, err = run([py, ANALYZE, path], timeout=600)
+    except subprocess.TimeoutExpired:
+        try:
+            mins = os.path.getsize(path) / (44100 * 2 * 3) / 60.0
+            size_note = f" (~{mins:.0f} min of 24-bit audio)"
+        except OSError:
+            size_note = ""
+        return (f"ANALYZE TIMEOUT after 600s — {os.path.basename(path)}"
+                f"{size_note}. Analyze a preview render instead "
+                f"(render_song max_bars:16) or slice the wav first.")
     return out if rc == 0 else f"ANALYZE FAILED:\n{err[-800:]}"
 
 def t_master_report(args):
@@ -3466,6 +3532,33 @@ def t_tune_vocal(args):
     src_abs = src if os.path.isabs(src) else os.path.join(ROOT, src)
     if not os.path.exists(src_abs):
         return f"clip source missing: {src}"
+    # THE OVERSIZED-SOURCE GUARD (Chezy live 2026-07-12: an Opus run fired
+    # tune_vocal on a 6:55 exported MASTER of another song mistaken for the
+    # vocal — WORLD analysis runs on the FULL source [region only marks notes
+    # held], so a 415s file = 9-11 min = session-limit death, on repeat). Read
+    # the header cheaply; if the source dwarfs the song, refuse in MS with the
+    # diagnosis instead of timing out. Bypass with allow_long:true.
+    if not args.get("allow_long"):
+        try:
+            import wave as _wave
+            with _wave.open(src_abs, "rb") as _w:
+                src_secs = _w.getnframes() / float(_w.getframerate() or 1)
+            song_secs = (bar_start_q(song_meter(song), float(song.get("lengthBars", 0)))
+                         / max(1.0, float(song.get("bpm", 120))) * 60.0)
+            if src_secs > 330 and (song_secs <= 0 or src_secs > song_secs * 1.5):
+                return (f"tune_vocal REFUSED (fast): source '{os.path.basename(src)}' is "
+                        f"{int(src_secs//60)}:{int(src_secs%60):02d} ({src_secs:.0f}s) — "
+                        f"{'far longer than' if song_secs > 0 else 'and'} the song "
+                        f"({int(song_secs//60)}:{int(song_secs%60):02d}). WORLD analysis runs on the "
+                        f"WHOLE source, so this would take ~{max(1, int(src_secs/45))}+ min and likely "
+                        f"hit the session limit (the loop you have been stuck in).\n"
+                        f"LIKELY CAUSE: '{tname}' points at the WRONG file (an exported master / "
+                        f"instrumental, not a vocal stem). CHECK get_song_summary — its audioClips now "
+                        f"name every file per track; the recorded vocal may be on a DIFFERENT (maybe "
+                        f"muted) track.\nIF this really is the vocal: trim the clip to its sounding span "
+                        f"first (a short clip tunes fast), or pass allow_long:true to force it.")
+        except Exception:
+            pass                                    # unreadable header -> let it run
     style = str(args.get("style", "natural"))
     if style not in ("tpain", "hard", "natural", "transparent"):
         return "style must be tpain|hard|natural|transparent"
@@ -3526,14 +3619,16 @@ def t_locate(args):
         elif args.get("beat") is not None:
             beat = float(args["beat"])
         elif args.get("bar") is not None:
-            beat = float(args["bar"]) * 4.0
+            beat = bar_start_q(song_meter(song), float(args["bar"]))
         elif args.get("section") is not None:
             sp = surgical.find_section(song, args["section"], int(args.get("occurrence", 1)))
             if not sp:
+                mm = song_meter(song)
                 return (f"no section '{args['section']}'. sections: "
-                        f"{[(s[0], f'bars {s[1]/4:g}-{s[2]/4:g}') for s in surgical.section_spans(song)]}")
+                        f"{[(s[0], f'bars {bar_at_q(mm, s[1]):g}-{bar_at_q(mm, s[2]):g}') for s in surgical.section_spans(song)]}")
+            mm = song_meter(song)
             beat = sp[1]
-            parts.append(f"section '{sp[0]}' = bars {sp[1]/4:g}-{sp[2]/4:g} = beats {sp[1]:g}-{sp[2]:g}")
+            parts.append(f"section '{sp[0]}' = bars {bar_at_q(mm, sp[1]):g}-{bar_at_q(mm, sp[2]):g} = beats {sp[1]:g}-{sp[2]:g}")
     except ValueError as e:
         return f"LOCATE ERROR: {e}"
     if beat is not None:
@@ -3578,7 +3673,8 @@ def t_locate(args):
             parts.append(f"no track matches '{q}'. tracks+roles: "
                          f"{[(t.get('name'), surgical.track_role(t)[0]) for t in song['tracks']]}")
     if not parts:
-        secs = [(s[0], f"bars {s[1]/4:g}-{s[2]/4:g}") for s in surgical.section_spans(song)]
+        mm = song_meter(song)
+        secs = [(s[0], f"bars {bar_at_q(mm, s[1]):g}-{bar_at_q(mm, s[2]):g}") for s in surgical.section_spans(song)]
         return (f"MAP of '{name}': bpm {song.get('bpm')}, {song.get('lengthBars')} bars, "
                 f"sections {secs or '(none)'}, tracks "
                 f"{[(t.get('name'), surgical.track_role(t)[0], len(t.get('notes') or [])) for t in song.get('tracks', [])]}."
@@ -3601,9 +3697,10 @@ def t_select_notes(args):
     except ValueError as e:
         return f"SELECTOR MISS: {e}"
     lines = [" · ".join(r.explain)]
+    mm = song_meter(song)
     for ti, n in sorted(r.refs, key=lambda x: (float(x[1]["start"]), x[0]))[:40]:
         tn = song["tracks"][ti].get("name", f"#{ti}")
-        lines.append(f"  {tn}: beat {float(n['start']):g} (bar {float(n['start'])/4:g}) "
+        lines.append(f"  {tn}: beat {float(n['start']):g} (bar {bar_at_q(mm, float(n['start'])):g}) "
                      f"{surgical.pitch_name(n['pitch'])} vel {float(n.get('vel', 0.8)):g} "
                      f"len {float(n.get('len', 0.25)):g}")
     if len(r.refs) > 40:
@@ -3668,7 +3765,7 @@ TOOLS = {
                          {"type": "object", "properties": {"name": {"type": "string"}, "faust_code": {"type": "string"}}, "required": ["name", "faust_code"]}),
     "rebuild_engine": (t_rebuild_engine, "Rebuild the engine so newly written instruments become renderable. SLOW (~2-4 min); only call after write_instrument.",
                        {"type": "object", "properties": {}}),
-    "get_song_summary": (t_get_song_summary, "The song WITHOUT note bodies: tracks (source/gain/pan/fx/sends/noteCount/barSpan/automation targets), sections, tempoMap, master — ~1KB for ANY size. READ THIS FIRST on songs beyond ~32 bars; only fetch note data for the bars you touch (get_song_region).",
+    "get_song_summary": (t_get_song_summary, "The song WITHOUT note bodies: tracks (source/gain/pan/fx/sends/noteCount/barSpan/automation targets + audioClips each NAMED by file/startBar/lenBeats/offsetSec/warp), sections, tempoMap, master — ~1KB for ANY size. READ THIS FIRST on songs beyond ~32 bars: the audioClips list is the CLIP TRUTH (which wav sits on which track, muted or not) — answer 'where is the recorded vocal / what is on the audio track' from HERE, never a probe storm. Only fetch note data for the bars you touch (get_song_region).",
                     {"type": "object", "properties": {"song": {"type": "string"}},
                      "required": ["song"]}),
     "get_song_region": (t_get_song_region, "Notes + automation windowed to [from_bar, to_bar] (1-indexed inclusive), optional tracks filter (list or comma string). Each note carries _idx = its index in the full track (feed indices straight to select_notes/surgical_edit). THE scoped read: a 12-min song's drop section is a few KB instead of megabytes.",

@@ -32,13 +32,33 @@ def check(tag, ok, detail=""):
 
 
 def scratch_song():
+    # the pad clip CLAIMS 800 beats over a declared 2-bar song — the exact
+    # import shape whose world-grows heal turned a "16-bar" QC probe into a
+    # 209.92s render (2026-07-13): the preview must clamp it, keyed on CLIP
+    # truth, and the whole flow must stay fast + verdicted.
+    mint_pad_wav()
     song = {"bpm": 120, "lengthBars": 2, "key": "C", "tracks": [
         {"name": "kick", "gainDb": -6.0, "pan": 0.0,
          "source": {"kind": "faust", "id": "kick_punch", "params": {}},
          "notes": [{"start": float(b), "len": 0.5, "pitch": 36, "vel": 0.8}
-                   for b in range(8)]}]}
+                   for b in range(8)]},
+        {"name": "pad", "gainDb": -18.0, "pan": 0.0,
+         "source": {"kind": "audio"}, "notes": [],
+         "audioClips": [{"file": f"{SCRATCH}_pad.wav", "startBeat": 0.0,
+                         "lengthBeats": 800.0, "offsetSec": 0.0}]}]}
     json.dump(song, open(os.path.join(SONGS, f"{SCRATCH}.json"), "w"), indent=1)
     return song
+
+
+def mint_pad_wav():
+    import struct
+    import wave
+    w = wave.open(os.path.join(SONGS, f"{SCRATCH}_pad.wav"), "w")
+    w.setnchannels(2)
+    w.setsampwidth(2)
+    w.setframerate(44100)
+    w.writeframes(struct.pack("<2h", 0, 0) * 44100)   # 1s of stereo silence
+    w.close()
 
 
 def cleanup():
@@ -47,6 +67,9 @@ def cleanup():
             p = os.path.join(SONGS, nm + suf)
             if os.path.exists(p):
                 os.remove(p)
+    pad = os.path.join(SONGS, f"{SCRATCH}_pad.wav")
+    if os.path.exists(pad):
+        os.remove(pad)
     if os.path.isdir(MF.RUNS):
         for p in os.listdir(MF.RUNS):
             j = os.path.join(MF.RUNS, p)
@@ -93,6 +116,16 @@ def main():
               and s["gate"]["ok"] for s in j["steps"]))
     check("journal written", any(json.load(open(os.path.join(MF.RUNS, p))).get("song")
                                  == SCRATCH for p in os.listdir(MF.RUNS)))
+    # THE OVERHANG CLAMP: the pad clip claims 800 beats (200 bars) — the QC
+    # probe must render the 16-bar PREVIEW window and not the clip's world
+    # (pre-fix this render was 400s of wall silence; the flow died ears-blind
+    # at analyze_wav's timeout with no verdict)
+    import wave as _wave
+    wv = _wave.open(os.path.join(SONGS, f"{SCRATCH}.wav"))
+    dur = wv.getnframes() / float(wv.getframerate())
+    wv.close()
+    check("overhanging clip CLAMPED to the preview window (16 bars)",
+          30.0 <= dur <= 35.0, f"render is {dur:.1f}s (want ~32s, NOT 400s)")
 
     # ---- gate HALTS loudly ----
     halt = {"name": "_fb_halt", "trigger": {"kind": "manual"}, "approval": "auto",

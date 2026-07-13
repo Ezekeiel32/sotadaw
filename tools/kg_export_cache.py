@@ -63,6 +63,14 @@ def main():
     for gname, vc in kg.q("MATCH (g:Genre) WHERE g.voicing IS NOT NULL RETURN g.name, g.voicing"):
         if gname in genres:
             genres[gname]["voicing"] = json.loads(vc)
+    # THE WORLD GRID (#1): the genre's native meter — absent = 4/4 (the identity
+    # law, so only the odd-meter genres carry the key). KG-FIELD LAW: this rides
+    # BOTH the live query (loop_gen.genre_dna) and this cache path, or it
+    # silently vanishes on every machine without a graph.
+    for gname, nm in kg.q("MATCH (g:Genre) WHERE g.native_meter IS NOT NULL "
+                          "RETURN g.name, g.native_meter"):
+        if gname in genres:
+            genres[gname]["native_meter"] = nm
     for gname, ff in kg.q("MATCH (g:Genre) WHERE g.form_family IS NOT NULL RETURN g.name, g.form_family"):
         if gname in genres:
             genres[gname]["form_family"] = ff
