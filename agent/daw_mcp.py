@@ -3664,6 +3664,9 @@ def t_tune_vocal(args):
     f0 = str(args.get("f0", "consensus"))
     if f0 not in ("consensus", "fcpe", "harvest", "crepe"):
         return "f0 must be consensus|fcpe|harvest|crepe"
+    tuning = str(args.get("tuning", "equal"))
+    if tuning not in ("equal", "just"):
+        return "tuning must be equal|just"
     stem = re.sub(r"[^a-z0-9_]", "", os.path.splitext(os.path.basename(src))[0].lower())
     out_rel = f"songs/_tuned_{stem}_{style}.wav"
     rep_rel = (f"songs/_notes_{stem}.report.json" if analyze
@@ -3673,6 +3676,7 @@ def t_tune_vocal(args):
     if not analyze:
         cmd.append(os.path.join(ROOT, out_rel))
     cmd += ["--song", path, "--track", tname, "--style", style, "--f0", f0,
+            "--tuning", tuning,
             "--clip-index", str(ci), "--report", os.path.join(ROOT, rep_rel)]
     if analyze:
         cmd.append("--analyze")
@@ -3777,6 +3781,9 @@ def t_tune_notes(args):
     f0 = str(args.get("f0", "consensus"))
     if f0 not in ("consensus", "fcpe", "harvest", "crepe"):
         return "f0 must be consensus|fcpe|harvest|crepe"
+    tuning = str(args.get("tuning", "equal"))
+    if tuning not in ("equal", "just"):
+        return "tuning must be equal|just"
     stem = re.sub(r"[^a-z0-9_]", "", os.path.splitext(os.path.basename(src))[0].lower())
     out_rel = f"songs/_tuned_{stem}_manual.wav"
     rep_rel = f"songs/_tuned_{stem}_manual.report.json"
@@ -3785,6 +3792,7 @@ def t_tune_notes(args):
     py = VENV_PY if os.path.exists(VENV_PY) else sys.executable
     cmd = [py, os.path.join(ROOT, "tools", "retune.py"), src_abs, os.path.join(ROOT, out_rel),
            "--song", path, "--track", tname, "--style", style, "--f0", f0,
+           "--tuning", tuning,
            "--clip-index", str(ci), "--report", os.path.join(ROOT, rep_rel),
            "--edits", os.path.join(ROOT, ed_rel)]
     if args.get("only_edits"):
@@ -4467,18 +4475,20 @@ TOOLS = {
                     "style": {"type": "string", "description": "tpain|hard|natural|transparent (default natural)"},
                     "analyze": {"type": "boolean", "description": "true = hear the note map only, change NOTHING (no clip swap, no receipt)"},
                     "f0": {"type": "string", "description": "consensus (default: fcpe+crepe vote, harvest referee) | fcpe | harvest | crepe"},
+                    "tuning": {"type": "string", "description": "equal (default) | just (chord tones aim at pure ratios vs the chord root: M3 -13.7c, m3 +15.6c — the barbershop lock)"},
                     "strength": {"type": "number", "description": "0..1 correction amount override"},
                     "guide_track": {"type": "string", "description": "track whose notes are the target melody"},
                     "region": {"type": "array", "description": "[beat0, beat1] — only correct inside this span"},
                     "key": {"type": "string", "description": "override scale, e.g. 'A harmonic minor'"},
                     "clip_index": {"type": "number"}},
                     "required": ["song", "track"]}),
-    "tune_notes": (t_tune_notes, "THE GRAPH MODE — Antares-graph-class MANUAL per-note pitch editing; YOU are the editor. Workflow: tune_vocal analyze:true -> read THE NOTE MAP -> send per-note verdicts addressed by the map's beat0: target (name 'G#3' or midi), hold:true (leave the note raw), amount/retune_ms/vibrato_keep per note. Edits ride ON TOP of the base auto style (only_edits:true = pure manual: nothing else tunes). A manual verdict OVERRIDES the octave court and auto's ±7st safety. verify (default true) RE-MEASURES the output and reports where every edited note actually landed — close the loop before declaring victory. Every call re-cuts from the ORIGINAL: carry the FULL edit list each time.",
+    "tune_notes": (t_tune_notes, "THE GRAPH MODE — Antares-graph-class MANUAL per-note pitch editing; YOU are the editor. Workflow: tune_vocal analyze:true -> read THE NOTE MAP -> send per-note verdicts addressed by the map's beat0: target (name 'G#3' or midi), hold:true (leave raw), offset_cents (aim off-grid, e.g. a just M3 at -13.7), vibrato:{rate,depth,delay_ms} (REGENERATE the note's vibrato: 5-7Hz/40-70c natural), amount/retune_ms/vibrato_keep/center_amt/drift_amt per note. Edits ride ON TOP of the base auto style (only_edits:true = pure manual). A manual verdict OVERRIDES the octave court and auto's ±7st safety. verify (default true) RE-MEASURES the output per edit — close the loop before declaring victory. Every call re-cuts from the ORIGINAL: carry the FULL edit list each time.",
                    {"type": "object", "properties": {"song": {"type": "string"}, "track": {"type": "string"},
-                    "edits": {"type": "array", "description": "[{at: <beat0 from the note map>, target: 'A3'|57, hold: true, amount: 0..1, retune_ms: number, vibrato_keep: 0..1}]"},
+                    "edits": {"type": "array", "description": "[{at: <beat0 from the note map>, target: 'A3'|57, hold: true, offset_cents: -13.7, vibrato: {rate: 6, depth: 60}, amount/retune_ms/vibrato_keep/center_amt/drift_amt}]"},
                     "style": {"type": "string", "description": "base auto style under the edits (default hard)"},
                     "only_edits": {"type": "boolean", "description": "true = ONLY edited notes tune; everything else passes raw"},
                     "f0": {"type": "string", "description": "consensus (default) | fcpe | harvest | crepe"},
+                    "tuning": {"type": "string", "description": "equal (default) | just (chord tones aim at pure ratios vs the chord root — the barbershop lock)"},
                     "verify": {"type": "boolean", "description": "re-measure the output per edit (default true)"},
                     "key": {"type": "string"}, "clip_index": {"type": "number"}},
                     "required": ["song", "track", "edits"]}),

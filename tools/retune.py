@@ -248,28 +248,41 @@ class SongContext:
 
 
 # ---------------------------------------------------------------- F0 + notes
+_FCPE_MODEL = {}
+
+
 def _f0_neural(y, fs, t_grid, mode):
     """FCPE (fast context model) or CREPE f0 on the WORLD 5ms grid; 0 = unvoiced.
-    The rail for WET/IN-MIX sources — harvest collapses on reverb/bleed, these don't."""
+    The rail for WET/IN-MIX sources — harvest collapses on reverb/bleed, these don't.
+    The fcpe model is a per-device singleton and CUDA scratch is released after
+    every rail — consensus calls both models back-to-back and repeated spawns
+    OOM'd the selftest's sixth in-process run."""
     import torch
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    if mode == "fcpe":
-        from torchfcpe import spawn_bundled_infer_model
-        model = spawn_bundled_infer_model(device=dev)
-        au = torch.from_numpy(y.astype(np.float32)).unsqueeze(0).unsqueeze(-1).to(dev)
-        f0 = model.infer(au, sr=fs, decoder_mode="local_argmax", threshold=0.006,
-                         f0_min=60.0, f0_max=1300.0, interp_uv=False,
-                         output_interp_target_length=len(t_grid))
-        f0 = f0.squeeze().cpu().numpy().astype(np.float64)
-    else:                                              # crepe
-        import torchcrepe
-        hop = int(fs * FRAME_MS / 1000.0)
-        au = torch.from_numpy(y.astype(np.float32)).unsqueeze(0).to(dev)
-        f0t, pd = torchcrepe.predict(au, fs, hop, 60.0, 1300.0, "full",
-                                     return_periodicity=True, device=dev, batch_size=512)
-        f0 = f0t.squeeze().cpu().numpy().astype(np.float64)
-        f0[pd.squeeze().cpu().numpy() < 0.3] = 0.0
-        f0 = np.interp(t_grid, np.arange(len(f0)) * FRAME_MS / 1000.0, f0)
+    try:
+        if mode == "fcpe":
+            if dev not in _FCPE_MODEL:
+                from torchfcpe import spawn_bundled_infer_model
+                _FCPE_MODEL[dev] = spawn_bundled_infer_model(device=dev)
+            model = _FCPE_MODEL[dev]
+            au = torch.from_numpy(y.astype(np.float32)).unsqueeze(0).unsqueeze(-1).to(dev)
+            f0 = model.infer(au, sr=fs, decoder_mode="local_argmax", threshold=0.006,
+                             f0_min=60.0, f0_max=1300.0, interp_uv=False,
+                             output_interp_target_length=len(t_grid))
+            f0 = f0.squeeze().cpu().numpy().astype(np.float64)
+        else:                                          # crepe
+            import torchcrepe
+            hop = int(fs * FRAME_MS / 1000.0)
+            au = torch.from_numpy(y.astype(np.float32)).unsqueeze(0).to(dev)
+            f0t, pd = torchcrepe.predict(au, fs, hop, 60.0, 1300.0, "full",
+                                         return_periodicity=True, device=dev,
+                                         batch_size=256)
+            f0 = f0t.squeeze().cpu().numpy().astype(np.float64)
+            f0[pd.squeeze().cpu().numpy() < 0.3] = 0.0
+            f0 = np.interp(t_grid, np.arange(len(f0)) * FRAME_MS / 1000.0, f0)
+    finally:
+        if dev == "cuda":
+            torch.cuda.empty_cache()
     f0[f0 < 60.0] = 0.0
     return f0
 
@@ -519,7 +532,7 @@ def segment_notes(midi, voiced, split_cents, min_note_ms, persist=3):
 
 
 def group_notes(events, targets, reasons, correct_mask, ev_fl, midi, t, spans,
-                frame_rms, v_ref):
+                frame_rms, v_ref, tgt_off=None):
     """THE NOTE COURT (2026-07-13, "the actual notes from the audio need to be clear
     as day"): correction EVENTS are style-granular by design (tpain's 35ms stairs ARE
     the sound) — but the agent was reading those fragments as "the notes" (466 rows,
@@ -546,7 +559,8 @@ def group_notes(events, targets, reasons, correct_mask, ev_fl, midi, t, spans,
         core = seg[int(len(seg) * 0.2):max(int(len(seg) * 0.8), int(len(seg) * 0.2) + 1)] \
             if (b - a) * FRAME_MS >= 120.0 else seg
         cm = float(np.median(core))
-        d0 = (cm - g["target"]) * 100.0
+        off = float(tgt_off[g["k0"]]) if tgt_off is not None else 0.0
+        d0 = (cm - (g["target"] + off / 100.0)) * 100.0
         stability = max(0.0, 1.0 - float(np.std(core)))
         energy = min(1.0, float(np.median(frame_rms[a:b])) / (v_ref * 10 ** (-12.0 / 20.0)))
         register = 1.0 if not g["flag"] else 0.25
@@ -565,6 +579,8 @@ def group_notes(events, targets, reasons, correct_mask, ev_fl, midi, t, spans,
         }
         if g["flag"]:
             row["flag"] = g["flag"]
+        if abs(off) >= 1.0:
+            row["offset_cents"] = round(off, 1)
         rows.append(row)
     return rows, [(g["k0"], g["k1"]) for g in groups]
 
@@ -667,28 +683,38 @@ def medfilt1(x, k):
     return np.array([np.median(xp[i:i + k]) for i in range(len(x))])
 
 
-def build_curve(f0, events, targets, style, correct_mask, rng, ev_styles=None):
+def build_curve(f0, events, targets, style, correct_mask, rng, ev_styles=None,
+                tgt_off=None):
     """Corrected f0 array (WORLD grid). Uncorrected/unvoiced frames pass through.
     ev_styles: optional per-event style dicts (THE GRAPH MODE — a manual edit can
-    carry its own amount/retune_ms/vibrato_keep, and max_move_st widens the ±7 st
-    safety when the editor's intent is explicit)."""
+    carry its own amount/retune_ms/vibrato_keep/center_amt/drift_amt, vib_gen =
+    (rate_hz, depth_cents, delay_ms) regenerates the vibrato outright, and
+    max_move_st widens the ±7 st safety when the editor's intent is explicit).
+    tgt_off: per-event target offset in CENTS (just intonation / offset_cents —
+    the aim point is target + offset, e.g. a just major third at −13.7c).
+    THE TRANSITION LAW (2026-07-14): a corrected note used to enter from the RAW
+    pitch even when the PREVIOUS note's exit had been pulled elsewhere — an
+    instant step at every note boundary. Contiguous corrected events now slew
+    from the previous OUTPUT pitch (true retune-speed semantics: tpain's 3ms
+    still yodels, natural's 90ms glides)."""
     out = f0.copy()
     midi = midi_of(np.where(f0 > 0, f0, 1.0))
     hop_s = FRAME_MS / 1000.0
     slow_k = int(150.0 / FRAME_MS) | 1
+    prev_end, prev_out_last = -1, None
     for k, ((i0, i1), T, corr) in enumerate(zip(events, targets, correct_mask)):
         if not corr:
+            prev_end, prev_out_last = i1, None
             continue
         st = ev_styles[k] if (ev_styles and ev_styles[k]) else style
         tau = max(st["retune_ms"], 1.0) / 1000.0
+        aim = T + (float(tgt_off[k]) if tgt_off is not None else 0.0) / 100.0
         seg = midi[i0:i1]
-        dev = (seg - T) * 100.0                       # cents vs target
+        dev = (seg - aim) * 100.0                     # cents vs the aim point
         # THE MELODYNE SPLIT (2026-07-14 research): pros correct THREE things
         # independently — pitch CENTER (where the note sits: correct hard),
         # pitch DRIFT (slow intra-note wander, usually unintentional: correct
         # ~80%), pitch MODULATION (vibrato/trills, usually intentional: keep).
-        # One "slow" band under one knob conflated center+drift — full snaps
-        # killed the drift character, gentle ones left notes off-center.
         slow = medfilt1(dev, slow_k)
         fast = dev - slow                             # modulation (vibrato)
         center = float(np.median(slow))               # the note's seat
@@ -701,18 +727,36 @@ def build_curve(f0, events, targets, style, correct_mask, rng, ev_styles=None):
             walk = walk / (np.std(walk) + 1e-9) * st["humanize"]
         else:
             walk = np.zeros(len(dev))
-        cdev = (1.0 - c_amt) * center + (1.0 - d_amt) * drift \
-            + st["vibrato_keep"] * fast + walk
+        if st.get("vib_gen"):
+            # VIBRATO REGENERATION (research: rate 5–7 Hz, depth 40–70c natural,
+            # onset-delayed, slightly irregular — a perfect sinusoid reads
+            # synthetic, so the rate carries a ~3% slow wander)
+            rate, depth, delay_ms = st["vib_gen"]
+            tt = np.arange(len(dev)) * hop_s
+            ramp = np.clip((tt - delay_ms / 1000.0) / 0.15, 0.0, 1.0)
+            rj = medfilt1(np.cumsum(rng.normal(0, 1, len(dev))), 31)
+            rj = 1.0 + 0.03 * rj / (np.std(rj) + 1e-9)
+            # instantaneous rate INTEGRATES (sin(2π·rate·t·jitter) drifts sharp —
+            # the selftest measured 12 Hz on an asked 6)
+            phase = 2.0 * np.pi * rate * np.cumsum(rj) * hop_s
+            mod = depth * ramp * np.sin(phase + float(rng.uniform(0, 2 * np.pi)))
+        else:
+            mod = st["vibrato_keep"] * fast
+        cdev = (1.0 - c_amt) * center + (1.0 - d_amt) * drift + mod + walk
+        entry_from = dev[0]
+        if i0 == prev_end and prev_out_last is not None:
+            entry_from = (prev_out_last - aim) * 100.0    # slew from the last OUTPUT
         g = np.exp(-(np.arange(len(dev)) * hop_s) / tau)
-        cdev = cdev + g * (dev[0] - cdev[0])          # continuous entry, then snap
+        cdev = cdev + g * (entry_from - cdev[0])      # continuous entry, then seat
         lim = float(st.get("max_move_st", 7.0))
-        new_m = T + np.clip(cdev, -700.0 * lim / 7.0, 700.0 * lim / 7.0) / 100.0
+        new_m = aim + np.clip(cdev, -700.0 * lim / 7.0, 700.0 * lim / 7.0) / 100.0
         new_m = np.clip(new_m, seg - lim, seg + lim)  # ± safety vs sung
         out[i0:i1] = np.where(f0[i0:i1] > 0, hz_of(new_m), 0.0)
+        prev_end, prev_out_last = i1, float(new_m[-1])
     return out
 
 
-def psola_channel(yc, fs, f0, f0_new, spans):
+def psola_channel(yc, fs, f0, f0_new, spans, ap_hf=None):
     """THE HILDEBRAND ENGINE (2026-07-14 research): Auto-Tune's own synthesis is
     pitch-synchronous granular — single-period grains re-emitted at the target
     rate; Melodyne edits notes the same time-domain way. TD-PSOLA is measured
@@ -785,6 +829,24 @@ def psola_channel(yc, fs, f0, f0_new, spans):
             t += Pn
         landed = wsum > 0.25
         out[s:e] = np.where(landed, seg / np.maximum(wsum, 0.25), yc[s:e])
+        # THE AIR BLEND (HNM research, 2026-07-14): PSOLA's known buzz lives in
+        # BREATHY voiced frames — re-spaced grains correlate the aspiration
+        # noise. HNM's answer: shift the harmonic part, keep the noise part.
+        # Approximation: above 3.8 kHz, breathy frames (high WORLD HF
+        # aperiodicity) keep the ORIGINAL air; clean frames keep the shifted
+        # highs. Complementary split (hp = x − lp): perfect reconstruction.
+        if ap_hf is not None and e - s > 400:
+            w_fr = np.clip((ap_hf - 0.45) / 0.35, 0.0, 1.0)
+            idx = np.minimum(len(ap_hf) - 1, np.arange(s, e) // hop)
+            w_smp = w_fr[idx]
+            if float(w_smp.max()) > 0.05:
+                from scipy.signal import butter, sosfiltfilt
+                sos_lp = butter(4, 3800.0 / (fs / 2.0), btype="low", output="sos")
+                span_ps = out[s:e]
+                lp_ps = sosfiltfilt(sos_lp, span_ps)
+                hp_ps = span_ps - lp_ps
+                hp_or = yc[s:e] - sosfiltfilt(sos_lp, yc[s:e])
+                out[s:e] = lp_ps + hp_ps * (1.0 - w_smp) + hp_or * w_smp
     return out
 
 
@@ -852,7 +914,7 @@ def splice(orig, world, spans, fs):
 def process(in_path, out_path, song_path=None, track=None, style_name="natural",
             overrides=None, key=None, guide_track=None, region=None, clip_index=0,
             report_path=None, quiet=False, f0_mode="harvest", emit_midi_path=None,
-            note_edits=None, only_edits=False, engine="psola"):
+            note_edits=None, only_edits=False, engine="psola", tuning="equal"):
     style = dict(STYLES[style_name])
     style.update({k: v for k, v in (overrides or {}).items() if v is not None})
     y_multi, fs = sf.read(in_path, always_2d=True)
@@ -942,6 +1004,23 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
                 correct_mask[k] = False
                 reasons[k] = f"held(in-tune<={flex:.0f}c)"
 
+    # ADAPTIVE JUST INTONATION (2026-07-14 research, the barbershop law): chord
+    # tones aim at pure ratios RELATIVE TO THE CHORD ROOT — M3 −13.7c, m3 +15.6c,
+    # P5 +2c — the locked-chord sweetness 12-TET can't give. Opt-in (tuning=just),
+    # applied only when the bar's root is actually known.
+    tgt_off = [0.0] * len(events)
+    if tuning == "just" and ctx is not None and spans:
+        JI = {0: 0.0, 3: 15.6, 4: -13.7, 5: -2.0, 7: 2.0, 9: -15.6, 10: 17.6}
+        for k in range(len(events)):
+            if not correct_mask[k] or spans[k][0] is None:
+                continue
+            chord, bass = ctx.field_for_note(spans[k][0], spans[k][1])
+            if bass is None or (targets[k] % 12) not in chord:
+                continue
+            iv = (targets[k] - bass) % 12
+            if iv in JI:
+                tgt_off[k] = JI[iv]
+
     # THE GRAPH MODE (2026-07-13, "the LLM will do the manual edits to perfection"):
     # per-note manual edits, addressed by the analyze map's beat0 (t0 seconds when
     # no grid). A manual verdict OVERRIDES the courts — the editor saw the flag and
@@ -951,7 +1030,7 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
     edits_applied, edits_unmatched = [], []
     if note_edits:
         rows0, kmap = group_notes(events, targets, reasons, correct_mask, ev_fl,
-                                  midi, t, spans, frame_rms, v_ref)
+                                  midi, t, spans, frame_rms, v_ref, tgt_off=tgt_off)
         if only_edits:
             for k in range(len(events)):
                 if correct_mask[k]:
@@ -986,6 +1065,14 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
                             if ed.get(kk) is not None})
                 st2["max_move_st"] = 24.0
                 st2["flex_cents"] = 0.0        # an explicit edit is intent — no zone
+                if ed.get("offset_cents") is not None:
+                    for k in range(k0, k1 + 1):
+                        tgt_off[k] = float(ed["offset_cents"])
+                vib = ed.get("vibrato")
+                if isinstance(vib, dict):      # regenerate the note's vibrato outright
+                    st2["vib_gen"] = (float(vib.get("rate", 5.5)),
+                                      float(vib.get("depth", 55.0)),
+                                      float(vib.get("delay_ms", 200.0)))
                 for k in range(k0, k1 + 1):
                     targets[k], correct_mask[k] = T, True
                     reasons[k] = f"edited({midi_name(T)})"
@@ -996,16 +1083,18 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
                                   "was": rows0[best]["sung"], "edit": lab})
 
     rng = np.random.default_rng(0xC0FFEE ^ len(y))
-    f0_new = build_curve(f0, events, targets, style, correct_mask, rng, ev_styles)
+    f0_new = build_curve(f0, events, targets, style, correct_mask, rng, ev_styles,
+                         tgt_off=tgt_off)
 
     rs_spans = splice_spans(f0, f0_new, fs, len(y)) if out_path else []
     resynth_smp = sum(e - s for s, e in rs_spans)
     if out_path:
         chans = []
+        ap_hf = ap[:, ap.shape[1] // 3:].mean(axis=1)   # HF aperiodicity = breathiness
         for c in range(y_multi.shape[1]):
             yc = np.ascontiguousarray(y_multi[:, c], dtype=np.float64)
             if engine == "psola":
-                shifted = psola_channel(yc, fs, f0, f0_new, rs_spans)
+                shifted = psola_channel(yc, fs, f0, f0_new, rs_spans, ap_hf=ap_hf)
             else:
                 import pyworld as pw
                 spc = pw.cheaptrick(yc, f0, t, fs)
@@ -1029,7 +1118,7 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
     moved = [abs((med_midi[k] - targets[k]) * 100.0)
              for k in range(len(events)) if correct_mask[k]]
     notes_rep, _ = group_notes(events, targets, reasons, correct_mask, ev_fl,
-                               midi, t, spans, frame_rms, v_ref)
+                               midi, t, spans, frame_rms, v_ref, tgt_off=tgt_off)
     held = [r for r in notes_rep if r["cents_moved"] == 0.0 and r["reason"].startswith("held")]
     rep = {
         "tool": "retune", "version": 2, "style": style_name,
@@ -1048,7 +1137,7 @@ def process(in_path, out_path, song_path=None, track=None, style_name="natural",
                   "median_abs_cents_off": round(float(np.median(moved)), 1) if moved else 0.0,
                   "max_abs_cents_off": round(float(np.max(moved)), 1) if moved else 0.0,
                   "f0_mode": f0meta["f0_used"], "f0_requested": f0meta["f0_requested"],
-                  "f0_note": f0meta["f0_note"], "engine": engine,
+                  "f0_note": f0meta["f0_note"], "engine": engine, "tuning": tuning,
                   "resynth_pct": round(100.0 * resynth_smp / max(len(y), 1), 1),
                   "passthrough_pct": round(100.0 - 100.0 * resynth_smp / max(len(y), 1), 1)},
     }
@@ -1354,6 +1443,92 @@ def selftest(tmpdir):
         fails.append(f"consensus: mode={rep_c['stats']['f0_mode']} "
                      f"notes={rep_c['stats']['notes']} first7hit={c_hit}")
 
+    # ---- THE CRAFT LEGS (2026-07-14 round 3: JI, offsets, vibrato regen, transitions)
+    # adaptive just intonation: the M3 over C aims −13.7c; the root aims true
+    j_out = os.path.join(tmpdir, "_tune_selftest_just.wav")
+    rep_j, f0_j, f0n_j, t_j, ev_j, tg_j = process(
+        wav, j_out, song_path=song_path, track="vox", style_name="tpain",
+        quiet=True, tuning="just")
+    j_rows = rep_j["notes"]
+    m3 = [r for r in j_rows if r["target"] == 64 and r.get("offset_cents") is not None]
+    if not m3 or abs(m3[0]["offset_cents"] + 13.7) > 0.3:
+        fails.append(f"JI: M3 offset row missing/wrong ({[r.get('offset_cents') for r in j_rows[:8]]})")
+    if any(r["target"] == 60 and r.get("offset_cents") for r in j_rows):
+        fails.append("JI: the root should carry no offset")
+    if rep_j["stats"].get("tuning") != "just":
+        fails.append("JI: stats.tuning missing")
+    yoj = sf.read(j_out)[0]
+    f0j2, _tj = pw.harvest(np.ascontiguousarray(yoj.astype(np.float64)), fs,
+                           f0_floor=60, f0_ceil=1300, frame_period=FRAME_MS)
+    def _land2(ev, arr):
+        a2, b2 = ev[0] + int(60 / FRAME_MS), ev[1] - int(60 / FRAME_MS)
+        seg2 = arr[a2:b2]
+        return float(np.median(midi_of(seg2[seg2 > 0])))
+    land_m3 = _land2(ev_j[2], f0j2)                    # beat-2 note: E4 over C
+    if abs(land_m3 - (64.0 - 0.137)) > 0.12:
+        fails.append(f"JI: M3 landed {land_m3:.3f}, want ~63.863")
+
+    # THE TRANSITION LAW: contiguous corrected events slew from the previous
+    # OUTPUT — no discontinuous step at note boundaries (the glide's tpain
+    # stairs are the contiguous case)
+    worst_step = 0.0
+    for i in range(len(ev_j) - 1):
+        if ev_j[i][1] != ev_j[i + 1][0]:
+            continue
+        b = ev_j[i + 1][0]
+        if f0n_j[b - 1] > 0 and f0n_j[b] > 0 and \
+           (abs(f0n_j[b - 1] - f0_j[b - 1]) > 1e-9 or abs(f0n_j[b] - f0_j[b]) > 1e-9):
+            step = abs(float(midi_of(np.array([f0n_j[b]]))[0]
+                             - midi_of(np.array([f0n_j[b - 1]]))[0]))
+            worst_step = max(worst_step, step)
+    if worst_step > 0.25:
+        fails.append(f"transitions: boundary step {worst_step:.2f} st (want <=0.25)")
+
+    # offset_cents per edit: asked C4+30c, must land there
+    o_out = os.path.join(tmpdir, "_tune_selftest_off.wav")
+    rep_o, _f1, _f2, _t4, ev_o, _t5 = process(
+        wav, o_out, song_path=song_path, track="vox", style_name="hard", quiet=True,
+        note_edits=[{"at": 0.0, "target": "C4", "offset_cents": 30.0}])
+    yoo = sf.read(o_out)[0]
+    f0o2, _to2 = pw.harvest(np.ascontiguousarray(yoo.astype(np.float64)), fs,
+                            f0_floor=60, f0_ceil=1300, frame_period=FRAME_MS)
+    land_off = _land2(ev_o[0], f0o2)
+    if abs(land_off - 60.30) > 0.12:
+        fails.append(f"offset edit: asked C4+30c, landed {land_off:.3f}")
+
+    # vibrato regeneration: asked 6 Hz / 80c on note 4 — measure rate + extent
+    v_out = os.path.join(tmpdir, "_tune_selftest_vib.wav")
+    rep_v, _f3, _f4, _t6, ev_v, _t7 = process(
+        wav, v_out, song_path=song_path, track="vox", style_name="hard", quiet=True,
+        note_edits=[{"at": 4.0, "vibrato": {"rate": 6.0, "depth": 80.0}}])
+    yov = sf.read(v_out)[0]
+    f0v2, _tv2 = pw.harvest(np.ascontiguousarray(yov.astype(np.float64)), fs,
+                            f0_floor=60, f0_ceil=1300, frame_period=FRAME_MS)
+    a4, b4 = ev_v[4][0] + int(80 / FRAME_MS), ev_v[4][1] - int(40 / FRAME_MS)
+    segv = f0v2[a4:b4]
+    mv = midi_of(np.where(segv > 0, segv, 1.0))
+    mv = mv[segv > 0] * 100.0
+    # spectral rate estimate (zero-crossing counting on a median-detrended track
+    # inflates the rate — the detrend window beats against the vibrato period)
+    xv = mv - np.mean(mv)
+    spv = np.abs(np.fft.rfft(xv * np.hanning(len(xv))))
+    frv = np.fft.rfftfreq(len(xv), FRAME_MS / 1000.0)
+    bandv = (frv >= 3.0) & (frv <= 10.0)
+    rate_meas = float(frv[bandv][np.argmax(spv[bandv])]) if bandv.any() else 0.0
+    fastv = mv - medfilt1(mv, 61)
+    extent = float(np.percentile(fastv, 92) - np.percentile(fastv, 8))
+    if not (4.8 <= rate_meas <= 7.2):
+        fails.append(f"vibrato regen: rate {rate_meas:.1f}Hz (asked 6)")
+    if not (90.0 <= extent <= 260.0):
+        fails.append(f"vibrato regen: extent {extent:.0f}c (asked depth 80)")
+    land_v = _land2(ev_v[4], f0v2)
+    if abs(land_v - 64.0) > 0.35:
+        fails.append(f"vibrato regen: note center drifted ({land_v:.2f} vs 64)")
+
+    print(f"[selftest:craft] JI M3 -> {land_m3:.3f} (aim 63.863) · boundary step "
+          f"{worst_step:.2f}st · offset edit -> {land_off:.3f} (aim 60.30) · "
+          f"vibrato {rate_meas:.1f}Hz/{extent:.0f}c (asked 6Hz/80c)")
+
     print(f"[selftest:note-court] center={center:.1f} healed+fry flagged, "
           f"merge {[(r['target'], r['sub']) for r in g_rows]}, "
           f"analyze notes={rep_a['stats']['notes']} f0-truth OK")
@@ -1392,6 +1567,10 @@ def main():
                     choices=["harvest", "fcpe", "crepe", "consensus"],
                     help="F0 rail: harvest (dry, default) | fcpe/crepe (neural) | "
                          "consensus (fcpe+crepe vote, harvest referee — the accuracy rail)")
+    ap.add_argument("--tuning", default="equal", choices=["equal", "just"],
+                    help="target tuning: equal (12-TET) | just (adaptive JI — chord "
+                         "tones aim at pure ratios vs the chord root: M3 -13.7c, "
+                         "m3 +15.6c, P5 +2c; the barbershop lock)")
     ap.add_argument("--engine", default="psola", choices=["psola", "world"],
                     help="synthesis engine: psola (pitch-synchronous grains — Auto-Tune's "
                          "own principle, superior singing naturalness, DEFAULT) | world "
@@ -1423,7 +1602,7 @@ def main():
             overrides=ov, key=a.key, guide_track=a.guide_track, region=a.region,
             clip_index=a.clip_index, report_path=report, f0_mode=a.f0,
             emit_midi_path=a.emit_midi, note_edits=edits, only_edits=a.only_edits,
-            engine=a.engine)
+            engine=a.engine, tuning=a.tuning)
     print(f"[retune] wrote {(out + ' + ') if out else '(analyze only) '}{report}"
           + (f" + {a.emit_midi}" if a.emit_midi else ""))
 
