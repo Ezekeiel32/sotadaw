@@ -1,21 +1,24 @@
 #!/bin/bash
-# W5 SHIP IT (v2, public-release lane 2026-07-12): package SOTA DAW as a
-# PORTABLE AppImage — bundles libfaust/LLVM/ICU etc so a clean machine needs
-# NO packages beyond a desktop (X11, ALSA, fontconfig, glibc >= 2.38) + python3
-# for the agent tools. Payload comes from tools/stage_payload.sh (public-safety
-# whitelist — factory kits only, no dev-channel scripts).
+# W5 SHIP IT (v3, focal floor 2026-07-13): package SOTA DAW as a PORTABLE
+# AppImage — bundles the shared-lib closure so a clean machine needs NO packages
+# beyond a desktop (X11, ALSA, fontconfig, glibc >= 2.31 when built in the focal
+# rig; libstdc++/libfaust are static) + python3 for the agent tools. Payload
+# comes from tools/stage_payload.sh (public-safety whitelist + audit gate).
 #   tools/make_appimage.sh -> dist/SOTA_DAW-x86_64.AppImage (+ .sha256)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
-DIST=$ROOT/dist
+# containerized public builds point these at the focal build tree + a writable out
+DIST="${SOTADAW_DIST:-$ROOT/dist}"
+BUILD="${SOTADAW_BUILD:-$ROOT/app/build}"
+FAUSTLIBS="${SOTADAW_FAUSTLIBS:-}"   # faust stdlib dir -> usr/share/faust (JIT)
 APPDIR=$DIST/AppDir
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" "$APPDIR/usr/share/sotadaw-payload"
 
 # binaries (the app artefact has a space in its name; ship it as plain 'sotadaw')
-cp "app/build/sotadaw_artefacts/Release/SOTA DAW" "$APPDIR/usr/bin/sotadaw"
-cp app/build/m1_artefacts/Release/m1 "$APPDIR/usr/bin/"
+cp "$BUILD/sotadaw_artefacts/Release/SOTA DAW" "$APPDIR/usr/bin/sotadaw"
+cp "$BUILD/m1_artefacts/Release/m1" "$APPDIR/usr/bin/"
 strip "$APPDIR/usr/bin/sotadaw" "$APPDIR/usr/bin/m1" 2>/dev/null || true
 
 # ---- bundle shared libs: full ldd closure MINUS the base-system set ----------
@@ -36,11 +39,18 @@ echo "[appimage] bundled libs: $(ls "$APPDIR/usr/lib" | wc -l) ($(du -sh "$APPDI
 # ---- workspace payload (the user's editable home — copied out on first run) --
 tools/stage_payload.sh "$APPDIR/usr/share/sotadaw-payload"
 
+# faust stdlib for the JIT (libfaust itself is STATIC inside the binaries)
+if [ -n "$FAUSTLIBS" ] && [ -d "$FAUSTLIBS" ]; then
+  mkdir -p "$APPDIR/usr/share/faust"
+  cp -r "$FAUSTLIBS/." "$APPDIR/usr/share/faust/"
+fi
+
 cat > "$APPDIR/AppRun" <<'RUN'
 #!/bin/bash
 HERE=$(dirname "$(readlink -f "$0")")
 export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export SOTADAW_NO_UPLINK=1   # public build: no dev-box log uplink
+export SOTADAW_FAUST_LIB_PATH="${SOTADAW_FAUST_LIB_PATH:-$HERE/usr/share/faust}"   # JIT stdlib
 WS="${SOTADAW_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/sotadaw}"
 PAY="$HERE/usr/share/sotadaw-payload"
 if [ ! -d "$WS" ]; then
@@ -70,6 +80,7 @@ mkdir -p "$WS/app/build/m1_artefacts/Release"
 cat > "$WS/app/build/m1_artefacts/Release/m1" <<SHIM
 #!/bin/bash
 export LD_LIBRARY_PATH="$HERE/usr/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+export SOTADAW_FAUST_LIB_PATH="\${SOTADAW_FAUST_LIB_PATH:-$HERE/usr/share/faust}"
 exec "$HERE/usr/bin/m1" "\$@"
 SHIM
 chmod +x "$WS/app/build/m1_artefacts/Release/m1"
@@ -89,10 +100,10 @@ Categories=AudioVideo;Audio;
 Terminal=false
 DESK
 
-command -v convert >/dev/null && convert -size 256x256 xc:'#15161a' \
+cp "$ROOT/app/icon.png" "$APPDIR/sotadaw.png" 2>/dev/null \
+  || { command -v convert >/dev/null && convert -size 256x256 xc:'#15161a' \
   -fill '#e8b84b' -font DejaVu-Sans-Bold -pointsize 130 -gravity center -annotate +0-8 'S' \
-  -fill '#9aa0a8' -pointsize 22 -annotate +0+78 'SOTA DAW' "$APPDIR/sotadaw.png" \
-  || cp app/icon.png "$APPDIR/sotadaw.png" 2>/dev/null || true
+  -fill '#9aa0a8' -pointsize 22 -annotate +0+78 'SOTA DAW' "$APPDIR/sotadaw.png"; } || true
 
 # appimagetool (cached in dist/)
 AIT=$DIST/appimagetool-x86_64.AppImage

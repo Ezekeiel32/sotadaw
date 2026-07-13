@@ -36,12 +36,15 @@ find "$DEST" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 # dot-named by design.
 find "$DEST" -name '.*' -type f -delete
 
-# the voice-bank hint inside sing.py points at the dev tailnet — replace for public builds
-sed -i 's|Install:  cd ~/AI_SOTA_DAW && curl -C - -O http://100\.107\.177\.113:8877/voices.tar.gz|Install: see the Voices section of the SOTA DAW site (bank is a separate, non-commercial-licensed download)|' \
+# the voice-bank hint inside sing.py points at the dev tailnet — replace for
+# public builds. PERL, not sed: BSD sed reads `-i EXPR FILE` as backup-suffix +
+# script-from-FILE (the mac dmg lane stages through this script; a GNU-only sed
+# killed it — and had been silently no-op'ing behind `|| true` before that).
+perl -pi -e 's|Install:  cd ~/AI_SOTA_DAW && curl -C - -O http://100\.107\.177\.113:8877/voices\.tar\.gz|Install: see the Voices section of the SOTA DAW site (bank is a separate, non-commercial-licensed download)|' \
   "$DEST/tools/sing.py" 2>/dev/null || true
 # sidecar's log-uplink default carries the dev-box address — public builds get
 # an empty default (SOTADAW_NO_UPLINK=1 rides every public launcher regardless)
-sed -i 's|os.environ.get("SOTADAW_UPLINK", "http://100\.107\.177\.113:8878")|os.environ.get("SOTADAW_UPLINK", "")|' \
+perl -pi -e 's|os\.environ\.get\("SOTADAW_UPLINK", "http://100\.107\.177\.113:8878"\)|os.environ.get("SOTADAW_UPLINK", "")|' \
   "$DEST/agent/sidecar.py"
 
 # factory kits ONLY
