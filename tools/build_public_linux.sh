@@ -10,14 +10,21 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/dist/public_linux"
 mkdir -p "$OUT"
+# SOTADAW_SRC: build from a CLEAN git-archive tree instead of the live working
+# tree (parallel-session WIP must never ride a public build). The vendored
+# engine clones (git-ignored, absent from archives) mount in from $ROOT.
+SRC="${SOTADAW_SRC:-$ROOT}"
 # appimagetool cache (avoids the github download inside the container)
 [ -x "$ROOT/dist/appimagetool-x86_64.AppImage" ] && \
   cp -n "$ROOT/dist/appimagetool-x86_64.AppImage" "$OUT/" 2>/dev/null || true
 
 docker build -t sotadaw-focal "$ROOT/tools/focal"
 docker run --rm \
+  -e SOTADAW_VER -e SOTADAW_GITSHA \
   -v sotadaw_public_build:/build \
-  -v "$ROOT":/src:ro \
+  -v "$SRC":/src:ro \
+  -v "$ROOT/app/tracktion_engine":/src/app/tracktion_engine:ro \
+  -v "$ROOT/app/link":/src/app/link:ro \
   -v "$ROOT/tools/focal/faust_include":/usr/include/faust:ro \
   -v "$OUT":/out \
   sotadaw-focal bash -c '

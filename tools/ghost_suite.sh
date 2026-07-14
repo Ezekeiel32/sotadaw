@@ -59,6 +59,7 @@ leg "ears_on_write"                python3 tools/ears_on_write_battery.py
 leg "session_diet"                 python3 tools/session_diet_battery.py
 leg "gold_standard (DNA bank)"     python3 tools/gold_battery.py
 leg "feedback_loop"                python3 tools/feedback_loop_battery.py
+leg "genre_court (ask owns genre)" python3 tools/genre_court_battery.py
 leg "chronicle (kernel)"           python3 tools/chronicle_battery.py
 leg "chronicle (protocol seam)"    python3 tools/chronicle_e2e.py 1
 leg "chronicle (ui replay)"        python3 tools/chronicle_e2e.py --ui

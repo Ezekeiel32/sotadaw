@@ -216,6 +216,89 @@ def resolve_take_genre(prop, song=None):
     return g
 
 
+_dna_genres_cache = None
+def dna_genres():
+    """The known-genre name list (agent/dna_cache.json), cached per process."""
+    global _dna_genres_cache
+    if _dna_genres_cache is None:
+        try:
+            _dna_genres_cache = sorted(
+                json.load(open(os.path.join(ROOT, "agent", "dna_cache.json")))["genres"],
+                key=len, reverse=True)   # longest first: 'acid_house' before 'house'
+        except Exception:
+            _dna_genres_cache = []
+    return _dna_genres_cache
+
+
+def ask_genre(text):
+    """THE GENRE COURT (Chezy law 2026-07-14: 'the agent must select the genre
+    from the REQUEST unless ambiguous'): literal longest-match of the ask's own
+    words against the known-genre list — word, spaced-phrase and joined-bigram
+    forms ('uk garage' hits 'ukgarage'). '' = the ask names no literal genre
+    (the vibe route / dock fallback decide later)."""
+    words = re.sub(r"[^a-z0-9_ ]", " ", str(text or "").lower()).split()
+    joined = " " + " ".join(words) + " "
+    grams = set(words) | {a + b for a, b in zip(words, words[1:])}
+    for g in dna_genres():
+        if g in grams or f" {g.replace('_', ' ')} " in joined:
+            return g
+    return ""
+
+
+_genre_told = {}   # rid -> genre already relayed (one 'genre' event per distinct pick)
+def relay_genre(req_id, song, genre, source):
+    """THE SELECTOR FOLLOWS THE AGENT: every resolved genre (ask literal, vibe
+    route, session stamp, MAKE) is emitted as a 'genre' event — the UI's dock
+    box snaps to it — and memoed as the song's ask-context (attribution +
+    loudness truth). Dedupes per run; never raises."""
+    try:
+        g = re.sub(r"[^a-z0-9_ ]", "", str(genre or "").strip().lower())
+        if not g or _genre_told.get(req_id) == g:
+            return
+        if len(_genre_told) > 256:
+            _genre_told.clear()
+        _genre_told[req_id] = g
+        if song:
+            last_genres[song] = g
+        emit(req_id, "genre", song=song, genre=g, source=source)
+    except Exception:
+        pass
+
+
+def genre_pref_block(gp, gsrc):
+    """THE GENRE COURT's prompt kernel (pure, battery-proven): how the dock box
+    enters the ask. The box NEVER outranks the request — a user PIN is a
+    tie-breaker for style-open asks; an agent ECHO (the box following a prior
+    run) is weaker project context; empty rides nothing."""
+    gp = str(gp or "").strip()
+    if not gp:
+        return ""
+    law = ("GENRE LAW: resolve the genre from THE ASK itself (named or clearly "
+           "implied style) and pass THAT to start_session — ")
+    if str(gsrc or "").strip().lower() == "user":
+        return ("\n" + law + f"the user's dock pin '{gp}' applies ONLY when "
+                "the ask leaves style open (then lean its sounds, groove, "
+                "mix targets).\n")
+    return ("\n" + law + f"the dock currently echoes '{gp}' from an "
+            "earlier run (NOT a user choice this ask); fall back to it "
+            "only when the ask is genuinely style-open.\n")
+
+
+def relay_genre_stamp(req_id, song, t0):
+    """Mid-run leg of THE SELECTOR FOLLOWS THE AGENT: daw_mcp's start_session
+    stamps ipc/genre_resolved.json with the genre the AGENT resolved (vibe
+    route > skill match > literal arg); every proposal watcher polls this and
+    relays fresh stamps. Stale stamps (older than this run) never speak."""
+    try:
+        p = os.path.join(IPC, "genre_resolved.json")
+        if os.stat(p).st_mtime < t0:
+            return
+        d = json.load(open(p))
+        relay_genre(req_id, song, d.get("genre"), str(d.get("source") or "session"))
+    except Exception:
+        pass
+
+
 def loudness_recovery(rid, prop, a, genre):
     """W116 THE UNIVERSAL LOUDNESS PASS (Chezy live, 2026-07-11: 'EVERY song
     from EVERY model for EVERY request'): the MAKE lane's recovery loop,
@@ -2587,7 +2670,7 @@ def prompt_rules(slim, arranged_note="", ghost_first="", taste_slim=""):
     if slim:
         return """- TOOL BOOTSTRAP: if tool schemas arrive DEFERRED, load EVERYTHING your plan needs in ONE ToolSearch call (comma-separated select list). Then act.
 - Use ONLY the daw MCP tools; every long-tail tool is one use_tool(name, args) call away (unknown names return the catalog). Do NOT use ToolSearch for anything else, or Read/Edit/Bash — they are unavailable and waste time.
-- First start_session (loads skills). The SONG DIGEST above already gives you the structure — for gain/pan/fx/sends/meta/automation moves act DIRECTLY from the digest. READ LAW for note data: get_song_summary (structure, ~1KB any size) then get_song_region the PROPOSAL COPY for JUST the bars you are editing (notes carry _idx for select_notes/surgical_edit). Full get_song only for small songs.
+- First start_session (loads skills) — its genre arg is the style THE ASK names or implies; a dock preference applies only when the ask is style-open. The SONG DIGEST above already gives you the structure — for gain/pan/fx/sends/meta/automation moves act DIRECTLY from the digest. READ LAW for note data: get_song_summary (structure, ~1KB any size) then get_song_region the PROPOSAL COPY for JUST the bars you are editing (notes carry _idx for select_notes/surgical_edit). Full get_song only for small songs.
 - SELECTION = CONTEXT: if a SELECTION CONTEXT block appears above, it is THE subject — "this"/"these"/"here" means the selection. Edit it and leave the rest alone.
 - THE SCALPEL (scoped asks): locate (timestamps/sections/descriptions -> beats + what's sounding) -> select_notes (verify the exact match set) -> surgical_edit (ops on exactly those notes). Every cut files a receipt; the sidecar diffs the proposal against receipts and flags anything unreceipted OUT OF SCOPE. Never resend whole tracks (update_track notes) or whole songs (write_song) for a scoped ask. SELECTED NOTES ship indices: selector {"tracks":"<track>","indices":[...]} hits exactly them.
 - Modify ONLY the PROPOSAL COPY: update_track (notes/gain/pan/sends/muted; remove:true deletes a track — never write_song for that), set_track_fx (the whole chain in order; fx_filter/fx_reverb/fx_delay/fx_saturate/fx_widen/fx_pump + built-ins type eq/comp), add_track, update_song_meta (bpm/swing/masterGainDb/master/key/tempoMap), set_buses + update_track sends, list_plugin_params / set_track_param / automate. Faust params are real zone units — fx_trim's zone is 'level', NOT 'gain'; vst3 params are natural display units.
@@ -2606,7 +2689,7 @@ def prompt_rules(slim, arranged_note="", ghost_first="", taste_slim=""):
 - Use ONLY the daw MCP tools. The visible set is the CORE (~36); every long-tail tool
   (bridges, DJ, presets, vocals, import_song_audio, prescribe/color/restyle...) is one
   call away via use_tool(name, args) — unknown names return the catalog. Do NOT use ToolSearch, Read, Edit, Bash, or any other tool — they are unavailable and waste time.
-- First start_session (loads skills). The SONG DIGEST above already gives you the full structure — for gain/pan/fx/sends/meta/automation moves act DIRECTLY from the digest. READ LAW for note data: get_song_summary (structure, ~1KB any size) then get_song_region the PROPOSAL COPY from_bar..to_bar [tracks] for JUST the bars you are editing (notes carry _idx for select_notes/surgical_edit). Full get_song ONLY for whole-song rewrites on small songs — on a large song it is megabytes and wastes minutes (measured: 478x/71x smaller via summary/region).
+- First start_session (loads skills) — its genre arg is the style THE ASK names or implies (the user's words outrank any dock preference; the dock applies only when the ask is style-open). The SONG DIGEST above already gives you the full structure — for gain/pan/fx/sends/meta/automation moves act DIRECTLY from the digest. READ LAW for note data: get_song_summary (structure, ~1KB any size) then get_song_region the PROPOSAL COPY from_bar..to_bar [tracks] for JUST the bars you are editing (notes carry _idx for select_notes/surgical_edit). Full get_song ONLY for whole-song rewrites on small songs — on a large song it is megabytes and wastes minutes (measured: 478x/71x smaller via summary/region).
 - PLAN FIRST (BEST_DAW_30 #16, big asks only): when the ask is full-song / new-track / multi-section scale, your FIRST streamed text — BEFORE any composing tool call — must be ONE line: 'PLAN: step · step · step' (3-7 steps, a few words each: sections, sound palette, groove, hook, mix moves). Then execute it. Scoped edits and questions skip the plan. The user SEES this line as a plan card — it is your contract for the run.
 - SELECTION = CONTEXT: if a SELECTION CONTEXT block appears above, it is THE subject — "this"/"these"/"here" in the ask means the selection. Edit the selected notes/tracks/range/groove/slot/master and leave the rest alone unless explicitly asked. get_selection re-reads it mid-run.
 - THE SCALPEL (scoped asks): when the user points at a sound/moment/notes ("this note", "the hats in the drop", "at 1:23", "the 3rd kick", a selection, the playhead) — locate (resolves timestamps/sections/descriptions to beats + what's SOUNDING there) -> select_notes (verify the exact match set) -> surgical_edit (ops on exactly those notes: transpose/nudge/vel/quantize/humanize/stretch/ramp/delete/insert/replace). Every cut files a receipt; the sidecar DIFFS your whole proposal against receipts and anything unreceipted is flagged OUT OF SCOPE to the user. Do NOT resend whole tracks (update_track notes) or whole songs (write_song) for a scoped ask — that reads as blunt and slow. SELECTED NOTES ship indices: selector {{"tracks":"<track>","indices":[...]}} hits exactly them.
@@ -2716,9 +2799,9 @@ def real_propose(req_id, text, song_name, ctx_block="", persona_name="", model_o
                 # arrange ("real arrangement" honor) and shipped 8-bar 'produced' takes
                 _cache_g = json.load(open(os.path.join(ROOT, "agent", "dna_cache.json")))["genres"]
                 _tl = str(text).lower()
+                _gsrc_pre = "ask"
                 _gname_pre = next((g for g in sorted(_cache_g, key=len, reverse=True)
-                                   if g.replace("_", " ") in _tl or g in _tl), None)                     or (str(genre_pref_hint).strip().lower()
-                        if str(genre_pref_hint).strip().lower() in _cache_g else None)
+                                   if g.replace("_", " ") in _tl or g in _tl), None)
                 if not _gname_pre:
                     # SEMANTIC ROUTING (pass 5): the ask names no literal genre —
                     # KNN its vibe against the KG captions (kg_vibe, MiniLM) and
@@ -2735,11 +2818,21 @@ def real_propose(req_id, text, song_name, ctx_block="", persona_name="", model_o
                             _gname_pre = next((x["genre"] for x in _dv["results"]
                                                if x["genre"] in _cache_g), None)
                             if _gname_pre:
+                                _gsrc_pre = "vibe"
                                 emit(req_id, "activity",
                                      text=f"[shape] vibe-routed: no literal genre in the ask -> "
                                           f"{_gname_pre} (cos {_dv['results'][0]['score']})")
                     except Exception:
                         pass
+                if not _gname_pre:
+                    # THE GENRE COURT (Chezy law 2026-07-14): the dock box is the
+                    # LAST fallback — it used to outrank the ask's own vibe here
+                    # and seed ITS genre over a clearly-styled request.
+                    _gp = str(genre_pref_hint).strip().lower().replace(" ", "_")
+                    if _gp in _cache_g:
+                        _gname_pre, _gsrc_pre = _gp, "dock"
+                if _gname_pre:
+                    relay_genre(req_id, song_name, _gname_pre, _gsrc_pre)
                 if not _gname_pre and len(doc.get("sections") or []) < 2:
                     bars = int(float(doc.get("lengthBars", 8)) or 8)
                     t_low = str(text).lower()
@@ -2928,8 +3021,9 @@ def real_propose(req_id, text, song_name, ctx_block="", persona_name="", model_o
         _watch_stop = threading.Event()
         def _watch_codex_prop():
             pp = os.path.join(SONGS, f"{prop}.json")
-            seen, last_emit = 0.0, 0.0
+            seen, last_emit, _t0 = 0.0, 0.0, time.time()
             while not _watch_stop.wait(0.7):
+                relay_genre_stamp(req_id, song_name, _t0)
                 try:
                     st = os.stat(pp)
                     if st.st_mtime <= seen or time.time() - last_emit < 1.0:
@@ -3049,8 +3143,9 @@ def real_propose(req_id, text, song_name, ctx_block="", persona_name="", model_o
             _watch_stop = threading.Event()
             def _watch_prop_r():
                 pp = os.path.join(SONGS, f"{prop}.json")
-                seen, last_emit = 0.0, 0.0
+                seen, last_emit, _t0 = 0.0, 0.0, time.time()
                 while not _watch_stop.wait(0.7):
+                    relay_genre_stamp(req_id, song_name, _t0)
                     try:
                         st = os.stat(pp)
                     except OSError:
@@ -3114,8 +3209,9 @@ def real_propose(req_id, text, song_name, ctx_block="", persona_name="", model_o
     _watch_stop = threading.Event()
     def _watch_prop():
         pp = os.path.join(SONGS, f"{prop}.json")
-        seen, last_emit = 0.0, 0.0
+        seen, last_emit, _t0 = 0.0, 0.0, time.time()
         while not _watch_stop.wait(0.7):
+            relay_genre_stamp(req_id, song_name, _t0)
             try:
                 st = os.stat(pp)
             except OSError:
@@ -3736,6 +3832,7 @@ def handle_blind_round(rid, req, song, genre, seed, n_var):
     winner as THE proposal, losers retire. Deterministic per seed: take k's
     seed = seed + k*7919 (explicit seed = byte-exact reruns, generative law)."""
     import random as _rnd
+    relay_genre(rid, song, genre, "round")   # the dock box follows the round's genre
     emit(rid, "status",
          text=f"BLIND ROUND: making {n_var} {genre} takes (seed {seed}) — "
               "no tokens, all DNA…")
@@ -3798,6 +3895,9 @@ def handle(req):
         chronicle.append(song, "user",
                          f"[{req.get('verb', '?')}] "
                          + json.dumps(req.get("args") or {}, sort_keys=True)[:160])
+        if req.get("verb") == "restyle" and (req.get("args") or {}).get("genre"):
+            # a restyle IS a genre decision — the dock box follows it
+            relay_genre(rid, song, (req.get("args") or {}).get("genre"), "restyle")
         handle_verb(req)     # THE VERB BUS: zero-token producer verbs, instant diff
         return
 
@@ -4105,7 +4205,7 @@ def handle(req):
             emit(rid, "error", text=f"no song {song}")
             return
         genre = re.sub(r"[^a-z0-9_]", "", str(req.get("genre", "house")).lower())
-        last_genres[song] = genre           # ATTRIBUTION v3: the verdict knows its genre
+        relay_genre(rid, song, genre, "make")   # ATTRIBUTION v3 memo + the dock box follows
         seed = int(req.get("seed", 0))
         try:                                # #21c N-TAKE BLIND A/B (sidecar half)
             n_var = max(0, min(4, int(req.get("variants") or 0)))
@@ -4225,7 +4325,16 @@ def handle(req):
         explicit_model = str(req.get("model") or "").strip()
         routed_model = routed_model_for(req.get("text", ""), explicit_model, MOCK)
         last_prompts[song] = req.get("text", "")
-        if str(req.get("genre_pref", "")).strip():
+        # THE GENRE COURT (Chezy law 2026-07-14): the ASK owns the genre. A
+        # literal genre in the text resolves NOW (relay = the dock box snaps to
+        # it before the run even spins); the dock value memos ask-context only
+        # when the USER pinned it (genre_src=user) — an auto-echoed box value
+        # re-memoing itself forever was the stale-attribution loop.
+        _g_ask = ask_genre(req.get("text", ""))
+        if _g_ask:
+            relay_genre(rid, song, _g_ask, "ask")
+        elif (str(req.get("genre_pref", "")).strip()
+              and str(req.get("genre_src", "user")).strip().lower() == "user"):
             last_genres[song] = str(req["genre_pref"]).strip().lower()
         last_meta[song] = {"persona": req.get("persona", ""),
                            "model": routed_model}
@@ -4269,11 +4378,11 @@ def handle(req):
                       open(os.path.join(IPC, "context.json"), "w"), indent=1)
         except Exception:
             pass
-        gp = str(req.get("genre_pref", "")).strip()
-        if gp:   # THE DOCK LAW: the genre box is a standing USER PREFERENCE, not a command
-            ctx_block += (f"\nUSER GENRE PREFERENCE: {gp} — when the ask leaves style open, "
-                          "lean this way (sounds, groove, mix targets). An explicit style in "
-                          "the ask always wins.\n")
+        # THE GENRE COURT (Chezy law 2026-07-14): the box NEVER outranks the ask
+        # — genre_pref_block is the pure kernel (user PIN > agent ECHO, both
+        # below the request's own style).
+        ctx_block += genre_pref_block(req.get("genre_pref", ""),
+                                      req.get("genre_src", "user"))
         if ctx_block:
             emit(rid, "activity", text="[ctx] " + ctx_block.strip().splitlines()[1][:120])
         try:   # locked tracks enter the prompt as LAW (saves wasted agent work)

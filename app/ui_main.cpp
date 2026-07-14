@@ -9260,11 +9260,23 @@ public:
                                  "afrobeats", "salsa", "rock", "blues", "psytrance", "ambient" };
             if (gl.isEmpty())
                 for (auto* g : gs) gl.add (g);
-            int i = 1;
+            // THE GENRE COURT (Chezy law 2026-07-14): the box is a HINT the agent
+            // may overrule, and it FOLLOWS the agent's resolved genre. "(auto)"
+            // = nothing rides; before it existed the first list entry rode every
+            // ask as a phantom preference.
+            genreBox.addItem ("(auto)", 1);
+            int i = 2;
             for (auto& gname : gl) genreBox.addItem (gname, i++);
         }
         genreBox.setSelectedId (1, juce::dontSendNotification);
-        genreBox.setTooltip ("genre preference - rides your messages to the agent (optional)");
+        genreBox.onChange = [this]
+        {   // a hand-pick = user PIN; "(auto)" clears it. Agent picks arrive via
+            // the 'genre' event and never pass through here (dontSendNotification).
+            genreSrc = genreBox.getSelectedId() == 1 ? juce::String() : juce::String ("user");
+            saveGenreForSong();
+        };
+        genreBox.setTooltip ("genre: the agent picks from your ask and this box follows its pick - "
+                             "hand-pick to PIN a preference for style-open asks ((auto) = unpinned)");
         addAndMakeVisible (makeTrackButton);
         makeTrackButton.setComponentID ("primary");
         makeTrackButton.setTooltip ("MAKE: turn the selected track's AUDIO into editable MIDI (the opposite of HUM; zero tokens). "
@@ -9355,7 +9367,12 @@ public:
         {
             if (proposalPending)
             { appendActivity ("[ui] resolve the pending proposal first (Accept/Reject)"); return; }
-            const auto genre = genreBox.getText();
+            const auto genre = currentGenre();
+            if (genre.isEmpty())
+            {   // restyle NEEDS a destination: (auto) has nothing to morph toward
+                setStatus ("RESTYLE needs a target - pick a genre in the box first");
+                return;
+            }
             writeRequest ("verb", "\"verb\": \"restyle\", \"args\": {\"genre\": "
                           + juce::JSON::toString (juce::var (genre)) + "},");
             setStatus ("restyling to " + genre + " (notes kept, sound swapped)...");
@@ -9422,7 +9439,8 @@ public:
         addChildComponent (jamVibeBox);
         addChildComponent (jamGenreBox);
         for (int i = 0; i < genreBox.getNumItems(); ++i)   // the same 131-genre brain
-            jamGenreBox.addItem (genreBox.getItemText (i), i + 1);
+            if (genreBox.getItemText (i) != "(auto)")      // the band always names a style
+                jamGenreBox.addItem (genreBox.getItemText (i), i + 1);
         {
             const auto g0 = loadUiPrefString ("jamGenre", "house");
             bool gset = false;
@@ -9959,6 +9977,7 @@ public:
         // Same-song reloads (accepts, restores) keep the live transcript.
         if (songName != chronicleLoadedFor)
             replayChronicle();
+        restoreGenreForSong();   // the genre chip is project state, not app state
         clearProposal();
         undoStack.clear(); redoStack.clear();
         refreshUndoButtons();
@@ -10378,6 +10397,64 @@ public:
         obj->setProperty (key, val);
         f.getParentDirectory().createDirectory();
         f.replaceWithText (juce::JSON::toString (juce::var (obj.get()), true));
+    }
+
+    // ===== THE GENRE COURT (Chezy law 2026-07-14) =====
+    // The box never outranks the ask: the agent resolves the genre from the
+    // REQUEST; the box is a fallback hint for style-open asks — and it FOLLOWS
+    // the agent's resolution (the sidecar's 'genre' event) automatically.
+    juce::String currentGenre() const
+    {
+        const auto t = genreBox.getText().trim();
+        return t == "(auto)" ? juce::String() : t;
+    }
+    juce::String genrePrefJson() const
+    {   // (auto) rides nothing; a value rides tagged with its source so the
+        // sidecar ranks a user PIN above an agent ECHO (both below the ask)
+        const auto g = currentGenre();
+        if (g.isEmpty()) return {};
+        return "\"genre_pref\": " + juce::JSON::toString (juce::var (g)) + ", "
+             + "\"genre_src\": \"" + (genreSrc == "user" ? "user" : "agent") + "\", ";
+    }
+    void applyAgentGenre (const juce::String& g)
+    {   // snap the box to the agent's pick; names outside the item list still show
+        genreSrc = "agent";
+        for (int i = 0; i < genreBox.getNumItems(); ++i)
+            if (genreBox.getItemText (i).equalsIgnoreCase (g))
+            {
+                genreBox.setSelectedId (genreBox.getItemId (i), juce::dontSendNotification);
+                saveGenreForSong();
+                return;
+            }
+        genreBox.setText (g, juce::dontSendNotification);
+        saveGenreForSong();
+    }
+    void saveGenreForSong()
+    {
+        if (songName.isEmpty() || songName.startsWith ("_")
+            || std::getenv ("SOTADAW_SANDBOX") != nullptr
+            || std::getenv ("SOTADAW_SNAPSHOT") != nullptr)   // rigs never write prefs
+            return;
+        saveUiPrefString ("genreFor:" + songName, currentGenre() + "|" + genreSrc);
+    }
+    void restoreGenreForSong()
+    {   // the genre chip is PROJECT state: reopening a song restores its pick
+        const auto v = loadUiPrefString ("genreFor:" + songName, "");
+        const auto g = v.upToLastOccurrenceOf ("|", false, false);
+        genreSrc = v.fromLastOccurrenceOf ("|", false, false);
+        if (g.isEmpty())
+        {
+            genreBox.setSelectedId (1, juce::dontSendNotification);
+            genreSrc.clear();
+            return;
+        }
+        for (int i = 0; i < genreBox.getNumItems(); ++i)
+            if (genreBox.getItemText (i).equalsIgnoreCase (g))
+            {
+                genreBox.setSelectedId (genreBox.getItemId (i), juce::dontSendNotification);
+                return;
+            }
+        genreBox.setText (g, juce::dontSendNotification);
     }
 
     void attachMeters()
@@ -17402,8 +17479,7 @@ private:  // (restores the section the HANDS burst was in)
             setAgentBusy (true);
             promptBox.clear();
             appendActivity ("you (revising the pending take): " + text);
-            writeRequest ("prompt", buildContextJson() + modelJson
-                          + "\"genre_pref\": " + juce::JSON::toString (juce::var (genreBox.getText())) + ", "
+            writeRequest ("prompt", buildContextJson() + modelJson + genrePrefJson()
                           + "\"revise\": true, \"text\": " + juce::JSON::toString (juce::var (text)) + ",");
             setStatus ("revising the pending take - it stays auditionable; Accept/Reject still yours");
             return;
@@ -17431,8 +17507,7 @@ private:  // (restores the section the HANDS burst was in)
         }
         else
         {
-            writeRequest ("prompt", buildContextJson() + modelJson
-                          + "\"genre_pref\": " + juce::JSON::toString (juce::var (genreBox.getText())) + ", "
+            writeRequest ("prompt", buildContextJson() + modelJson + genrePrefJson()
                           + "\"text\": " + juce::JSON::toString (juce::var (text)) + ",");
             setStatus (modelChoice.isEmpty() ? "agent working..."
                                              : "agent working (" + modelChoiceLabel() + ")...");
@@ -17705,6 +17780,19 @@ private:  // (restores the section the HANDS burst was in)
                 for (int i = 0; i < 10; ++i)
                     bar << juce::String (juce::CharPointer_UTF8 (i < cells ? "\xe2\x96\xb0" : "\xe2\x96\xb1"));
                 setStatus (bar + " " + juce::String (pct, 0) + "%  " + text);
+            }
+            else if (kind == "genre")
+            {   // THE SELECTOR FOLLOWS THE AGENT (Chezy law 2026-07-14): the run
+                // resolved its genre (ask literal / vibe route / session match /
+                // MAKE) — snap the box to it. Cross-run gate above already
+                // dropped foreign songs.
+                const auto g = ev.getProperty ("genre", "").toString();
+                if (g.isNotEmpty() && ! g.equalsIgnoreCase (currentGenre()))
+                {
+                    applyAgentGenre (g);
+                    appendActivity ("[ui] genre: " + g + " ("
+                                    + ev.getProperty ("source", "agent").toString() + ")");
+                }
             }
             else if (kind == "action")
             {
@@ -18141,7 +18229,7 @@ private:  // (restores the section the HANDS burst was in)
         jamDoneSeen = false;
         jamStartedMs = juce::Time::currentTimeMillis();   // epoch: compared to mtimes
         jamGenre = jamGenreBox.getText();
-        if (jamGenre.isEmpty()) jamGenre = genreBox.getText();
+        if (jamGenre.isEmpty()) jamGenre = currentGenre();   // never the "(auto)" literal
         if (jamGenre.isEmpty()) jamGenre = "house";
         auto vibe = jamVibeBox.getText();
         if (vibe.isEmpty()) vibe = "build";
@@ -21734,7 +21822,8 @@ private:  // (restores the section the HANDS burst was in)
     bool coEditWarned = false;       // one warning per external-change episode
     juce::String personaId { "default" }; // agent behavioral contract (menu-selected)
     bool mockAgent = false;               // Agent menu: zero-token mock sidecar
-    juce::ComboBox genreBox;            // one-button track: pick a genre, hit MAKE — zero tokens
+    juce::ComboBox genreBox;            // THE GENRE COURT: hint in, agent's pick reflected back
+    juce::String genreSrc;              // "" (auto) | "user" pin | "agent" echo — rides as genre_src
     juce::ComboBox modelBox;            // THE MODEL SELECTOR: AUTO or an explicit model on every ask
     TransportLCD lcd;
     ChatPanel chat;

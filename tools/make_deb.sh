@@ -45,6 +45,22 @@ ENGINE=/opt/sotadaw
 PAY="$ENGINE/payload"
 export SOTADAW_NO_UPLINK=1   # public build: no dev-box log uplink
 export SOTADAW_FAUST_LIB_PATH="${SOTADAW_FAUST_LIB_PATH:-$ENGINE/faustlibs}"   # JIT stdlib
+# THE UPDATE VOICE (2026-07-14, "why isn't the latest on my computer?!"):
+# a build can't know it's stale unless it ASKS — 1s budget, offline-silent.
+# SOTADAW_NO_UPDATE_CHECK=1 kills it.
+if [ -z "${SOTADAW_NO_UPDATE_CHECK:-}" ] && command -v curl >/dev/null; then
+  LATEST=$(curl -m 1 -sfL https://sotadaw.netlify.app/dl/LATEST_LINUX.txt 2>/dev/null | head -1) || LATEST=""
+  HAVE=$(dpkg-query -W -f='${Version}' sotadaw 2>/dev/null || echo "")
+  if [ -n "$LATEST" ] && [ -n "$HAVE" ]; then
+    NEWVER=${LATEST%% *}; NEWFILE=${LATEST#* }
+    if [ "$NEWVER" != "$HAVE" ] && dpkg --compare-versions "$NEWVER" gt "$HAVE" 2>/dev/null; then
+      echo "[sotadaw] UPDATE AVAILABLE: $NEWVER (you have $HAVE)"
+      echo "[sotadaw]   wget -P ~/Downloads https://sotadaw.netlify.app/dl/$NEWFILE"
+      echo "[sotadaw]   sudo apt install ~/Downloads/$NEWFILE"
+      command -v notify-send >/dev/null && notify-send "SOTA DAW" "Update available: $NEWVER (you have $HAVE) — sotadaw.netlify.app" 2>/dev/null || true
+    fi
+  fi
+fi
 WS="${SOTADAW_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/sotadaw}"
 if [ ! -d "$WS" ]; then
   echo "[sotadaw] first run: creating workspace at $WS"

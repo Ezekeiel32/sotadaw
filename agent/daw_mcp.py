@@ -402,6 +402,24 @@ def _vibe_route(text, k=4, timeout=90):
     except Exception:
         return None
 
+def _stamp_resolved_genre(resolved, asked):
+    """IPC metadata stamp (NOT a song write — receipt_lint watches t_* song
+    persistence; this helper keeps the session tool under that watch): the
+    genre start_session resolved, for the sidecar's 'genre' relay to the UI."""
+    try:
+        if not str(resolved or "").strip():
+            return
+        ipc = os.environ.get("SOTADAW_IPC") or os.path.join(ROOT, "agent", "ipc")
+        os.makedirs(ipc, exist_ok=True)
+        tmp = os.path.join(ipc, "genre_resolved.json.tmp")
+        with open(tmp, "w") as f:
+            json.dump({"genre": str(resolved).strip(), "asked": asked,
+                       "source": "session", "t": time.time()}, f)
+        os.replace(tmp, os.path.join(ipc, "genre_resolved.json"))
+    except Exception:
+        pass
+
+
 def t_start_session(args):
     genre = str(args.get("genre", "")).lower()
     ctx = set(re.split(r"[\s,/+-]+", genre)) | {genre}
@@ -425,7 +443,7 @@ def t_start_session(args):
                      "(list_kits)")
     always = [(n, e) for n, e in fired if "always" in {t.lower() for t in e["tags"]}]
     genred = [(n, e) for n, e in fired if (n, e) not in always]
-    vibe_note = ""
+    vibe_note, _vibe_genre = "", ""
     if genre.strip() and not any(n.endswith("-arrangement") for n, _ in genred):
         # SEMANTIC ROUTING (pass 5): no ARRANGEMENT skill matched the genre words
         # — KNN the vibe against the KG captions and re-fire skills on the nearest
@@ -435,6 +453,7 @@ def t_start_session(args):
         # genre skill; a technique match must not mask a genre miss.
         v = _vibe_route(genre)
         if v:
+            _vibe_genre = v["genre"]
             ctx |= {v["genre"]} | set(v["genre"].split("_"))
             fired = select_skills(ctx)
             always = [(n, e) for n, e in fired
@@ -450,6 +469,15 @@ def t_start_session(args):
                             genre in {t.lower() for t in ne[1]["tags"]},
                             ne[0].endswith("-arrangement"), ne[0])
         best = max(genred, key=score)[0]
+    # THE SELECTOR FOLLOWS THE AGENT (Chezy law 2026-07-14): stamp the genre this
+    # session actually RESOLVED (vibe route > arrangement-skill match > literal arg)
+    # — the sidecar's mid-run watchers relay it to the UI as a 'genre' event and the
+    # dock box snaps to it. Fail-open: a stamp failure must never cost a session.
+    _stamp_resolved_genre(
+        _vibe_genre
+        or (best[: -len("-arrangement")] if best and best.endswith("-arrangement") else "")
+        or re.sub(r"[^a-z0-9_ ]", "", genre).strip(),
+        genre)
     full, indexed = [], []
     for n, e in fired:
         (full if n in _SESSION_FULL or n == best else indexed).append((n, e))
