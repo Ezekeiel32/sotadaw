@@ -14,6 +14,10 @@ mkdir -p "$OUT"
 # tree (parallel-session WIP must never ride a public build). The vendored
 # engine clones (git-ignored, absent from archives) mount in from $ROOT.
 SRC="${SOTADAW_SRC:-$ROOT}"
+# nested bind mounts need EXISTING mountpoints — an archive tree has neither
+# vendored clone; docker cannot mkdir under a :ro bind (it dies "read-only
+# file system" before the container starts).
+mkdir -p "$SRC/app/tracktion_engine" "$SRC/app/link" 2>/dev/null || true
 # appimagetool cache (avoids the github download inside the container)
 [ -x "$ROOT/dist/appimagetool-x86_64.AppImage" ] && \
   cp -n "$ROOT/dist/appimagetool-x86_64.AppImage" "$OUT/" 2>/dev/null || true

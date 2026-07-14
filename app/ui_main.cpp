@@ -5019,7 +5019,9 @@ public:
             z.desk = z.content.removeFromRight (148.0f);
             z.content.removeFromRight (14.0f);
         }
-        if (z.endW >= 40.0f)                     // the capsule ends grew controls
+        if (z.endW >= 36.0f)                     // the capsule ends grew controls
+                                                 // (36 not 40: buttons fit to ~27 —
+                                                 // hands must DEGRADE, never vanish)
         {
             const float cx = z.glass.getX() + z.endW * 0.52f;
             const float cy = z.glass.getCentreY();
@@ -11467,7 +11469,10 @@ public:
                 // rendered with V4's machined material + V4's bright saturated internals
                 // ...WIDER + slightly TALLER (Chezy 2026-07-11): the room earned real
                 // controls, so it earns real span — 80% of the strip, capped sane
-                const int phH = juce::jlimit (150, 198, (int) ((float) console.getHeight() * 0.205f));
+                // floor 160, NOT 150: at 150 the capsule ends compute endW=38.6 and
+                // geom()'s hands gate (>=40, now >=36) killed play/stop/dive/FLIP on
+                // any window under ~830px tall — Chezy hit it live ("WHERES THE FLIP?!")
+                const int phH = juce::jlimit (160, 198, (int) ((float) console.getHeight() * 0.205f));
                 auto strip = console.removeFromBottom (phH + 12);
                 const int phW = juce::jlimit (760, 1600, (int) ((float) strip.getWidth() * 0.80f));
                 factoryPort.setBounds (strip.getCentreX() - phW / 2, strip.getY() + 2, phW, phH);
@@ -22090,7 +22095,16 @@ public:
             // PEERLESS render (the display-incident-safe path): a bare MainComponent,
             // never a TopLevelWindow -> no X peer, nothing can reach the screen.
             snapComp = std::make_unique<MainComponent>();
-            snapComp->setBounds (0, 0, 1680, 1020);
+            // SOTADAW_SNAP_SIZE=WxH: reproduce a USER'S window (the FLIP vanished
+            // only below ~830px tall — a fixed camera frame can't see size bugs)
+            int snapW = 1680, snapH = 1020;
+            if (const char* ss = std::getenv ("SOTADAW_SNAP_SIZE"))
+                if (juce::String s (ss); s.containsChar ('x'))
+                {
+                    snapW = juce::jlimit (640, 7680, s.upToFirstOccurrenceOf ("x", false, false).getIntValue());
+                    snapH = juce::jlimit (400, 4320, s.fromFirstOccurrenceOf ("x", false, false).getIntValue());
+                }
+            snapComp->setBounds (0, 0, snapW, snapH);
             snapDir.createDirectory();
             auto shoot = [this, snapDir] (const juce::String& view, const juce::String& file)
             {
