@@ -9956,7 +9956,7 @@ struct SongPicker : public juce::Component, private juce::ListBoxModel
     {
         if (getWidth() <= 0) return;
         const int w = 340;
-        const int rows = juce::jlimit (4, 16, (int) juce::jmax<size_t> (4, vis.size()));
+        const int rows = juce::jlimit (4, 16, juce::jmax (4, (int) vis.size()));
         const int h = 46 + rows * 24 + 10;
         const int py = juce::jmin (anchor.getBottom() + 4, juce::jmax (8, getHeight() - h - 8));
         panel = { juce::jlimit (8, juce::jmax (8, getWidth() - w - 8), anchor.getX()),
