@@ -12,4 +12,4 @@ tone  = hslider("tone", 9000, 800, 16000, 1);
 env = en.ar(0.001, decay, gate);
 q   = 0.6 + metal*18;                            // band Q
 src = no.noise : fi.resonbp(freq, q, 1.0);
-process = src * env * gain * 0.6 : fi.lowpass(2, tone) <: _,_;
+process = src * env * gain * 0.5 : fi.lowpass(2, tone) <: _,_;  // headroom law: A5 band-center bump clipped 24 (register court 2026-07-31)

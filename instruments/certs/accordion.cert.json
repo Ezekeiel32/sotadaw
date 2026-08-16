@@ -1,15 +1,15 @@
 {
  "name": "accordion",
  "kind": "voice",
- "dsp_sha": "99dc07bf045cba99",
- "m1_md5": "cec426b253528867",
+ "dsp_sha": "5f24e37e812a0ff2",
+ "m1_md5": "729344d89e73e14e",
  "machine": "chezy-LOQ-15IAX9E",
- "date": "2026-07-07",
+ "date": "2026-08-02",
  "law": "E2 (docs/THE_PHYSICS.md)",
- "peak_dbfs": -0.79,
+ "peak_dbfs": -2.31,
  "clipped_samples": 0,
  "attack_ms": 200.0,
- "sustain_rms_db": -10.34,
+ "sustain_rms_db": -11.86,
  "sustain_centroid_hz": 1282,
  "harmonics_top": [
   [
@@ -47,8 +47,34 @@
  ],
  "decay_to_m60_s": 1.88,
  "noise_tail_dbfs": -200.0,
+ "headroom": {
+  "registers": {
+   "33": {
+    "peak_dbfs": -1.29,
+    "clipped": 0
+   },
+   "60": {
+    "peak_dbfs": -2.31,
+    "clipped": 0
+   },
+   "81": {
+    "peak_dbfs": -3.0,
+    "clipped": 0
+   }
+  },
+  "overlap": {
+   "peak_dbfs": -2.36,
+   "clipped": 0
+  },
+  "retrigger": {
+   "peak_dbfs": -1.19,
+   "clipped": 0
+  },
+  "clipped_total": 0
+ },
  "verdicts": {
   "headroom_pass_vel1": true,
+  "headroom_pass_registers": true,
   "audible": true
  }
 }

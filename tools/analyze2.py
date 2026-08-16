@@ -12,7 +12,22 @@ KS_MINOR = np.array([6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17
 NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 
 def estimate_key(x, sr):
-    """Coarse chromagram (8192-pt frames) -> K-S profile correlation -> (key, confidence)."""
+    """THE KEY EAR v2 (tools/key_ear.py): windowed profiles + tonic court —
+    key_battery 3/12 -> 9/12 legacy, 28/36 with the transposition sweep.
+    The v1 K-S path below stays as the fail-open fallback."""
+    try:
+        import key_ear
+        k, conf, ev = key_ear.key_from_audio(x, sr)
+        if k is not None:
+            estimate_key.last_evidence = ev    # runner_up/margin for the report
+            return k, conf
+    except Exception:
+        pass
+    return _estimate_key_v1(x, sr)
+
+
+def _estimate_key_v1(x, sr):
+    """v1: coarse chromagram (8192-pt frames) -> K-S profile correlation."""
     n_fft, hop = 8192, 4096
     if len(x) < n_fft:
         return None, 0.0
@@ -246,6 +261,7 @@ def analyze(path):
         "clipping": bool(clipped_samples > 0),
         "key_estimate": key_name,
         "key_confidence": key_conf,
+        "key_runner_up": getattr(estimate_key, "last_evidence", {}).get("runner_up"),
         "stereo_width_db": width_db,
         "lr_correlation": lr_corr,
         "rms_by_quarter_db": rms_by_q,

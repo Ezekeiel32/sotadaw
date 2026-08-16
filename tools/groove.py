@@ -28,6 +28,30 @@ GROOVES = {
         "prov": "curated:claude/2026-07-03 (machine grid, accented offbeat 8ths)",
         "off": [0]*16,
         "vel": [1, .78, .95, .78, 1, .78, .95, .78, 1, .78, .95, .78, 1, .78, .95, .78]},
+    # R-21 GROOVE PACK (backlog wave 14): the classic MACHINE swings as slot
+    # tables. TR-909 shuffle delays the off-16ths (2nd/4th of each beat) by
+    # its per-amount step table; MPC swing % = off-16th delay of (pct-50)% of
+    # an 8th (Roger Linn's own definition). Offsets in beats @4/4.
+    "tr909_shuffle_58": {
+        "prov": "curated:claude/2026-07-14 wave-14 (TR-909 shuffle ~58%: off-16ths late by 0.08 beats, ghosted)",
+        "off": [0, .08, 0, .08, 0, .08, 0, .08, 0, .08, 0, .08, 0, .08, 0, .08],
+        "vel": [1, .72, .90, .78, 1, .72, .90, .78, 1, .72, .90, .78, 1, .72, .90, .78]},
+    "mpc_54": {
+        "prov": "curated:claude/2026-07-14 wave-14 (MPC 54%: off-16th +0.04 beats — the subtle house pocket)",
+        "off": [0, .04, 0, .04, 0, .04, 0, .04, 0, .04, 0, .04, 0, .04, 0, .04],
+        "vel": [1, .80, .92, .80, 1, .80, .92, .80, 1, .80, .92, .80, 1, .80, .92, .80]},
+    "mpc_58": {
+        "prov": "curated:claude/2026-07-14 wave-14 (MPC 58%: +0.08 beats — the hip-hop default)",
+        "off": [0, .08, 0, .08, 0, .08, 0, .08, 0, .08, 0, .08, 0, .08, 0, .08],
+        "vel": [1, .76, .90, .74, 1, .76, .90, .74, 1, .76, .90, .74, 1, .76, .90, .74]},
+    "mpc_62": {
+        "prov": "curated:claude/2026-07-14 wave-14 (MPC 62%: +0.12 beats — deep swing, UKG/neo-soul edge)",
+        "off": [0, .12, 0, .12, 0, .12, 0, .12, 0, .12, 0, .12, 0, .12, 0, .12],
+        "vel": [1, .70, .90, .72, 1, .70, .90, .72, 1, .70, .90, .72, 1, .70, .90, .72]},
+    "mpc_66": {
+        "prov": "curated:claude/2026-07-14 wave-14 (MPC 66%: +0.16 beats = triplet feel)",
+        "off": [0, .16, 0, .16, 0, .16, 0, .16, 0, .16, 0, .16, 0, .16, 0, .16],
+        "vel": [1, .68, .88, .70, 1, .68, .88, .70, 1, .68, .88, .70, 1, .68, .88, .70]},
     "dembow_lilt": {
         "prov": "curated:claude/2026-07-03 (3-3-2 lean: pushed 'a' of 2 and 4)",
         "off": [0, .008, .004, -.014, .006, .010, -.012, .016, 0, .008, .004, -.014, .006, .010, -.012, .018],
@@ -65,6 +89,27 @@ GROOVES = {
         "prov": "curated:claude/2026-07-09 (afrobeats/afro-house anticipation: pushed a-of-beat, 3-2 bell lean)",
         "off": [0, .010, -.006, .022, 0, .012, -.004, .024, 0, .008, -.006, .020, 0, .012, -.004, .026],
         "vel": [1, .62, .88, .74, .92, .60, .90, .76, .98, .62, .86, .72, .94, .64, .92, .78]},
+    # ---- RESEARCH-MEASURED profiles (R-3 fold 2026-07-14; sources in
+    # docs/research_producer_mind/r-3.json — corpus studies, not hand-feel) ----
+    "funk_ontop": {
+        "prov": "research:R-3/2026-07-14 (expert-funk medians @100bpm: kick -12.5ms ON TOP, "
+                "overall -4ms tight SD 5.3ms; JB backbeat ~1.0 ratio; mild 16th swing; "
+                "ghost grammar 20-45 MIDI)",
+        "off": [-.007, .011, -.005, .012, -.002, .010, -.006, .012,
+                -.007, .011, -.005, .012, -.002, .010, -.006, .014],
+        "vel": [1, .28, .74, .32, 1.0, .26, .78, .34, .98, .28, .72, .30, 1.02, .30, .80, .36]},
+    "samba_16th": {
+        "prov": "research:R-3/2026-07-14 (16th duration pattern 23/23.6/22.8/30.7% — 3rd+4th "
+                "16ths AHEAD of grid, the long-fourth lilt; scales with tempo)",
+        "off": [0, -.020, -.034, -.056, 0, -.020, -.034, -.056,
+                0, -.020, -.034, -.056, 0, -.020, -.034, -.056],
+        "vel": [1, .72, .78, .92, .96, .70, .76, .94, 1, .72, .78, .92, .96, .70, .76, .96]},
+    "neosoul_drag": {
+        "prov": "research:R-3/2026-07-14 (D'Angelo/Dilla class: hats STRAIGHT, snare drag "
+                "+45-65ms, layered lateness, bass anticipates ~32nd; repeat identically per bar)",
+        "off": [.006, .012, .008, .014, .072, .012, .008, .016,
+                .006, .012, .008, .014, .078, .014, .010, .016],
+        "vel": [1, .70, .84, .68, .98, .68, .84, .70, .98, .70, .82, .68, 1.0, .70, .86, .72]},
     "latin_drive": {
         "prov": "curated:claude/2026-07-09 (salsa/samba/cumbia forward energy: hairs ahead, syncopation accents)",
         "off": [0, -.006, .004, -.010, 0, -.004, .004, -.008, 0, -.006, .006, -.010, 0, -.004, .004, -.008],
@@ -116,6 +161,34 @@ def store():
 def slot_of(start):
     frac = start % 4.0
     return int(round(frac / 0.25)) % 16
+
+def to_groovae(name_or_profile):
+    """Slot profile -> GrooVAE/GMD-interoperable rows (backlog wave 14,
+    R-3): per-16th-slot {"offset": fraction of a 16th in [-0.5, 0.5],
+    "velocity": 0-127 where our 1.0 multiplier = 100}. Magenta's GMD/E-GMD
+    convention so external groove templates and future models interop."""
+    g = GROOVES.get(name_or_profile) if isinstance(name_or_profile, str) \
+        else name_or_profile
+    if not g:
+        return None
+    rows = []
+    for off, vel in zip(g["off"], g["vel"]):
+        rows.append({"offset": max(-0.5, min(0.5, off / 0.25)),
+                     "velocity": int(max(0, min(127, round(vel * 100))))})
+    return rows
+
+
+def from_groovae(rows, prov="import:groovae"):
+    """GrooVAE/GMD rows -> our slot profile (inverse of to_groovae)."""
+    off = [max(-0.125, min(0.125, float(r.get("offset", 0)) * 0.25))
+           for r in rows[:16]]
+    vel = [max(0.05, min(1.27, float(r.get("velocity", 100)) / 100.0))
+           for r in rows[:16]]
+    while len(off) < 16:
+        off.append(0.0)
+        vel.append(1.0)
+    return {"prov": prov, "off": off, "vel": vel}
+
 
 def apply_groove(song_path, track_name, name, amount=1.0):
     g = store().get(name)

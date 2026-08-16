@@ -485,7 +485,23 @@ def render_block(genre, cap=BLOCK_CAP):
                 continue
             keep.append(ln)
             size += len(ln) + 1
-        txt = "\n".join(keep)[:cap - 20] + "\n[gold trimmed]\n====="
+        # the tail suffix is 21 chars; [:cap-20] minted cap+1 (off-by-one
+        # exposed 2026-07-14 when grown banks hit the boundary exactly) AND
+        # a blind byte-chop could amputate the MASTERING STANDARD line —
+        # trim WHOLE LINES from the tail, keeping the mastering + closing.
+        suffix = "\n[gold trimmed]\n====="
+        while keep and len("\n".join(keep)) + len(suffix) > cap:
+            drop = next((i for i in range(len(keep) - 1, 0, -1)
+                         if not keep[i].startswith(("MASTERING", "====="))),
+                        None)
+            if drop is None:
+                break
+            keep.pop(drop)
+        txt = "\n".join(keep)
+        if len(txt) + len(suffix) <= cap:
+            txt += suffix
+        else:
+            txt = txt[:cap - len(suffix)] + suffix
     return txt
 
 # ---------- seeding + the taste-circle leg ----------

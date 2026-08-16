@@ -210,14 +210,37 @@ def event_updates(event):
                     detail = ""
                 failed = status in ("failed", "declined", "cancelled", "canceled")
                 if failed or detail:
+                    # mine the tool RESULT for the real text — MCP failures carry
+                    # their message in the result content (isError), not the item
+                    # error envelope; a bare "tool status: failed" helps nobody
+                    # (Chezy pasted exactly that while the model had ALREADY read
+                    # the real error over MCP and self-healed).
+                    if not detail:
+                        out = item.get("output") or item.get("result") or item.get("content")
+                        if isinstance(out, dict):
+                            c = out.get("content")
+                            if isinstance(c, list) and c and isinstance(c[0], dict):
+                                detail = str(c[0].get("text") or "").strip()[:400]
+                            else:
+                                detail = str(out.get("text") or out.get("message") or "").strip()[:400]
+                        elif isinstance(out, list) and out and isinstance(out[0], dict):
+                            detail = str(out[0].get("text") or "").strip()[:400]
+                        elif out:
+                            detail = str(out).strip()[:400]
                     detail = detail or f"tool status: {status or 'failed'}"
                     label = f"Codex MCP tool {server}.{tool} failed: {detail}"
-                    messages.append(("error", label[:1200]))
                     # Approval cancellation in headless exec is structural: the
                     # model cannot recover by retrying the same tool this turn.
+                    # Everything ELSE is a recoverable mid-run fumble the model
+                    # reads and fixes itself — a dim line, never a red banner.
                     low = detail.lower()
                     if "cancel" in low or "approval" in low or "declin" in low:
+                        messages.append(("error", label[:1200]))
                         failure = label
+                    else:
+                        messages.append(("activity",
+                                         (f"codex tool {tool} failed: {detail}"
+                                          " (model reads the error and retries)")[:1200]))
         elif itype == "agent_message" and etype == "item.completed":
             text = str(item.get("text") or "").strip()
             if text:

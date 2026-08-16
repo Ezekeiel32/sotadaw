@@ -9,6 +9,7 @@ import glob, hashlib, json, os, re, shutil, subprocess, sys, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import surgical            # THE SCALPEL kernel: selectors, ops, receipts, scope law
+import prompt_fence        # fence-tolerant track addressing (displays are fenced)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
 from meter import bar_start_q, bar_at_q, song_meter   # THE WORLD GRID (#1): the ONE bar<->beat resolver
 
@@ -61,6 +62,7 @@ PLUGIN_CACHE = os.path.join(ROOT, "app", "plugins_cache.xml")
 M1 = os.path.join(ROOT, "app", "build", "m1_artefacts", "Release", "m1")
 VENV_PY = os.path.join(ROOT, ".venv", "bin", "python")
 ANALYZE = os.path.join(ROOT, "tools", "analyze2.py")
+RELEASE_GATE = os.path.join(ROOT, "tools", "release_gate.py")
 # THE WARM RAIL (b17cd1a/e5eb628): the MCP server is a long-lived host too — jam
 # calibrations, keep_jam renders and every render_cached miss skip process spawn
 # + engine init via the resident `m1 serve`. Same triple belt as the sidecar
@@ -256,6 +258,40 @@ def sanitize_song(song):
                                    ("%d stacked duplicates merged" % dup, dup),
                                    ("%d fields clamped" % clamped, clamped)) if c]
             rec.append(f"{t.get('name','?')}: " + ", ".join(bits))
+    # THE PARAM COURT, whole-document tier (2026-07-24): write_song rides
+    # legacy dirt along with the edit, so unknown fx params HEAL (aliases:
+    # resonance->res, gain->level...) or STRIP with a receipt instead of
+    # rejecting the write. Targeted seams (set_track_fx/set_buses) fail
+    # closed via _check_fx_entry. '_'-prefixed params = first-party markers.
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import fx_zones as _fxz
+        def _fx_court(entry, where):
+            fid = str((entry or {}).get("id") or "")
+            if not fid.startswith("fx_") or not isinstance(entry.get("params"), dict):
+                return
+            healed, unknown = _fxz.check_params(fid, entry["params"])
+            for old, new in healed:
+                rec.append(f"{where} {fid}: param '{old}' -> '{new}'")
+            for k in unknown:
+                entry["params"].pop(k, None)
+                rec.append(f"{where} {fid}: dead param '{k}' stripped (real zones: "
+                           f"{sorted(_fxz.FX_ZONES.get(fid, []))})")
+        for t in song.get("tracks", []) if isinstance(song.get("tracks"), list) else []:
+            if isinstance(t, dict):
+                for f in t.get("fx") or []:
+                    if isinstance(f, dict):
+                        _fx_court(f, t.get("name", "?"))
+        for b in song.get("buses") or []:
+            if isinstance(b, dict):
+                for f in b.get("fx") or []:
+                    if isinstance(f, dict):
+                        _fx_court(f, "bus:" + str(b.get("id", "?")))
+        for m in song.get("master") or []:
+            if isinstance(m, dict):
+                _fx_court(m, "master")
+    except ImportError:
+        pass
     return song, rec
 
 
@@ -691,6 +727,22 @@ def t_write_song(args):
     return (f"OK: songs/{name}.json written ({len(song['tracks'])} tracks, {n} notes). "
             f"Next: render_song." + _sline + _otline + _doctor_verdict(song))
 
+def _tracks_by_name(song, tname):
+    """exact name match, then a PROMPT FENCE fold fallback (unique only):
+    prompts show traveled names FENCED (single-line, invisibles stripped,
+    capped with '…') — the agent must still be able to address what it saw.
+    Ambiguous fold matches stay unresolved (the error lists the real names)."""
+    trs = [t for t in song.get("tracks", []) if isinstance(t, dict)]
+    matches = [t for t in trs if t.get("name") == tname]
+    if matches or not isinstance(tname, str):
+        return matches
+    want = prompt_fence.fold(tname)
+    folds = [t for t in trs if prompt_fence.fold(t.get("name")) == want]
+    if not folds and want.endswith("…"):
+        folds = [t for t in trs if prompt_fence.fold(t.get("name")).startswith(want[:-1])]
+    return folds if len(folds) == 1 else matches
+
+
 def t_update_track(args):
     """Surgically replace fields of ONE track in a song — no need to resend the whole song."""
     name = resolve_song_name(args["song"])
@@ -700,10 +752,11 @@ def t_update_track(args):
         return f"no such song '{name}'"
     song = json.load(open(path))
     tname = args["track"]
-    matches = [t for t in song["tracks"] if t.get("name") == tname]
+    matches = _tracks_by_name(song, tname)
     if not matches:
         return f"no track named '{tname}' in {name}. tracks: {[t.get('name') for t in song['tracks']]}"
     t = matches[0]
+    tname = t.get("name", tname)   # fold-resolved: downstream filters/receipts need the STORED name
     if args.get("remove") is True:
         # the suite's case #27 kill: deleting a track FORCED a full write_song
         # (float-drift on every other track). This is the scoped delete verb.
@@ -1018,10 +1071,12 @@ def t_align_lyrics(args):
         msg += f"; {short} line(s) have MORE words than notes — add notes or split them"
     return msg
 
-def _check_fx_entry(f, avail, vsts):
+def _check_fx_entry(f, avail, vsts, heals=None):
     """One SongFx entry -> error string or None. Legal shapes:
     {"id": "fx_*", params}, {"type": "eq"|"comp", params},
-    {"id": "vst3:<name>", preset?, params?}, any + "bypass": true."""
+    {"id": "vst3:<name>", preset?, params?}, any + "bypass": true.
+    heals: optional list — alias renames land there so the tool can SPEAK
+    them (an agent that reads back a silently-rewritten chain gets confused)."""
     if f.get("type") in ("eq", "comp"):
         return None       # built-ins: eq {loFreq,loGain,hiFreq,hiGain,midFreq,midGain,midQ,midFreq2,...} / comp {threshold,ratio,attack,release,outputDb}
     fid = str(f.get("id") or "")
@@ -1033,9 +1088,34 @@ def _check_fx_entry(f, avail, vsts):
         if p and not os.path.exists(p if os.path.isabs(p) else os.path.join(ROOT, p)):
             return f"fx preset not found: {p}"
         return None
+    if fid.startswith(("nam:", "clap:")):
+        # the tool guide has ADVERTISED these shapes since V51/V52 but this
+        # seam rejected them via the avail check (nam_battery wrote raw json,
+        # so the contradiction never surfaced — found 2026-07-24). The engine
+        # resolves the path; here the honest check is existence.
+        rel = fid.split(":", 1)[1].strip()
+        if rel and not os.path.exists(rel if os.path.isabs(rel) else os.path.join(ROOT, rel)):
+            return f"fx capture/plugin not found: {rel}"
+        return None
     if fid not in avail:
         return (f"fx id '{fid}' not available. fx: {sorted(a for a in avail if a.startswith('fx_'))}"
                 f", type eq|comp, or \"vst3:<plugin>\" (optionally with preset blob)")
+    # THE PARAM COURT (2026-07-24): setZone is exact-name — a wrong param is a
+    # SILENT no-op (corpus sweep: fx_filter 'resonance'/'mode', fx_trim 'gain'
+    # born as late as 07-16). Obvious aliases heal IN PLACE; truly-unknown
+    # params FAIL CLOSED so the agent self-corrects mid-run. '_'-prefixed
+    # params are first-party markers (auto_master's _am) — always legal.
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import fx_zones
+        healed, unknown = fx_zones.check_params(fid, f.get("params") or {})
+        if unknown:
+            return fx_zones.unknown_error(fid, unknown)
+        if heals is not None:
+            for old, new in healed:
+                heals.append(f"{fid}: param '{old}' -> '{new}'")
+    except ImportError:
+        pass
     return None
 
 def t_set_track_fx(args):
@@ -1048,9 +1128,10 @@ def t_set_track_fx(args):
         return f"no such song '{name}'"
     song = json.load(open(path))
     tname = args["track"]
-    matches = [t for t in song["tracks"] if t.get("name") == tname]
+    matches = _tracks_by_name(song, tname)
     if not matches:
         return f"no track '{tname}'. tracks: {[t.get('name') for t in song['tracks']]}"
+    tname = matches[0].get("name", tname)
     fx = args["fx"]
     if isinstance(fx, str):
         try:
@@ -1059,8 +1140,9 @@ def t_set_track_fx(args):
             return f"fx is not valid JSON: {e}"
     avail = set(list_instruments())
     vsts = vst_names()
+    heals = []
     for f in fx:
-        err = _check_fx_entry(f, avail, vsts)
+        err = _check_fx_entry(f, avail, vsts, heals)
         if err:
             return err
     matches[0]["fx"] = fx
@@ -1068,6 +1150,7 @@ def t_set_track_fx(args):
     _rc(name, "set_track_fx", fields=[f"track:{tname}:fx"],
         summary=f"{tname} fx = {[f.get('id') or f.get('type') for f in fx]}")
     return (f"OK: {tname} fx chain = {[f.get('id') or f.get('type') for f in fx]}"
+            + ("\nparam court healed: " + "; ".join(heals) if heals else "")
             + _track_verdict(matches[0]))
 
 def _semantic_search(query, k=8):
@@ -1184,9 +1267,17 @@ def t_chords_from_audio(args):
 def t_export_midi(args):
     name = resolve_song_name(args["song"])
     out = os.path.join(SONGS, f"{name}.mid")
-    rc, o, e = run([VENV_PY if os.path.exists(VENV_PY) else "python3",
-                    os.path.join(ROOT, "tools", "midi_bridge.py"), "export",
-                    os.path.join(SONGS, f"{name}.json"), out], timeout=60)
+    # THE PORTABLE SCORE (Chezy 2026-08-03 "IF I EXPORT THE .MID... IT
+    # SOUNDS BAD AND MESSY AS FUCK... BY THE BOOK"): user exports ride the
+    # producer pass by default — dewave/velocity-normalise/GM identity —
+    # so the .mid IS the song on generic instruments. raw:true = the
+    # byte-faithful lane mirror (round-trip rigs, re-imports).
+    cmd = [VENV_PY if os.path.exists(VENV_PY) else "python3",
+           os.path.join(ROOT, "tools", "midi_bridge.py"), "export",
+           os.path.join(SONGS, f"{name}.json"), out]
+    if not args.get("raw"):
+        cmd.append("--portable")
+    rc, o, e = run(cmd, timeout=60)
     return (o + e).strip() or f"exported -> {out}"
 
 def t_import_midi(args):
@@ -1279,6 +1370,26 @@ def t_import_dawproject(args):
 def t_import_flp(args):
     """BRIDGE: import an FL Studio .flp — channels, patterns, playlist placements."""
     return _bridge(args, "flp_path", "flp_import.py")
+
+def t_search_chat(args):
+    """RECALL across the WHOLE project history: the prompt's memory block only
+    carries the tail; this term-searches EVERY conversation chronicled for the
+    song ('what did the user say about the bass three sessions ago?')."""
+    import chronicle
+    name = resolve_song_name(args["song"])
+    # THE CHRONICLE IS BASE-NAMED (untitled_65, 2026-08-02): mid-run the prop
+    # fence redirects song resolves to the _prop_ twin, but conversation
+    # memory lives under the BASE song — searching the twin returned zero
+    # rows on every mid-run recall (even 'banjo' missed in a banjo-filled
+    # chat, exactly when the agent was trying to recover the user's chart).
+    if name.startswith("_prop_"):
+        name = name[len("_prop_"):]
+    lines = chronicle.search(name, args.get("query", ""),
+                             int(args.get("limit", 8) or 8))
+    if not lines:
+        return "no chronicled lines match — the project chat has nothing on that"
+    return "\n".join(lines)
+
 
 def t_get_selection(args):
     """What the user has SELECTED in the UI right now (selection = context)."""
@@ -1382,7 +1493,23 @@ def t_clear_bars(args):
     _awrite(path, song)
     _rc(name, "clear_bars", track_wild=want or [t.get("name") for t in song["tracks"]],
         summary=f"cleared bars {args['fromBar']}-{args['toBar']}")
-    return f"OK: cleared {removed} notes in bars {args['fromBar']}-{args['toBar']}" + (f" on {want}" if want else "")
+    out = f"OK: cleared {removed} notes in bars {args['fromBar']}-{args['toBar']}" + (f" on {want}" if want else "")
+    try:                          # W49 ears-on-write: the holes decree —
+        import flow_court         # a clear that leaves FULL-BAND dead air
+        fv = flow_court.court_flow(song)   # warns HERE, where it's born
+        holes = [c for c in fv.get("convictions", [])
+                 if c["fromBar"] < float(args["toBar"])
+                 and c["toBar"] > float(args["fromBar"])]
+        if holes:
+            spans = ", ".join(f"{c['fromBar']}-{c['toBar']}" for c in holes)
+            out += (f"\nWARNING dead air: this clear left bars {spans} with "
+                    "NOTHING sounding on ANY lane — a breakdown keeps "
+                    "something breathing (pad/bass/voice). Clear FEWER "
+                    "tracks there (pass tracks=[...]) or add a carrying "
+                    "lane; full-band holes convict at the flow court.")
+    except Exception:
+        pass
+    return out
 
 def t_save_preset(args):
     """Capture a vst3 track's CURRENT plugin state (after your set_track_param design moves)
@@ -1403,9 +1530,10 @@ def t_use_preset(args):
     if song is None:
         return f"no such song '{name}'"
     tname = args["track"]
-    matches = [t for t in song["tracks"] if t.get("name") == tname]
+    matches = _tracks_by_name(song, tname)
     if not matches:
         return f"no track '{tname}'"
+    tname = matches[0].get("name", tname)
     rel = args["preset"]
     if not os.path.exists(rel if os.path.isabs(rel) else os.path.join(ROOT, rel)):
         avail = sorted(os.listdir(os.path.join(ROOT, "library", "presets"))) if os.path.isdir(os.path.join(ROOT, "library", "presets")) else []
@@ -1764,6 +1892,46 @@ def t_export_dawproject(args):
     return (o + e).strip()
 
 
+def t_export_flp(args):
+    """BRIDGE OUT (V17): export a song as FL Studio .flp — channel rack with
+    real names, one pattern PER TRACK (tick resolution, ppq 960) placed on its
+    own playlist row in a real arrangement; flp_import round-trips note-exact."""
+    name, path, song = _load_song(args)
+    if song is None:
+        return f"no such song '{name}'"
+    out = os.path.join(SONGS, f"{name}.flp")
+    rc, o, e = run([sys.executable, os.path.join(ROOT, "tools", "flp_export.py"),
+                    path, out], timeout=120)
+    return (o + e).strip()
+
+
+def t_export_bundle(args):
+    """THE SUITCASE: pack a song + every audio/preset file it references into ONE
+    self-contained zip (abs paths healed, attribution + dependency manifest) —
+    hand the project to any other SOTA DAW machine."""
+    name, path, song = _load_song(args)
+    if song is None:
+        return f"no such song '{name}'"
+    rc, o, e = run([sys.executable, os.path.join(ROOT, "tools", "song_pack.py"),
+                    "pack", name], timeout=180)
+    return (o + e).strip()[-1500:]
+
+
+def t_import_bundle(args):
+    """THE SUITCASE opens: land a packed project as a NEW song (collision-safe,
+    sha-verified, zip-slip guarded) with assets in songs/<name>_assets/."""
+    src = args["zip_path"]
+    if not os.path.isabs(src):
+        src = os.path.join(ROOT, src)
+    if not os.path.exists(src):
+        return f"no such file: {src}"
+    cmd = [sys.executable, os.path.join(ROOT, "tools", "song_pack.py"), "unpack", src]
+    if args.get("song"):
+        cmd.append(str(args["song"]))
+    rc, o, e = run(cmd, timeout=180)
+    return (o + e).strip()[-1500:]
+
+
 def t_audio_to_midi(args):
     """SPECTRAL CAPTURE: any audio -> EDITABLE MIDI that renders back to the
     same audio (tools/spectral.py). Lanes land muted; spectral_mix carries the
@@ -1985,6 +2153,16 @@ def t_import_song_audio(args):
             pass
     py = VENV_PY if os.path.exists(VENV_PY) else sys.executable
     cmd = [py, os.path.join(ROOT, "tools", "stems_import.py"), src, name]
+    # F8 THE STEM FORGE (Chezy 2026-08-03 "when i click connect it will use
+    # the modal gpu?!"): whenever a Modal token exists, every DAW import
+    # rides the serverless H100 rail by default — separation + microscope +
+    # drum pieces + transcription in ~seconds of cloud wall instead of the
+    # local crawl. prewarm() is fail-open (no net / no app / any cloud error
+    # -> the local rails run untouched). Kill switch: SOTADAW_NO_FORGE=1.
+    _forge = (os.path.exists(os.path.expanduser("~/.modal.toml"))
+              and os.environ.get("SOTADAW_NO_FORGE") != "1")
+    if _forge:
+        cmd += ["--remote"]
     if args.get("quality") == "max":
         cmd += ["--quality", "max"]
     if args.get("instruments") == "ear":
@@ -2040,9 +2218,13 @@ def t_import_song_audio(args):
         _rc(name, "import_song_audio", track_wild=["*"],
             summary="stems import STARTED async (demucs)")
         return (f"import STARTED in the background ({_idur:.0f}s of audio; "
-                f"minutes on GPU, up to ~45 min on a busy CPU). The stems + "
-                f"sketches land in '{name}' automatically — do OTHER work and "
-                f"poll get_song_summary; a re-call just reports progress.")
+                + ("THE STEM FORGE rides: separation + microscope + drum "
+                   "pieces + transcription on serverless cloud H100s, "
+                   "~minutes total" if _forge else
+                   "minutes on GPU, up to ~45 min on a busy CPU")
+                + f"). The stems + sketches land in '{name}' automatically — "
+                f"do OTHER work and poll get_song_summary; a re-call just "
+                f"reports progress.")
     # 2700s: the CPU worst case (GPU window closed, --segment 7, long track)
     # must still LAND a session — 900s killed a 6min m4a mid-separation.
     rc, o, e = run(cmd, timeout=2700)
@@ -2537,11 +2719,14 @@ def t_comp_take(args):
                    if str(tk.get("name", "")).lower() == str(sel).lower()), None)
     if ti is None or not (0 <= ti < len(takes)):
         return f"no take '{sel}' (have: {[tk.get('name', f'take {i+1}') for i, tk in enumerate(takes)]})"
-    b0 = float(args.get("from_bar", 0))
+    # bars are 1-INDEXED INCLUSIVE, the same dialect get_song_region documents
+    # (2026-07-24: this seam was silently 0-based while its sibling spoke
+    # 1-based — unified the day the takes harvest gave takes[] a producer)
+    b0 = float(args.get("from_bar", 1))
     b1 = float(args.get("to_bar", song.get("lengthBars", 4)))
-    if b1 <= b0:
-        return "to_bar must be > from_bar"
-    s0, s1 = (bar_start_q(song_meter(song), b0),
+    if b1 < b0:
+        return "to_bar must be >= from_bar (bars are 1-indexed, inclusive)"
+    s0, s1 = (bar_start_q(song_meter(song), b0 - 1.0),
               bar_start_q(song_meter(song), b1))   # meter-aware bars (#1)
     take_notes = [n for n in takes[ti].get("notes", []) if s0 <= float(n["start"]) < s1]
     kept = [n for n in tr.get("notes", []) if not (s0 <= float(n["start"]) < s1)]
@@ -2827,10 +3012,11 @@ def t_set_track_param(args):
     tname, target, value = args["track"], str(args["target"]), args["value"]
     if not isinstance(value, (int, float)):
         return "value must be a number"
-    matches = [t for t in song["tracks"] if t.get("name") == tname]
+    matches = _tracks_by_name(song, tname)
     if not matches:
         return f"no track '{tname}'. tracks: {[t.get('name') for t in song['tracks']]}"
     t = matches[0]
+    tname = t.get("name", tname)
     if target in ("gainDb", "pan"):
         t[target] = value
     elif target.startswith("source."):
@@ -2884,10 +3070,11 @@ def t_automate(args):
     norm.sort(key=lambda p: p["beat"])
     tname = args.get("track")
     if tname:
-        matches = [t for t in song["tracks"] if t.get("name") == tname]
+        matches = _tracks_by_name(song, tname)
         if not matches:
             return f"no track '{tname}'. tracks: {[t.get('name') for t in song['tracks']]}"
         holder = matches[0]
+        tname = holder.get("name", tname)
         if target.startswith("fx[") and "]." in target:
             idx = int(target[3:target.index("]")])
             if idx >= len(holder.get("fx", [])):
@@ -2923,11 +3110,12 @@ def t_set_buses(args):
             return f"buses is not valid JSON: {e}"
     avail = set(list_instruments())
     vsts = vst_names()
+    heals = []
     for b in buses:
         if not b.get("id"):
             return "each bus needs an id"
         for f in b.get("fx", []):
-            err = _check_fx_entry(f, avail, vsts)
+            err = _check_fx_entry(f, avail, vsts, heals)
             if err:
                 return "bus " + err
     song["buses"] = buses
@@ -2935,6 +3123,8 @@ def t_set_buses(args):
     _rc(name, "set_buses", fields=["buses"], summary=f"buses = {[b['id'] for b in buses]}")
     bus_v = "".join(_track_verdict({"name": "bus:" + str(b.get("id", "?")),
                                     "fx": b.get("fx", []), "pan": 0}) for b in buses)
+    if heals:
+        bus_v = "\nparam court healed: " + "; ".join(heals) + bus_v
     return (f"OK: buses = {[b['id'] for b in buses]} (route tracks with update_track sends)"
             + bus_v)
 
@@ -3040,6 +3230,114 @@ def t_analyze_wav(args):
                 f"{size_note}. Analyze a preview render instead "
                 f"(render_song max_bars:16) or slice the wav first.")
     return out if rc == 0 else f"ANALYZE FAILED:\n{err[-800:]}"
+
+def t_release_gate(args):
+    """THE RELEASE GATE (AMAZING PART III): five-gate verdict, read-only.
+    Reuses the song's own wav when it's fresher than the json; else the
+    gate renders (render_cache first). Never mutates — no receipt."""
+    name = resolve_song_name(args.get("song", ""))
+    sp = os.path.join(SONGS, name + ".json")
+    if not os.path.exists(sp):
+        return f"no such song: {name}"
+    py = VENV_PY if os.path.exists(VENV_PY) else "python3"
+    cmd = [py, RELEASE_GATE, sp]
+    wav = str(args.get("wav") or "")
+    if not wav:
+        cand = os.path.join(SONGS, name + ".wav")
+        try:
+            if os.path.exists(cand) and \
+                    os.path.getmtime(cand) >= os.path.getmtime(sp):
+                wav = cand          # fresh render already on disk — free
+        except OSError:
+            pass
+    if wav:
+        cmd += ["--wav", wav]
+    if args.get("genre"):
+        cmd += ["--genre", str(args["genre"])]
+    try:
+        rc, out, err = run(cmd, timeout=900)
+    except subprocess.TimeoutExpired:
+        return ("GATE TIMEOUT after 900s — render first (render_song) and "
+                "re-call with its wav.")
+    if rc == 2 or not out.strip():
+        return f"GATE ERROR:\n{(err or out)[-800:]}"
+    return out[-4000:]
+
+def t_compose_line(args):
+    """THE CELL PRIOR as a hand (B1 mount, BESIDE the expanders): a
+    corpus-true line for ONE existing track, SEARCH-LAW judged — the
+    track's current notes are the incumbent and only a strictly better
+    take displaces them (tools/search_law.py). Zero tokens, deterministic
+    per seed. NOT wired inside generate_loop: its DNA owns genre RHYTHM
+    (generation_court seals it); this tool is the free-line lane."""
+    name, path, song = _load_song(args, mutate=True)
+    if song is None:
+        return f"no such song '{name}'"
+    tname = str(args.get("track", ""))
+    tr = next((t for t in song.get("tracks") or []
+               if t.get("name") == tname), None)
+    if tr is None:
+        return (f"no track '{tname}' in {name} — add_track first "
+                f"(compose_line writes into an existing lane)")
+    role = str(args.get("role") or "")
+    if role not in ("bass", "lead", "pad"):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import composer_prior as _cp
+        role = _cp.role_of(tname) or "lead"
+    genre = str(args.get("genre") or (song.get("_loop") or {}).get("genre")
+                or song.get("genre") or "")
+    key = str(args.get("key") or song.get("key") or "A minor")
+    try:
+        bars = int(args.get("bars") or min(int(song.get("lengthBars", 4)), 8))
+    except (TypeError, ValueError):
+        bars = 4
+    bars = max(1, min(16, bars))
+    seed = args.get("seed")
+    seed = int(seed) if seed is not None \
+        else int.from_bytes(os.urandom(3), "big")
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import search_law as _slaw
+    res = _slaw.search(genre, key, bars, role, seed,
+                       incumbent=tr.get("notes") or None)
+    if res["source"] != "cells":
+        return f"{res['why']} (track '{tname}' untouched; seed {seed})"
+    tr["notes"] = res["notes"]
+    _awrite(path, song)
+    _rc(name, "compose_line", fields=[f"track:{tname}"], track_wild=[tname],
+        summary=f"cells line on {tname} ({role}, {bars} bars, seed {seed})")
+    return (f"{res['why']}\n{len(res['notes'])} notes on '{tname}' "
+            f"({role}, {bars} bars, key {key}, seed {seed}) — every note "
+            f"editable; the same seed reproduces exactly.")
+
+def t_readout(args):
+    """THE READOUT (AMAZING PART V): the stable-field <=2K snapshot —
+    TAKE/EARS/GATE/COURTS/DIFF — with the diff vs the previous readout of
+    the same song. Read-only; shells to the venv (analyze2 needs numpy the
+    resident python doesn't carry); judges the wav it FINDS, never renders."""
+    name = resolve_song_name(args.get("song", ""))
+    sp = os.path.join(SONGS, name + ".json")
+    if not os.path.exists(sp):
+        return f"no such song: {name}"
+    py = VENV_PY if os.path.exists(VENV_PY) else "python3"
+    cmd = [py, os.path.join(ROOT, "tools", "readout.py"), sp]
+    wav = str(args.get("wav") or "")
+    if not wav:
+        cand = os.path.join(SONGS, name + ".wav")
+        try:
+            if os.path.exists(cand) and \
+                    os.path.getmtime(cand) >= os.path.getmtime(sp):
+                wav = cand          # fresh render on disk — judged for free
+        except OSError:
+            pass
+    if wav:
+        cmd += ["--wav", wav]
+    if args.get("genre"):
+        cmd += ["--genre", str(args["genre"])]
+    try:
+        rc, out, err = run(cmd, timeout=300)
+    except subprocess.TimeoutExpired:
+        return "READOUT TIMEOUT after 300s — analyze a preview render instead."
+    return out if rc == 0 and out.strip() else f"READOUT FAILED:\n{err[-600:]}"
 
 def t_master_report(args):
     """THE VERDICT: render (if stale) + analyze + compare against the genre's KG
@@ -3647,7 +3945,7 @@ def t_tune_vocal(args):
     if song is None:
         return f"no such song '{name}'"
     tname = args["track"]
-    trs = [t for t in song.get("tracks", []) if t.get("name") == tname]
+    trs = _tracks_by_name(song, tname)
     if not trs:
         return f"no track named '{tname}'. tracks: {[t.get('name') for t in song['tracks']]}"
     clips = trs[0].get("audioClips") or []
@@ -3784,7 +4082,7 @@ def t_tune_notes(args):
     if song is None:
         return f"no such song '{name}'"
     tname = args["track"]
-    trs = [t for t in song.get("tracks", []) if t.get("name") == tname]
+    trs = _tracks_by_name(song, tname)
     if not trs:
         return f"no track named '{tname}'. tracks: {[t.get('name') for t in song['tracks']]}"
     clips = trs[0].get("audioClips") or []
@@ -4035,6 +4333,42 @@ def t_surgical_edit(args):
     return ("CUT: " + receipt["summary"] + "\n" + " · ".join(r.explain)
             + "\nReceipt filed — the proposal diff must stay inside your receipts.")
 
+
+def t_get_constitution(args):
+    """SPEC_TRANSCENDENCE A2: the user's standing taste, distilled from their
+    own verdicts. Read-only; the ask's words always outrank this."""
+    import artist_model
+    blk = artist_model.artist_block(str(args.get("genre") or ""))
+    return blk or ("(the constitution is empty — no distilled laws yet; "
+                   "verdicts + typed WHYs grow it)")
+
+
+def t_catalog_brain(args):
+    """SPEC_TRANSCENDENCE A4: the user's whole body of work, queryable."""
+    import catalog
+    catalog.build_index()          # incremental — untouched songs are free
+    op = str(args.get("op") or "stats")
+    if op == "self-echo":
+        name = resolve_song_name(args.get("song", ""))
+        if name.startswith("_prop_"):
+            name = name[len("_prop_"):]   # the catalog is BASE-named
+        return json.dumps(catalog.self_echo(name), indent=1)
+    if op == "find":
+        return json.dumps(catalog.find(str(args.get("term") or "")), indent=1)
+    return json.dumps(catalog.stats(), indent=1)
+
+
+def t_record_court(args):
+    """SPEC_TRANSCENDENCE A4: judge an ordered set of songs as ONE record."""
+    import record_court
+    names = [resolve_song_name(s) for s in (args.get("songs") or [])]
+    docs = []
+    for n in names:
+        with open(os.path.join(SONGS, f"{n}.json")) as f:
+            docs.append(json.load(f))
+    return json.dumps(record_court.court_record(docs, names), indent=1)
+
+
 TOOLS = {
     "start_session": (t_start_session, "Start a production session. Deterministically force-injects the skill set matching the genre context plus always-on skills, THE GOLD STANDARD block for the matched genre (a real ears-passed exemplar: note DNA at the complexity/key/velocity bar to hold + the mastering standard with measured numbers — generalize it, never copy it), and returns available instruments + the song format.",
                       {"type": "object", "properties": {"genre": {"type": "string", "description": "genre/style words, e.g. 'trap', 'dnb', 'drill'"}}, "required": ["genre"]}),
@@ -4109,7 +4443,7 @@ TOOLS = {
                  {"type": "object", "properties": {"song": {"type": "string"}, "take": {"type": "string"},
                   "at_bar": {"type": "number"}, "prefix": {"type": "string"}},
                   "required": ["song", "take"]}),
-    "set_track_fx": (t_set_track_fx, "Set a track's FX chain in signal order: faust fx (fx_reverb, fx_delay, fx_saturate, fx_softclip [drive: gentle pre-wall drum-bus glue], fx_crush [bits/srate/mix: bitcrush + sample-rate reduce — lo-fi/sigilkore grit], fx_widen, fx_ms_eq [mid/side EQ: mid_low/mid_high/side_low/side_high/width], fx_multiband [3-band comp: low/mid/high thresh+ratio, makeup], fx_comp [THE channel/bus compressor: thresh/ratio (honest N:1)/attack/release ms/makeup dB — stereo-linked; glue: thresh -24 ratio 3; snare crack: thresh -20 ratio 4 attack 5. Use INSTEAD of {\"type\":\"comp\"}, whose friendly-param wiring is dead], fx_transient [attack/sustain shaper ±12 dB: drum punch attack +6..9, tame ring/room sustain -4..-8; 0/0 = unity], fx_filter [cutoff/res — resonant LOWPASS only; there is NO 'mode' zone], fx_hipass [cutoff/res — resonant HIGHPASS: clean mud/rumble off pads, leads, verbs, buses; never on kick/bass/808], fx_flanger [stereo swept-comb motion: rate/depth/feedback/mix — psy leads, jet risers, pad shimmer], fx_pump, fx_deess [split-band sibilance tamer, FIRST in the vocal chain pre-reverb: freq/thresh/ratio], fx_gate [downward expander for recorded stems: thresh/depth/rel — bleed + noise floor between phrases; thresh must clear the floor's CRESTS (peak follower), depth 0 = bypass], fx_trim, fx_djfilter, fx_brickwall, fx_truepeak [ISP release wall: ceiling = output dBTP]), built-ins ({\"type\":\"eq\"|\"comp\"}), or vst3 inserts ({\"id\":\"vst3:<name>\", \"preset\": <blob path>}), or NAM amp/pedal captures ({\"id\":\"nam:<path/to/capture.nam>\", \"params\":{\"input_db\":0,\"output_db\":0}} — library.json nam_captures; mono-sum DI), or CLAP plugins ({\"id\":\"clap:<path/to/plugin.clap>\", \"params\":{\"index\":0,\"mix\":1.0}} — library.json clap_plugins; direct C-ABI host, any .clap effect). Any entry takes \"bypass\": true (created but disabled — A/B without losing settings). Space/depth lives here.",
+    "set_track_fx": (t_set_track_fx, "Set a track's FX chain in signal order: faust fx (fx_reverb, fx_delay, fx_saturate, fx_softclip [drive: gentle pre-wall drum-bus glue], fx_crush [bits/srate/mix: bitcrush + sample-rate reduce — lo-fi/sigilkore grit], fx_widen, fx_ms_eq [mid/side EQ: mid_low/mid_high/side_low/side_high/width], fx_multiband [3-band comp: low/mid/high thresh+ratio, makeup], fx_comp [THE channel/bus compressor: thresh/ratio (honest N:1)/attack/release ms/makeup dB — stereo-linked; glue: thresh -24 ratio 3; snare crack: thresh -20 ratio 4 attack 5. Use INSTEAD of {\"type\":\"comp\"}, whose friendly-param wiring is dead], fx_transient [attack/sustain shaper ±12 dB: drum punch attack +6..9, tame ring/room sustain -4..-8; 0/0 = unity], fx_filter [cutoff/res — resonant LOWPASS only; there is NO 'mode' zone], fx_hipass [cutoff/res — resonant HIGHPASS: clean mud/rumble off pads, leads, verbs, buses; never on kick/bass/808], fx_bell [ONE parametric peaking band: freq/gain dB (negative = cut)/q — surgical carve: mud 200-500, boxy 300-800, harsh ~3k; the masking court's unmask tool. Chain several for multi-band], fx_match_eq [8 FIXED log bands g85/g171/g344/g691/g1389/g2790/g5609/g11272 (+-9dB) — the match-EQ ruler; master_match.py (reference) and genre_match.py (family shape) write it, pre-wall], fx_polarity [flip: stereo sign flip — the phase-interlock heal when kick+808 cancel on mono fold], fx_bass_grit [drive/grit/xover — MULTIBAND bass translation: sub <120Hz passes CLEAN + mono-summable, the fundamental is saturated and HP'd so only its 850-1200Hz harmonics land — phones reconstruct the sub they cannot play; the missing-fundamental heal's tool], fx_dubdelay [time ms (0.75*60000/bpm = dotted-8th law)/feedback/damp/mix — the DUB aux: LP inside the feedback loop, every repeat darker; lives on a bus fed by perc/lead sends], fx_flanger [stereo swept-comb motion: rate/depth/feedback/mix — psy leads, jet risers, pad shimmer], fx_chorus [3-tap TRUE chorus (not the flanger): rate/depth/mix/voices — bachata/requinto sheen mix 0.5, dreampop wash depth 0.7, 80s keys mix 0.3], fx_tremolo [amplitude pulse (not fx_pump's sidechain shape): rate Hz/depth/shape (0 sine..1 chop)/spread (1 = L/R autopan) — surf guitar 4-6Hz, pad autopan slow+spread 1, dub organ chop shape 0.9], fx_pump, fx_deess [split-band sibilance tamer, FIRST in the vocal chain pre-reverb: freq/thresh/ratio], fx_gate [downward expander for recorded stems: thresh/depth/rel — bleed + noise floor between phrases; thresh must clear the floor's CRESTS (peak follower), depth 0 = bypass], fx_trim, fx_djfilter, fx_brickwall, fx_truepeak [ISP release wall: ceiling = output dBTP]), built-ins ({\"type\":\"eq\"|\"comp\"}), or vst3 inserts ({\"id\":\"vst3:<name>\", \"preset\": <blob path>}), or NAM amp/pedal captures ({\"id\":\"nam:<path/to/capture.nam>\", \"params\":{\"input_db\":0,\"output_db\":0}} — library.json nam_captures; mono-sum DI), or CLAP plugins ({\"id\":\"clap:<path/to/plugin.clap>\", \"params\":{\"index\":0,\"mix\":1.0}} — library.json clap_plugins; direct C-ABI host, any .clap effect). Any entry takes \"bypass\": true (created but disabled — A/B without losing settings). Space/depth lives here.",
                      {"type": "object", "properties": {"song": {"type": "string"}, "track": {"type": "string"},
                       "fx": {"type": ["array", "string"]}}, "required": ["song", "track", "fx"]}),
     "write_lyrics": (t_write_lyrics, "Write timestamp-aware lyrics into a song: [{beat, text}] — each line lands on an exact beat. Compose them AWARE of the arrangement (hooks at drops, flow matching drum density).",
@@ -4127,7 +4461,7 @@ TOOLS = {
                         {"type": "object", "properties": {"wav": {"type": "string"}, "k": {"type": "integer"}}, "required": ["wav"]}),
     "chords_from_audio": (t_chords_from_audio, "Detect a chord lane FROM AUDIO (best on a harmonic/no-drums stem): CQT chroma read through the same maj/min/dom7 grammar as the symbolic chord vote. Standalone (wav + bpm + bars -> chord list) or FUSED (song + wav -> writes song.chords[], fusing the audio witness with the song's own symbols). Args: wav, bpm?, bars?, song?.",
                           {"type": "object", "properties": {"wav": {"type": "string"}, "bpm": {"type": "number"}, "bars": {"type": "integer"}, "song": {"type": "string"}}, "required": ["wav"]}),
-    "export_midi": (t_export_midi, "Export a song to a Standard MIDI File (songs/<name>.mid) for use in any other DAW.",
+    "export_midi": (t_export_midi, "Export a song to a Standard MIDI File (songs/<name>.mid) for use in any other DAW. Default = THE PORTABLE SCORE: the producer pass runs first (wavy transcription runs collapsed to sustained notes, velocities normalised into musical bands with accents preserved, machine-gun retriggers killed, GM programs stamped per lane + drums on ch10 core GM map) so the .mid plays as THE SONG on generic instruments. raw:true = byte-faithful lane mirror (exact re-import round-trips).",
                     {"type": "object", "properties": {"song": {"type": "string"}}, "required": ["song"]}),
     "import_als": (t_import_als, "Import an Ableton Live project (.als) as a song — the user's existing work becomes symbolic and editable here.",
                    {"type": "object", "properties": {"als_path": {"type": "string"}, "song": {"type": "string"}},
@@ -4153,11 +4487,11 @@ TOOLS = {
     "roundtrip_verify": (t_roundtrip_verify, "Score two audio files against each other: spectral fidelity %, waveform corr, SI-SDR, envelope corr, byte-exact. The reconstruction contract, measured.",
                          {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
                           "required": ["a", "b"]}),
-    "import_song_audio": (t_import_song_audio, "ABSORB any finished song (mp3/wav/flac): local GPU stem separation + transcription + bpm/key detection -> EDITABLE MIDI session (the MIDI sounds by default): named drum lanes (Kick/Snare/Hats/Perc/Cymbals) + bass/other sketches on the record's own pitched kits + TRUE-MIDI vocal melody auto-sung by the local DiffSinger voice (vocals_sung; edit melody + hum_topline/sing_lyrics re-sings). The 4 raw stems land MUTED + UNWARPED as byte-true A/B reference (the song grid IS the record's grid; launcher slots stay tempo-following). Ends with THE FINAL CORRECTION (a2m_correct): per-lane gains matched to the stems, drum hits re-anchored/velocity-refit/salvaged from the record. Never chops the user's own record into slices (identity/chop lanes are SOTADAW_ID_LANES=1 opt-in only). instruments: original (default) | ear — original keeps the record's own kits/timbres; ear AUDITIONS the faust palette against each stem (closed-loop probe renders, receipted in <name>_stems/ear.json) and the sketches play the measured twin instead.",
+    "import_song_audio": (t_import_song_audio, "ABSORB any finished song (mp3/wav/flac): local GPU stem separation + transcription + bpm/key detection -> EDITABLE MIDI session (the MIDI sounds by default): named drum lanes (Kick/Snare/Hats/Perc/Cymbals) + bass/other sketches on the record's own pitched kits + TRUE-MIDI vocal melody auto-sung by the local DiffSinger voice (vocals_sung; edit melody + hum_topline/sing_lyrics re-sings). The 4 raw stems land MUTED + UNWARPED as byte-true A/B reference (the song grid IS the record's grid; launcher slots stay tempo-following). Ends with THE FINAL CORRECTION (a2m_correct): per-lane gains matched to the stems, drum AND melodic notes re-anchored to the record's own attacks + velocity-refit per note, ghost notes culled, lanes panned to the record's measured image, non-credible drum lanes muted. Never chops the user's own record into slices (identity/chop lanes are SOTADAW_ID_LANES=1 opt-in only). instruments: original (default) | ear — original keeps the record's own kits/timbres; ear AUDITIONS the faust palette against each stem (closed-loop probe renders, receipted in <name>_stems/ear.json) and the sketches play the measured twin instead.",
                           {"type": "object", "properties": {"audio_path": {"type": "string"}, "song": {"type": "string"},
                            "quality": {"type": "string", "enum": ["fast", "max"]}},
                            "required": ["audio_path", "song"]}),
-    "a2m_correct": (t_a2m_correct, "THE FINAL CORRECTION (closed loop, zero tokens): render the imported product's stems and calibrate every MIDI lane against the record's OWN stems — group LUFS -> lane gains (kills the 'heavily limited' wall grind at the source), drum hits re-anchored to the record's onsets (<=35ms), per-hit velocities refit through the sampler dB law, MISSING hits salvaged from the stem (recall -> ~1.0). Iterates render->measure->correct; final verify scores the product vs the stem-sum record (spectral% + LUFS delta). Run after import_song_audio edits or whenever an imported song drifts from its record.",
+    "a2m_correct": (t_a2m_correct, "THE FINAL CORRECTION (closed loop, zero tokens): render the imported product's stems and calibrate every MIDI lane against the record's OWN stems — group LUFS -> lane gains (kills the 'heavily limited' wall grind at the source), drum hits re-anchored to the record's onsets (<=35ms), per-hit velocities refit through the sampler dB law, MISSING hits salvaged from the stem (recall -> ~1.0), THE MELODIC EAR (pitched lanes get the same per-note truth through the real render: starts to the stem's own attacks, whole-lane level error into gainDb, residuals into velocities), GHOST CULL (notes with zero stem evidence die, receipted), THE IMAGE LAW (each lane panned to the record's own measured stereo balance in its band; bass stays center), CREDIBILITY COURT (a drum lane that doesn't co-move with the record in its own band is muted noise). Iterates render->measure->correct; final verify scores the product vs the stem-sum record (spectral% + LUFS delta). Run after import_song_audio edits or whenever an imported song drifts from its record.",
                     {"type": "object", "properties": {"song": {"type": "string"},
                      "iters": {"type": "number", "description": "correction passes, default 2"},
                      "no_verify": {"type": "boolean", "description": "skip the final full render+score"}},
@@ -4275,7 +4609,7 @@ TOOLS = {
                      "bpm": {"type": "number", "description": "snap boundaries to bars at this tempo"},
                      "vocal": {"type": "string", "description": "vocal stem wav path — unlocks verse/hook labels"}},
                      "required": ["audio_path"]}),
-    "comp_take": (t_comp_take, "V47b THE COMP: copy a take's bar-span into the track's LIVE notes[] (replacing what overlaps in that span). takes[] = the parallel recorded history ([{name, notes[]}] on the track — round-trips verbatim); the comp IS notes[], so nothing downstream changes shape. take: 1-based index or name; from_bar/to_bar: the span. Receipted.",
+    "comp_take": (t_comp_take, "V47b THE COMP: copy a take's bar-span into the track's LIVE notes[] (replacing what overlaps in that span). takes[] = the parallel recorded history ([{name, notes[]}] on the track — round-trips verbatim; loop-record passes bank here); the comp IS notes[], so nothing downstream changes shape. take: 1-based index or name; from_bar/to_bar: 1-indexed INCLUSIVE bars (get_song_region's dialect). Receipted.",
                     {"type": "object", "properties": {"song": {"type": "string"}, "track": {"type": "string"}, "take": {"type": ["integer", "string"]}, "from_bar": {"type": "number"}, "to_bar": {"type": "number"}}, "required": ["song", "track"]}),
     "set_chords": (t_set_chords, "THE CHORD TRACK write half: land/replace the song's declared harmonic spine — chords[] {bar (1-based), chord ('Am7'/'F#m7b5'/'Cmaj9'...), conf?}. The engine's LIVE retune grid reads declared spans cell-for-cell (they outrank note inference); harmonize/reharm/suggest_chords/doctor consume the same lane. Receipted.",
                     {"type": "object", "properties": {"song": {"type": "string"}, "chords": {"type": "array", "items": {"type": "object", "properties": {"bar": {"type": "number"}, "chord": {"type": "string"}, "conf": {"type": "number"}}, "required": ["bar", "chord"]}}}, "required": ["song", "chords"]}),
@@ -4419,6 +4753,23 @@ TOOLS = {
                {"type": "object", "properties": {"song": {"type": "string"}}, "required": ["song"]}),
     "export_dawproject": (t_export_dawproject, "Export a song as .dawproject (opens in Bitwig/Cubase/Nuendo/Studio One): notes, tempo, mixer, embedded audio. 'Produce here, finish anywhere.'",
                           {"type": "object", "properties": {"song": {"type": "string"}}, "required": ["song"]}),
+    "export_flp": (t_export_flp, "Export a song as FL Studio .flp: named channel rack, one pattern per track on its own playlist row (real arrangement, tick resolution) — FL users open and edit it (flp_import round-trips note-exact).",
+                   {"type": "object", "properties": {"song": {"type": "string"}}, "required": ["song"]}),
+    "export_bundle": (t_export_bundle, "THE SUITCASE: pack a song + every audio/preset file it references into one self-contained zip (songs/<name>_pack.zip) — absolute paths healed, sha256 + attribution + kit/plugin dependency manifest. For handing the project to another SOTA DAW machine.",
+                      {"type": "object", "properties": {"song": {"type": "string"}}, "required": ["song"]}),
+    "import_bundle": (t_import_bundle, "Open a SUITCASE bundle: land a packed project as a NEW song with its assets (collision-safe naming, sha-verified, zip-slip guarded). Optional song = landing name.",
+                      {"type": "object", "properties": {"zip_path": {"type": "string"}, "song": {"type": "string"}},
+                       "required": ["zip_path"]}),
+    "search_chat": (t_search_chat, "RECALL: term-search this project's WHOLE conversation history (every stored chat, beyond the memory block's tail) — e.g. 'what did the user decide about the bass?'. Returns scored, timestamped lines; side-conversation hits carry their conv id.",
+                    {"type": "object", "properties": {"song": {"type": "string"}, "query": {"type": "string"},
+                     "limit": {"type": "number", "description": "max lines, default 8"}},
+                     "required": ["song", "query"]}),
+    "get_constitution": (t_get_constitution, "THE ARTIST CONSTITUTION (SPEC_TRANSCENDENCE A2): this user's standing taste distilled from their OWN verdicts (measured loudness/key habits, avoid laws with their words verbatim, vocabulary). OBEY it as the default; the ask's own words ALWAYS outrank it. Optional genre scopes the habits.",
+                         {"type": "object", "properties": {"genre": {"type": "string"}}}),
+    "catalog_brain": (t_catalog_brain, "THE CATALOG (SPEC_TRANSCENDENCE A4): the user's whole body of work, queryable. op='self-echo' + song = which OTHER songs of theirs share this song's melodic motifs (reprise vs accidental self-clone); op='find' + term = where a sound/track/voice was used across all projects; op='stats' = the catalog in numbers.",
+                      {"type": "object", "properties": {"op": {"type": "string", "description": "self-echo | find | stats"}, "song": {"type": "string"}, "term": {"type": "string"}}}),
+    "record_court": (t_record_court, "THE RECORD COURT (SPEC_TRANSCENDENCE A4): judge an ORDERED list of songs as one record/EP — key journey (cold jumps), tempo arc (whiplash vs musical ratios), motif THREAD across tracks, pacing. Advisory: informs the sequence, never rewrites a song.",
+                     {"type": "object", "properties": {"songs": {"type": "array", "items": {"type": "string"}, "description": "song names in record order"}}, "required": ["songs"]}),
     "duplicate_bars": (t_duplicate_bars, "ARRANGEMENT CALCULUS (how long tracks are built): copy bars [fromBar,toBar) to atBar, `times` consecutive copies, server-side and instant. Compose an 8-32 bar seed in detail, then STAMP it — never write hundreds of literal notes. Optional tracks filter.",
                        {"type": "object", "properties": {"song": {"type": "string"}, "fromBar": {"type": "number"},
                         "toBar": {"type": "number"}, "atBar": {"type": "number"}, "times": {"type": "number"},
@@ -4437,6 +4788,12 @@ TOOLS = {
                     {"type": "object", "properties": {"name": {"type": "string"}, "max_bars": {"type": "number", "description": "render only the first N bars (fast self-check on long songs; final full render is automatic after the proposal)"}, "full": {"type": "boolean", "description": "force the WHOLE song (disables the >24-bar auto-preview clamp)"}}, "required": ["name"]}),
     "analyze_wav": (t_analyze_wav, "Measure a rendered WAV: peak dBFS, LUFS, clipping, band balance, centroid, f0. Use after every render; act on the numbers (see mix-headroom skill).",
                     {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
+    "release_gate": (t_release_gate, "THE RELEASE GATE (AMAZING PART III): the five-gate release verdict on a take — G1 CENSUS (music courts + worldclass floor traps), G2 REFERENCE (genre gold envelope: LUFS window, clipped=0, PSR floor, band order), G3 TASTE (personal head; honest skip while the bank is thin), G4 NOVELTY (corpus 8-gram court, the take's own history pardoned), G5 BLIND (named not-run). pass:false lists every hard reason + the honest-gap ledger — fix at the SOURCE and re-gate. Reuses songs/<name>.wav when fresher than the json, else renders (cache-first).",
+                     {"type": "object", "properties": {"song": {"type": "string"}, "genre": {"type": "string", "description": "gold-genre lane (default: the song's own genre)"}, "wav": {"type": "string", "description": "judge this wav instead of the song's render"}}, "required": ["song"]}),
+    "readout": (t_readout, "THE READOUT (AMAZING PART V): ONE stable page of numbers for any take — TAKE (order echo) / EARS (render metrics or 'unrendered') / GATE (five-gate states, hard reasons first) / COURTS (bad, flagged, ok) / DIFF (what changed since YOUR last readout of this song: note deltas per lane, LUFS drift, courts that flipped, gate flips). Read it before and after every big move — it is the cheapest way to SEE the take. Reuses songs/<name>.wav when fresher than the json; never renders.",
+                {"type": "object", "properties": {"song": {"type": "string"}, "genre": {"type": "string"}, "wav": {"type": "string", "description": "judge this wav instead of the song's own render"}}, "required": ["song"]}),
+    "compose_line": (t_compose_line, "THE CELL PRIOR (learned, corpus-true): compose a melodic LINE for one existing track — bass/lead/pad — recombined from real phrase cells, key+genre-aware, SEARCH-LAW judged (candidates run the music courts + the corpus meter; the track's CURRENT notes are the incumbent and only a strictly better take displaces them — an empty lane always gets a line). Zero tokens, deterministic per seed; refusals are honest (a dry genre bin leaves the track untouched and says so). Complements generate_loop (which owns genre RHYTHM DNA) — use this for free toplines, basslines, and melodic lanes on an arrangement you already have.",
+                     {"type": "object", "properties": {"song": {"type": "string"}, "track": {"type": "string", "description": "existing track to write into"}, "role": {"type": "string", "description": "bass|lead|pad (default: inferred from the track name)"}, "genre": {"type": "string"}, "key": {"type": "string"}, "bars": {"type": "number"}, "seed": {"type": "number", "description": "reproduce a take exactly; omit for a fresh roll (echoed back)"}}, "required": ["song", "track"]}),
     "master_report": (t_master_report, "THE MASTERING VERDICT: render (if stale) + measure + judge against the genre's KG MixTarget in ONE call — pass/score, per-check got-vs-want (clipped, true peak, LUFS window, band order, spectral floors, phase, masterGainDb=0 law, brickwall-last law) and a SOURCE-FIX hint on every failure, ordered by what to fix first. [full laws: tool-guide skill]",
                     {"type": "object", "properties": {"song": {"type": "string"}, "genre": {"type": "string", "description": "KG MixTarget lane (default: song._loop.genre, else a generic streaming/club target)"}, "wav": {"type": "string", "description": "judge an arbitrary wav instead of a song"}, "platform": {"type": "string", "description": "deliver to a platform ref (spotify|apple|youtube|tidal|amazon|deezer|tiktok|streaming): overrides LUFS window + true-peak ceiling to its BS.1770 normalization target"}},
                      "required": []}),
@@ -4566,7 +4923,18 @@ def t_use_tool(args):
             inner = json.loads(inner)
         except json.JSONDecodeError as e:
             return f"args is not valid JSON: {e}"
-    return TOOLS[name][0](inner)
+    try:
+        return TOOLS[name][0](inner)
+    except Exception as e:
+        # ARG-FUMBLE SELF-HEAL (Codex guessed `melody` for sing_lyrics' `track`,
+        # 2026-07-14): the inner error + the tool's REAL schema in one reply --
+        # the model corrects in a single step instead of guess-fail-guess.
+        sch = TOOLS[name][2] if len(TOOLS[name]) > 2 and isinstance(TOOLS[name][2], dict) else {}
+        props = ", ".join((sch.get("properties") or {}).keys())
+        req = ", ".join(sch.get("required") or [])
+        return (f"{name} failed: {type(e).__name__}: {e}."
+                + (f" expected args: {props}" if props else "")
+                + (f" (required: {req})" if req else ""))
 
 TOOLS["use_tool"] = (t_use_tool,
     "Call any LONG-TAIL tool not in the visible set (DAW bridges als/dawproject/flp/"

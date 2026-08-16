@@ -46,6 +46,7 @@ class Clave : public dsp {
 	float fConst7;
 	FAUSTFLOAT fHslider0;
 	float fConst8;
+	FAUSTFLOAT fHslider1;
 	FAUSTFLOAT fButton0;
 	float fVec0[2];
 	float fRec1[3];
@@ -53,8 +54,8 @@ class Clave : public dsp {
 	int iRec2[2];
 	float fConst9;
 	float fConst10;
-	FAUSTFLOAT fHslider1;
 	FAUSTFLOAT fHslider2;
+	FAUSTFLOAT fHslider3;
 	float fConst11;
 	
  public:
@@ -131,9 +132,10 @@ class Clave : public dsp {
 	
 	virtual void instanceResetUserInterface() {
 		fHslider0 = FAUSTFLOAT(2.5e+03f);
+		fHslider1 = FAUSTFLOAT(6e+01f);
 		fButton0 = FAUSTFLOAT(0.0f);
-		fHslider1 = FAUSTFLOAT(0.09f);
-		fHslider2 = FAUSTFLOAT(0.7f);
+		fHslider2 = FAUSTFLOAT(0.09f);
+		fHslider3 = FAUSTFLOAT(0.7f);
 	}
 	
 	virtual void instanceClear() {
@@ -172,10 +174,11 @@ class Clave : public dsp {
 	
 	virtual void buildUserInterface(UI* ui_interface) {
 		ui_interface->openVerticalBox("clave");
-		ui_interface->addHorizontalSlider("decay", &fHslider1, FAUSTFLOAT(0.09f), FAUSTFLOAT(0.02f), FAUSTFLOAT(0.4f), FAUSTFLOAT(0.001f));
+		ui_interface->addHorizontalSlider("decay", &fHslider2, FAUSTFLOAT(0.09f), FAUSTFLOAT(0.02f), FAUSTFLOAT(0.4f), FAUSTFLOAT(0.001f));
 		ui_interface->addHorizontalSlider("freq", &fHslider0, FAUSTFLOAT(2.5e+03f), FAUSTFLOAT(8e+02f), FAUSTFLOAT(4e+03f), FAUSTFLOAT(1.0f));
-		ui_interface->addHorizontalSlider("gain", &fHslider2, FAUSTFLOAT(0.7f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.01f));
+		ui_interface->addHorizontalSlider("gain", &fHslider3, FAUSTFLOAT(0.7f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.01f));
 		ui_interface->addButton("gate", &fButton0);
+		ui_interface->addHorizontalSlider("tone", &fHslider1, FAUSTFLOAT(6e+01f), FAUSTFLOAT(2e+01f), FAUSTFLOAT(2e+02f), FAUSTFLOAT(1.0f));
 		ui_interface->closeBox();
 	}
 	
@@ -184,22 +187,23 @@ class Clave : public dsp {
 		FAUSTFLOAT* output1 = outputs[1];
 		float fSlow0 = std::tan(fConst8 * float(fHslider0));
 		float fSlow1 = 2.0f * (1.0f - 1.0f / Clave_faustpower2_f(fSlow0));
-		float fSlow2 = 1.0f / fSlow0;
-		float fSlow3 = (fSlow2 + -0.016666668f) / fSlow0 + 1.0f;
-		float fSlow4 = (fSlow2 + 0.016666668f) / fSlow0 + 1.0f;
-		float fSlow5 = 1.0f / fSlow4;
-		float fSlow6 = float(fButton0);
-		float fSlow7 = 2e+01f / (fSlow0 * fSlow4);
-		float fSlow8 = 1.0f / std::max<float>(1.0f, fConst0 * float(fHslider1));
-		float fSlow9 = fConst11 * float(fHslider2);
+		float fSlow2 = 1.0f / float(fHslider1);
+		float fSlow3 = 1.0f / fSlow0;
+		float fSlow4 = (fSlow3 - fSlow2) / fSlow0 + 1.0f;
+		float fSlow5 = (fSlow2 + fSlow3) / fSlow0 + 1.0f;
+		float fSlow6 = 1.0f / fSlow5;
+		float fSlow7 = float(fButton0);
+		float fSlow8 = 2e+01f / (fSlow0 * fSlow5);
+		float fSlow9 = 1.0f / std::max<float>(1.0f, fConst0 * float(fHslider2));
+		float fSlow10 = fConst11 * float(fHslider3);
 		for (int i0 = 0; i0 < count; i0 = i0 + 1) {
-			fVec0[0] = fSlow6;
-			float fTemp0 = fSlow6 - fVec0[1];
-			fRec1[0] = fTemp0 * float(fTemp0 > 0.0f) - fSlow5 * (fSlow3 * fRec1[2] + fSlow1 * fRec1[1]);
-			fRec0[0] = fSlow7 * (fRec1[0] - fRec1[2]) - fConst7 * (fConst5 * fRec0[2] + fConst3 * fRec0[1]);
-			iRec2[0] = (iRec2[1] + (iRec2[1] > 0)) * (fSlow6 <= fVec0[1]) + (fSlow6 > fVec0[1]);
+			fVec0[0] = fSlow7;
+			float fTemp0 = fSlow7 - fVec0[1];
+			fRec1[0] = fTemp0 * float(fTemp0 > 0.0f) - fSlow6 * (fSlow4 * fRec1[2] + fSlow1 * fRec1[1]);
+			fRec0[0] = fSlow8 * (fRec1[0] - fRec1[2]) - fConst7 * (fConst5 * fRec0[2] + fConst3 * fRec0[1]);
+			iRec2[0] = (iRec2[1] + (iRec2[1] > 0)) * (fSlow7 <= fVec0[1]) + (fSlow7 > fVec0[1]);
 			float fTemp1 = float(iRec2[0]);
-			float fTemp2 = fSlow9 * std::max<float>(0.0f, std::min<float>(fConst10 * fTemp1, fSlow8 * (fConst9 - fTemp1) + 1.0f)) * (fRec0[0] + fRec0[2] - 2.0f * fRec0[1]);
+			float fTemp2 = fSlow10 * std::max<float>(0.0f, std::min<float>(fConst10 * fTemp1, fSlow9 * (fConst9 - fTemp1) + 1.0f)) * (fRec0[0] + fRec0[2] - 2.0f * fRec0[1]);
 			output0[i0] = FAUSTFLOAT(fTemp2);
 			output1[i0] = FAUSTFLOAT(fTemp2);
 			fVec0[1] = fVec0[0];

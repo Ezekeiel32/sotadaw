@@ -220,6 +220,107 @@ check("StreamState: ghost carries the streamed notes",
       {36, 42, 38} <= {n["pitch"] for n in hat_notes},
       str(sorted(n["pitch"] for n in hat_notes)))
 
+# ---- THE TWIN LAW (Chezy 2026-07-16: PLAN + finals doubled) ----
+# The CLI can emit the block-complete `assistant` line BEFORE the block's
+# content_block_stop stream event; the trailing final flush then re-emitted
+# the same text as a fresh stream card the UI fold could never absorb.
+# text_shipped() spends the lane at the activity emit — prove it at the
+# PUMP level with a fake process, in BOTH line orders.
+class FakeProc:
+    def __init__(self, lines):
+        self.stdout = iter(lines)
+
+    def kill(self):
+        pass
+
+
+def jline(**kw):
+    return json.dumps(kw) + "\n"
+
+
+def sevl(e):
+    return jline(type="stream_event", event=e)
+
+
+FINAL = "Now adding production polish - space, depth, and presence."
+
+# the echo NEEDS the production throttle: a partial goes out, the tail deltas
+# land inside TEXT_EVERY (throttled), so the stop's final flush has unsent
+# text to say — zeroed constants stream every delta and hide the disease
+sidecar.StreamState.TEXT_EVERY = 0.4
+sidecar.StreamState.TEXT_MIN_CHARS = 24
+
+
+def run_pump(lines, rid):
+    before = len(open(evl).readlines()) if os.path.exists(evl) else 0
+    sidecar.stream_events(FakeProc(lines), rid, tag="agent", song=None)
+    rows = [json.loads(x) for x in open(evl).readlines()[before:]]
+    acts = [k for k, e in enumerate(rows)
+            if e.get("kind") == "activity" and FINAL in e.get("text", "")]
+    echoes = [k for k, e in enumerate(rows)
+              if e.get("kind") == "activity_stream" and e.get("text", "").strip() == FINAL
+              and acts and k > acts[0]]
+    return rows, acts, echoes
+
+
+# A: the OBSERVED order — assistant line BEFORE content_block_stop
+rows, acts, echoes = run_pump([
+    sevl({"type": "message_start"}),
+    sevl({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+    sevl({"type": "content_block_delta", "index": 0,
+          "delta": {"type": "text_delta", "text": FINAL[:28]}}),
+    sevl({"type": "content_block_delta", "index": 0,
+          "delta": {"type": "text_delta", "text": FINAL[28:]}}),
+    jline(type="assistant", message={"content": [{"type": "text", "text": FINAL}]}),
+    sevl({"type": "content_block_stop", "index": 0}),
+    jline(type="result", result=FINAL),
+], "rq_twin_a")
+check("TWIN LAW A: block-complete reply emitted exactly once",
+      len(acts) == 1, f"acts={len(acts)}")
+check("TWIN LAW A: no stream echo AFTER the final (the doubled card is dead)",
+      not echoes, f"echo idx={echoes}")
+check("TWIN LAW A: live typing still streamed before the final",
+      any(e.get("kind") == "activity_stream" and k < (acts[0] if acts else 0)
+          for k, e in enumerate(rows)))
+
+# B: the healthy order — stop (flush) before the assistant line stays single
+rows, acts, echoes = run_pump([
+    sevl({"type": "message_start"}),
+    sevl({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+    sevl({"type": "content_block_delta", "index": 0,
+          "delta": {"type": "text_delta", "text": FINAL[:28]}}),
+    sevl({"type": "content_block_delta", "index": 0,
+          "delta": {"type": "text_delta", "text": FINAL[28:]}}),
+    sevl({"type": "content_block_stop", "index": 0}),
+    jline(type="assistant", message={"content": [{"type": "text", "text": FINAL}]}),
+    jline(type="result", result=FINAL),
+], "rq_twin_b")
+check("TWIN LAW B: healthy order keeps one final + no post-final echo",
+      len(acts) == 1 and not echoes, f"acts={len(acts)} echo={echoes}")
+
+# C: lane rebirth — after the ship, the stop flushes NOTHING and a later
+# text block in the SAME message streams fresh (sent_len reset)
+sidecar.StreamState.TEXT_EVERY = 0.0        # C wants every delta on the wire
+sidecar.StreamState.TEXT_MIN_CHARS = 1
+st2 = sidecar.StreamState("rq_twin_c", "agent", None)
+st2.on_stream_event({"type": "stream_event", "event": {"type": "message_start"}})
+st2.on_stream_event({"type": "stream_event", "event": {
+    "type": "content_block_delta", "index": 0,
+    "delta": {"type": "text_delta", "text": "First block says hats."}}})
+st2.text_shipped("First block says hats.")
+before = len(open(evl).readlines())                 # typing already streamed above
+st2.on_stream_event({"type": "stream_event", "event": {
+    "type": "content_block_stop", "index": 0}})     # would have echoed pre-fix
+st2.on_stream_event({"type": "stream_event", "event": {
+    "type": "content_block_delta", "index": 1,
+    "delta": {"type": "text_delta", "text": "Second block speaks."}}})
+tail_c = [json.loads(x) for x in open(evl).readlines()[before:]]
+check("TWIN LAW C: a shipped lane dies, the next text block streams fresh",
+      any(e.get("kind") == "activity_stream" and e.get("text") == "Second block speaks."
+          for e in tail_c)
+      and not any(e.get("kind") == "activity_stream"
+                  and e.get("text") == "First block says hats." for e in tail_c))
+
 # 19: kill-switch honored at spawn level (flag helper)
 os.environ["SOTADAW_TOKEN_STREAM"] = "0"
 off = not sidecar.token_stream_on()

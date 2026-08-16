@@ -28,13 +28,15 @@ public:
     struct TakeChip { juce::String text; juce::Colour col; };
 
     ProposalDeck (juce::Component& badge, juce::Component& audition,
+                  juce::Component& explain,
                   juce::Component& accept, juce::Component& reject,
                   juce::Component& cherryBar)
-        : badgeC (badge), auditionC (audition), acceptC (accept),
+        : badgeC (badge), auditionC (audition), explainC (explain), acceptC (accept),
           rejectC (reject), barC (cherryBar)
     {
         setInterceptsMouseClicks (false, true);   // the glass never eats the stage
         addChildComponent (badgeC);
+        addChildComponent (explainC);             // P78: the take explains itself
         addChildComponent (auditionC);
         addChildComponent (acceptC);
         addChildComponent (rejectC);
@@ -43,7 +45,7 @@ public:
         // teaches the producer-agent; Esc keeps deciding, Enter (or Reject
         // again) sends. Exists only while armed (no idle text-state).
         addChildComponent (reasonBox);
-        reasonBox.setTextToShowWhenEmpty ("why? one line teaches the producer - "
+        reasonBox.setTextToShowWhenEmpty ("give it a note - one line teaches the producer; "
                                           "Enter sends, Esc keeps deciding",
                                           theme::textMute);
         reasonBox.onReturnKey = [this] { if (onRejectCommit) onRejectCommit (reasonBox.getText()); };
@@ -129,6 +131,10 @@ public:
         else repaint();
     }
     bool alive() const                { return mode != 0; }
+    void finishExitNow()              // teardown that must land THIS frame (rig shots run
+    {                                 // the whole camera list in ONE callback — no timer
+        if (exiting) retireNow();     // ever advances the fade, so a begun exit would
+    }                                 // reserve a dead 48px band in every later face)
     bool layoutAlive() const          { return mode != 0 || exiting; }   // host: reserve
     int neededHeight() const          { return 44 + (barC.isVisible() ? 22 : 0); }
     void setBusy (bool b)             { if (busy != b) { busy = b; if (! b) busyT0 = 0; else busyT0 = nowMs(); repaint(); } }
@@ -220,6 +226,7 @@ public:
         place (rejectC, armed ? 100 : 72);   // "Reject anyway" needs its room
         place (acceptC, 76);
         place (auditionC, 104);
+        place (explainC, 74);                // P78: the walk-through door
         if (badgeC.isVisible())
         {
             const int bw = juce::jmin (240, juce::jmax (90, badgeC.getWidth() > 0
@@ -262,7 +269,7 @@ public:
         if (ek < 1.0f) g.addTransform (juce::AffineTransform::translation (0.0f, (1.0f - ek) * 5.0f));
 
         auto full = getLocalBounds().toFloat().reduced (0.5f);
-        g.setColour (theme::panel.withAlpha (0.72f));
+        g.setColour (theme::panel.withAlpha (0.82f));   // pass 4: fuller glass presence
         g.fillRoundedRectangle (full, 9.0f);
         g.setColour (tint.withAlpha (0.05f + 0.02f * br));
         g.fillRoundedRectangle (full, 9.0f);
@@ -329,7 +336,7 @@ public:
         {
             const float esK = settled() ? 1.0f : span (t, earsT0, EARS_MS);      // arrival
             const float stK = (earsStale && ! settled()) ? span (t, staleT0, STALE_MS) : (earsStale ? 1.0f : 0.0f);
-            auto ez = row.removeFromRight (176).reduced (0, 7);
+            auto ez = row.removeFromRight (192).reduced (0, 7);
             juce::Graphics::ScopedSaveState s3 (g);
             if (esK < 1.0f) g.addTransform (juce::AffineTransform::translation ((1.0f - esK) * 12.0f, 0.0f));
             const bool bad = clipped > 0, hot = peak > -0.95;
@@ -341,13 +348,22 @@ public:
             g.setColour (base.withAlpha (0.35f * a));
             g.drawRoundedRectangle (ez.toFloat().reduced (0.5f), 8.0f, 1.0f);
             auto tz = ez.reduced (9, 2);
+            {   // instrument furniture: a real LED ladder speaks the loudness
+                // before any number does (meterLo->meterHi, stale-dimmed with
+                // the cluster; -30..-8 LUFS spans the ladder)
+                auto lad = tz.removeFromLeft (40).reduced (0, 4).toFloat();
+                const float frac = juce::jlimit (0.0f, 1.0f, (float) ((lufs + 30.0) / 22.0));
+                theme::ledMeter (g, lad, frac * esK * (1.0f - 0.45f * stK),
+                                 theme::meterLo, theme::meterHi, false);
+                tz.removeFromLeft (6);
+            }
             g.setColour (base.withAlpha (a));
             g.setFont (theme::mono (10.5f));
-            g.drawText (juce::String (lufs, 1) + " LUFS", tz.removeFromLeft (74),
+            g.drawText (juce::String (lufs, 1) + " LUFS", tz.removeFromLeft (66),
                         juce::Justification::centredLeft);
             g.setColour (theme::textDim.interpolatedWith (theme::textMute, stK).withAlpha (a));
             g.setFont (theme::mono (9.0f));
-            g.drawText (juce::String (peak, 1) + " pk", tz.removeFromLeft (52),
+            g.drawText (juce::String (peak, 1) + " pk", tz.removeFromLeft (50),
                         juce::Justification::centredLeft);
             const float dy = (float) tz.getCentreY();
             g.setColour (base.withAlpha (a));
@@ -424,7 +440,7 @@ private:
     enum { MODE_MS = 220, ENTER_MS = 230, EXIT_MS = 160, EARS_MS = 280,
            ARM_MS = 200, STALE_MS = 200, CHIP_MS = 340 };
 
-    juce::Component &badgeC, &auditionC, &acceptC, &rejectC, &barC;
+    juce::Component &badgeC, &auditionC, &explainC, &acceptC, &rejectC, &barC;
     juce::Rectangle<int> chipArea;
     std::vector<TakeChip> chips;
     juce::StringArray sections;

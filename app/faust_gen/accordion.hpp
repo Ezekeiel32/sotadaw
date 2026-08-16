@@ -346,7 +346,7 @@ class Accordion : public dsp {
 			float fTemp16 = fSlow4 * (fRec1[2] + fRec1[0] + 2.0f * fRec1[1]);
 			fVec10[0] = fTemp16;
 			fRec0[0] = -(fConst9 * (fConst8 * fRec0[1] - fConst7 * (fTemp16 - fVec10[1])));
-			float fTemp17 = 0.548f * fRec0[0];
+			float fTemp17 = 0.46f * fRec0[0];
 			output0[i0] = FAUSTFLOAT(fTemp17);
 			output1[i0] = FAUSTFLOAT(fTemp17);
 			iVec0[1] = iVec0[0];

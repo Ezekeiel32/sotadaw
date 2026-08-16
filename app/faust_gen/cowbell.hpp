@@ -48,16 +48,14 @@ class Cowbell : public dsp {
 	float fConst1;
 	float fConst2;
 	FAUSTFLOAT fHslider0;
+	FAUSTFLOAT fHslider1;
+	float fConst3;
 	float fConst4;
-	float fConst6;
-	float fConst8;
-	float fConst9;
 	float fRec2[2];
-	float fConst10;
+	float fConst5;
 	float fRec3[2];
 	float fRec1[3];
-	FAUSTFLOAT fHslider1;
-	float fConst11;
+	FAUSTFLOAT fHslider2;
 	
  public:
 	Cowbell() {}
@@ -118,21 +116,16 @@ class Cowbell : public dsp {
 		fConst0 = std::min<float>(1.92e+05f, std::max<float>(1.0f, float(fSampleRate)));
 		fConst1 = std::max<float>(1.0f, 0.001f * fConst0);
 		fConst2 = 1.0f / fConst1;
-		float fConst3 = std::tan(3769.9111f / fConst0);
-		fConst4 = 2.0f * (1.0f - 1.0f / Cowbell_faustpower2_f(fConst3));
-		float fConst5 = 1.0f / fConst3;
-		fConst6 = (fConst5 + -0.33333334f) / fConst3 + 1.0f;
-		float fConst7 = (fConst5 + 0.33333334f) / fConst3 + 1.0f;
-		fConst8 = 1.0f / fConst7;
-		fConst9 = 587.0f / fConst0;
-		fConst10 = 845.0f / fConst0;
-		fConst11 = 0.5f / (fConst3 * fConst7);
+		fConst3 = 3.1415927f / fConst0;
+		fConst4 = 587.0f / fConst0;
+		fConst5 = 845.0f / fConst0;
 	}
 	
 	virtual void instanceResetUserInterface() {
 		fButton0 = FAUSTFLOAT(0.0f);
 		fHslider0 = FAUSTFLOAT(0.11f);
-		fHslider1 = FAUSTFLOAT(0.65f);
+		fHslider1 = FAUSTFLOAT(1.2e+03f);
+		fHslider2 = FAUSTFLOAT(0.65f);
 	}
 	
 	virtual void instanceClear() {
@@ -178,8 +171,9 @@ class Cowbell : public dsp {
 	virtual void buildUserInterface(UI* ui_interface) {
 		ui_interface->openVerticalBox("cowbell");
 		ui_interface->addHorizontalSlider("decay", &fHslider0, FAUSTFLOAT(0.11f), FAUSTFLOAT(0.03f), FAUSTFLOAT(0.5f), FAUSTFLOAT(0.001f));
-		ui_interface->addHorizontalSlider("gain", &fHslider1, FAUSTFLOAT(0.65f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.01f));
+		ui_interface->addHorizontalSlider("gain", &fHslider2, FAUSTFLOAT(0.65f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.01f));
 		ui_interface->addButton("gate", &fButton0);
+		ui_interface->addHorizontalSlider("tone", &fHslider1, FAUSTFLOAT(1.2e+03f), FAUSTFLOAT(5e+02f), FAUSTFLOAT(3e+03f), FAUSTFLOAT(1.0f));
 		ui_interface->closeBox();
 	}
 	
@@ -188,19 +182,25 @@ class Cowbell : public dsp {
 		FAUSTFLOAT* output1 = outputs[1];
 		float fSlow0 = float(fButton0);
 		float fSlow1 = 1.0f / std::max<float>(1.0f, fConst0 * float(fHslider0));
-		float fSlow2 = fConst11 * float(fHslider1);
+		float fSlow2 = std::tan(fConst3 * float(fHslider1));
+		float fSlow3 = 2.0f * (1.0f - 1.0f / Cowbell_faustpower2_f(fSlow2));
+		float fSlow4 = 1.0f / fSlow2;
+		float fSlow5 = (fSlow4 + -0.33333334f) / fSlow2 + 1.0f;
+		float fSlow6 = (fSlow4 + 0.33333334f) / fSlow2 + 1.0f;
+		float fSlow7 = 1.0f / fSlow6;
+		float fSlow8 = 0.5f * (float(fHslider2) / (fSlow2 * fSlow6));
 		for (int i0 = 0; i0 < count; i0 = i0 + 1) {
 			fVec0[0] = fSlow0;
 			iVec1[0] = 1;
 			iRec0[0] = (iRec0[1] + (iRec0[1] > 0)) * (fSlow0 <= fVec0[1]) + (fSlow0 > fVec0[1]);
 			float fTemp0 = float(iRec0[0]);
 			int iTemp1 = 1 - iVec1[1];
-			float fTemp2 = ((iTemp1) ? 0.0f : fConst9 + fRec2[1]);
+			float fTemp2 = ((iTemp1) ? 0.0f : fConst4 + fRec2[1]);
 			fRec2[0] = fTemp2 - std::floor(fTemp2);
-			float fTemp3 = ((iTemp1) ? 0.0f : fConst10 + fRec3[1]);
+			float fTemp3 = ((iTemp1) ? 0.0f : fConst5 + fRec3[1]);
 			fRec3[0] = fTemp3 - std::floor(fTemp3);
-			fRec1[0] = float(fRec3[0] < 0.5f) + float(fRec2[0] < 0.5f) + (-1.0f - fConst8 * (fConst6 * fRec1[2] + fConst4 * fRec1[1]));
-			float fTemp4 = fSlow2 * (fRec1[0] - fRec1[2]) * std::max<float>(0.0f, std::min<float>(fConst2 * fTemp0, fSlow1 * (fConst1 - fTemp0) + 1.0f));
+			fRec1[0] = float(fRec3[0] < 0.5f) + float(fRec2[0] < 0.5f) + (-1.0f - fSlow7 * (fSlow5 * fRec1[2] + fSlow3 * fRec1[1]));
+			float fTemp4 = fSlow8 * (fRec1[0] - fRec1[2]) * std::max<float>(0.0f, std::min<float>(fConst2 * fTemp0, fSlow1 * (fConst1 - fTemp0) + 1.0f));
 			output0[i0] = FAUSTFLOAT(fTemp4);
 			output1[i0] = FAUSTFLOAT(fTemp4);
 			fVec0[1] = fVec0[0];

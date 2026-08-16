@@ -1,6 +1,6 @@
 ---
 name: tool-guide-tail
-version: 6
+version: 8
 description: FULL usage laws for the EXPAND-TOOLS long tail (mounted on demand; fetch this the moment expand_tools runs)
 tags: [expanded]
 ---
@@ -20,6 +20,10 @@ AUTOMIX: the KG mix laws become action, by track role — subs/kick pan CENTER +
 ## color
 
 COLOR (semantic sound axes, deterministic): warmer (filter tilt + touch of drive on melodic voices) / darker (harder tilt) / brighter (air EQ +hiGain@6k, re-opens filters) / wider (fx_widen on pads/keys/lead ONLY — kick/bass/808 NEVER widen, the mono law holds). amount 0..1; track= scopes one track. EARS-verified: centroid warmer<base<brighter (699<1106<1238Hz), wider +107dB width with the bass untouched. Repeats CLAMP (cutoff floor 900, width cap 1.8) — ten clicks converge, never destroy. vst3 params-based tracks are honestly SKIPPED (directional maps need natural-unit ranges — use set_track_param with the SEMANTIC PARAM MAPS block instead); locked tracks untouched. For 'warmer/brighter/wider' asks on Faust tracks this beats hand-picking fx params.
+
+## compose_line
+
+THE CELL PRIOR (learned, corpus-true): compose a melodic LINE for one EXISTING track — bass/lead/pad — recombined from real phrase cells mined off the house corpus, key+genre-aware, SEARCH-LAW judged: candidates run the music courts + the corpus nearest-lane meter, the track's CURRENT notes are the incumbent, and only a STRICTLY better take displaces them (an empty lane always gets a line; a tie or a dry genre bin leaves the track untouched and says so honestly). Zero tokens, deterministic per seed (omit seed for a fresh roll — it's echoed back; same seed reproduces exactly). Chroma survives only where the target key+genre allowance permits — in-key by the court's OWN law. Use for free toplines, basslines, and melodic lanes on an arrangement you already have; generate_loop stays the genre-RHYTHM authority (its DNA owns the rhythm — do not expect compose_line to speak a genre's drum-locked hook language).
 
 ## describe_sound
 
@@ -56,6 +60,14 @@ INFILL (MIDI-GPT lane, symbolic): regenerate ONE track's chosen BARS conditioned
 ## prescribe
 
 PRESCRIBE (doctor + auto-fix): diagnose then AUTO-APPLY the safe fixes in one call — center/de-widen subs, humanize dead-mechanical parts, unmask mud, add a master limiter — then RE-DIAGNOSE to prove the issue count dropped (self-verifying: battery 6 issues -> 1, idempotent). Creative-decision issues (no arrangement, doesn't breathe) are SUGGESTED not auto-applied. 'fix my track' in one call, every move a named glass-box tool. out= writes a copy; else edits in place.
+
+## readout
+
+THE READOUT (AMAZING PART V): ONE stable page of numbers for any take — five fixed lines, deviations first, every unknown SAID. TAKE = order echo (bpm/key/bars/tracks/notes). EARS = the render's numbers, or 'unrendered — render_song first' (it judges the wav it finds, never renders). GATE = the five-gate states with the first hard reason inline (+ '=> NOT RELEASABLE' when any hard gate fails). COURTS = bad first, then flagged with counts, then ok. DIFF = what changed since YOUR last readout of this song (note deltas per lane, LUFS drift, courts that flipped NEW-BAD/healed, gate flips) — stamped per song, so read-before-and-after every big move and the DIFF line tells you what your move actually did. This is the cheapest full sight of a take; prefer it over re-reading the whole song JSON.
+
+## release_gate
+
+THE RELEASE GATE (AMAZING PART III): the five-gate release verdict on a take. G1 CENSUS = music courts + worldclass floor hard traps; G2 REFERENCE = the genre's gold envelope (LUFS window, clipped=0, PSR floor, band ORDER; measured-closeness is a readout row, not a hard gate); G3 TASTE = the personal head (honest SKIP while the bank is thin — only a FED verdict blocks); G4 NOVELTY = corpus 8-gram substantial-similarity court (the take's own history is pardoned; foreign replay convicts); G5 BLIND = always named not-run. pass:false lists EVERY hard reason plus the honest-gap ledger — fix at the SOURCE (notes/gains/arrangement), never by normalizing output, then re-gate. Reuses songs/<name>.wav when fresher than the json, else renders cache-first. Use before export/finish sign-off, after big arrangement moves, or when the user asks "is it done?" — the gate's word outranks vibes.
 
 ## reharmonize
 

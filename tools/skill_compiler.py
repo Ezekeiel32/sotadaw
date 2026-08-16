@@ -16,6 +16,14 @@ from kg import KG
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS = os.path.join(ROOT, "skills")
 
+def short_prov(p):
+    """Citation diet (2026-07-31): chains like 'A | B | C' tripled skill sizes
+    (ukgarage 6.3K->15.3K; session payloads blew the 40K budget). The FIRST
+    source + a count serves the skill; full chains live in the graph."""
+    parts = [s.strip() for s in str(p or "?").split("|")]
+    return parts[0] + (f" +{len(parts)-1} more" if len(parts) > 1 else "")
+
+
 def next_version(base):
     versions = [int(m.group(1)) for f in os.listdir(SKILLS)
                 if (m := re.match(rf"{re.escape(base)}\.v(\d+)\.md$", f))]
@@ -57,7 +65,7 @@ def taste_section(props):
         lines.append(f"- their words, verbatim: \"{whys}\"")
     return lines if len(lines) > 2 else []
 
-def compile_genre(genre, publish=False):
+def compile_genre(genre, publish=False, if_changed=False):
     kg = KG()
     v = kg.genre_view(genre)
     if v is None:
@@ -87,7 +95,10 @@ def compile_genre(genre, publish=False):
     if props.get("harmony_ext"):    # taste wave 1: documented extended-chord practice
         hard.append(f"Harmony: {props['harmony_ext']}.")
     for t in top:
-        hard.append(f"{t['name'].replace('_',' ').upper()} is non-negotiable: {t['desc']}")
+        # tolerant: a desc-less technique node (soul, sweep 2026-07-31) must
+        # not kill the whole genre's compile — the name still carries law
+        hard.append(f"{t['name'].replace('_',' ').upper()} is non-negotiable: "
+                    + (t.get("desc") or "(see technique node)"))
     # conflicts reachable from this genre's techniques
     conflicts = kg.q(
         f"MATCH (g:Genre {{name: '{genre}'}})-[:USES_TECHNIQUE]->(t:Technique)"
@@ -119,17 +130,27 @@ def compile_genre(genre, publish=False):
         except Exception:
             pass
         lines += [f"## The pocket — {p['name']}",
-                  f"{p.get('desc','')}{pocket_extra}  *(source: {p.get('provenance','?')})*", ""]
+                  f"{p.get('desc','')}{pocket_extra}  *(source: {short_prov(p.get('provenance'))})*", ""]
     lines += ["## Techniques (weight order — the top ones DEFINE the genre)"]
-    for t in v["techniques"]:
+    for t in v["techniques"][:12]:
         lines += [f"- **{t['name'].replace('_',' ')}** (w{t.get('weight','?')}): {t.get('desc','')} "
-                  f"*({t.get('provenance','?')})*"]
+                  f"*({short_prov(t.get('provenance'))})*"]
+    rest = v["techniques"][12:]
+    if rest:
+        lines += ["- also in this genre's DNA (lower weight): "
+                  + ", ".join(t["name"].replace("_", " ") for t in rest)]
     if v["inherited_techniques"]:
+        # TIERING (2026-07-31): a mega-parent's whole list served inline made
+        # ukgarage 9.8K of house repeats — the child carries the parent's TOP
+        # laws; the parent's own skill stays one get_skill away for the rest.
         lines += ["", f"## Inherited from {', '.join(parents)}"]
         seen = {t["name"] for t in v["techniques"]}
-        for t in v["inherited_techniques"]:
-            if t["name"] not in seen:
-                lines += [f"- {t['name'].replace('_',' ')}: {t.get('desc','')}"]
+        inh = [t for t in v["inherited_techniques"] if t["name"] not in seen]
+        for t in inh[:8]:
+            lines += [f"- {t['name'].replace('_',' ')}: {t.get('desc','')}"]
+        if len(inh) > 8:
+            lines += [f"- ...and from the {parents[0]} skill itself: "
+                      + ", ".join(t["name"].replace("_", " ") for t in inh[8:])]
     if v["sounds"]:
         lines += ["", "## Sound recipes (this palette, these moves)"]
         for s_ in v["sounds"]:
@@ -140,13 +161,25 @@ def compile_genre(genre, publish=False):
             lines += [f"- PREFER apply_groove(track='drums'-like tracks, name='{gr['name']}', amount 0.8-1.0) "
                       f"OVER the global swing object: swing{{}} is a uniform shuffle, the named profile "
                       f"carries this genre's per-slot micro-timing AND ghost-velocity shape. Write on-grid "
-                      f"notes first, then apply. *({gr.get('provenance','')})*"]
+                      f"notes first, then apply. *({short_prov(gr.get('provenance'))})*"]
     lines += taste_section(props)
     lines += ["", "## Verify (the ears will check)",
               f"After render: analyze_wav must show clipped_samples {mt.get('clipped_samples',0)}, "
               f"LUFS in {mt.get('lufs_lo','?')}..{mt.get('lufs_hi','?')}, "
               f"band order {mt.get('band_order','?')}. "
               "If a filter build was used, centroid_by_quarter must RISE into the drop.", ""]
+
+    if if_changed and version > 1:
+        # THE STALENESS GATE (2026-07-31): the compiler always-bumped — a
+        # sweep over 100+ genres would mint identical files for every
+        # unchanged one. Compare body-minus-version against the standing
+        # latest; identical -> the published version stands, nothing minted.
+        prev = os.path.join(SKILLS, f"{base}.v{version - 1}.md")
+        strip = lambda txt: "\n".join(l for l in txt.splitlines()
+                                      if not l.startswith("version:"))
+        if os.path.exists(prev) and strip(open(prev).read()) == strip("\n".join(lines)):
+            print(f"unchanged — skills/{base}.v{version - 1}.md stands")
+            return prev
 
     out_path = os.path.join(SKILLS, f"{base}.v{version}.md")
     open(out_path, "w").write("\n".join(lines))
@@ -165,5 +198,5 @@ def compile_genre(genre, publish=False):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        raise SystemExit("usage: skill_compiler.py <genre> [--publish]")
-    compile_genre(sys.argv[1], "--publish" in sys.argv)
+        raise SystemExit("usage: skill_compiler.py <genre> [--publish] [--if-changed]")
+    compile_genre(sys.argv[1], "--publish" in sys.argv, "--if-changed" in sys.argv)

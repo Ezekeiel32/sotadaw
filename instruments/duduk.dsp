@@ -19,4 +19,4 @@ env    = en.adsr(att, 0.2, 0.9, rel, gate);
 reed   = os.square(f2);                                   // odd harmonics (cylindrical bore + double reed)
 air    = no.noise*breath*0.4 : fi.resonbp(480, 1.5, 1.0);  // ~480 Hz reed resonance = the dark cry (Acta Acustica 2024)
 body   = reed : fi.lowpass(2, warmth) : fi.resonlp(900, 1.6, 1.0);
-process = (body*0.9 + air) * env * gain * 0.6 <: _,_;
+process = (body*0.9 + air) * env * gain * 0.42 <: _,_;  // headroom law: the 900Hz resonlp peak lands ON an A5 fundamental (+4dB) — cleared with margin

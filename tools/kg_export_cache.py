@@ -81,7 +81,11 @@ def main():
     # arrange.py's family default (their curation is the pending KG wave).
     for gname, ff in kg.q("MATCH (g:Genre)-[:SUBGENRE_OF]->(p:Genre) "
                           "WHERE p.form_family IS NOT NULL RETURN g.name, p.form_family"):
-        if gname in genres and "form_family" not in genres[gname]:
+        # setdefault, not `in genres`: an archetype-less subgenre (no loop
+        # DNA of its own — chicago_drill, 2026-07-17) still ARRANGES, and
+        # arrange.py reads form_family from this cache only; gating on the
+        # archetype dict silently dropped it to the generic form
+        if "form_family" not in genres.setdefault(gname, {}):
             genres[gname]["form_family"] = ff
     # ATOMIC (wave 43, ledger MED): arrange/loop_gen/finish read this file while
     # seed waves rebake it — a torn read used to silently drop every genre to

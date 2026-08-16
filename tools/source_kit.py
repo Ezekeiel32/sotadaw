@@ -176,6 +176,13 @@ def _spectral_subtract(seg, sr, contams):
     (waveform subtraction can't null independent noise content — physics).
     contams: [(clean_seg_at_expected_level, dt_seconds, lane_gm)]."""
     import librosa
+    if seg.ndim > 1:                            # stereo slice: per channel,
+        cols = []                               # each vs the contam's own side
+        for ch in range(seg.shape[1]):
+            cs = [(c[:, ch] if c.ndim > 1 else c, dt, gm)
+                  for c, dt, gm in contams]
+            cols.append(_spectral_subtract(seg[:, ch], sr, cs))
+        return np.stack(cols, axis=1)
     n_fft, hop = 1024, 256
     S = librosa.stft(seg.astype(np.float32), n_fft=n_fft, hop_length=hop)
     mag = np.abs(S)
@@ -264,6 +271,8 @@ def _identity_verdict(seg, sr, gm):
     fam = _ID_FAMILY.get(gm)
     if fam is None or len(seg) < 256:
         return None
+    if seg.ndim > 1:                            # identity is a MID question
+        seg = seg.mean(axis=1)
     violates, band = _ID_CONTRACT[fam]
     sub, body, hi = _band_shares(seg, sr)
     return band if violates(sub, body, hi) else None
@@ -284,6 +293,10 @@ def _median_replica(x, xb, sr, cands, anchor_i0, l_max, band=None):
     wash, room and other-voice bleed differ per hit and get voted out.
     band=(lo,hi): rows are band-conformed BEFORE the vote (the identity-
     contract rebuild path — kills musically-locked bleed the vote cannot).
+    x may be mono [N] or stereo [N,2] (THE STEREO REPLICA, F6): alignment,
+    gating and levels all stay on xb (banded MONO decisions); only the
+    waveform rows carry channels — the piece's CONSISTENT L/R image survives
+    the per-channel median, incoherent room still dies in the vote.
     Returns (replica, n_used, wash_suppression_db) or None (thin lane)."""
     att = int(0.015 * sr)
     ref = xb[anchor_i0:anchor_i0 + att].astype(np.float64)
@@ -323,7 +336,7 @@ def _median_replica(x, xb, sr, cands, anchor_i0, l_max, band=None):
         a0 = i0 + best_l
         s = x[a0:a0 + L].astype(np.float64)
         if sos is not None:
-            s = sos[1](sos[0], s)
+            s = sos[1](sos[0], s, axis=0)       # time axis (stereo-safe)
         bp = float(np.abs(xb[a0:a0 + L]).max())
         if bp <= 1e-6:
             continue
@@ -334,10 +347,10 @@ def _median_replica(x, xb, sr, cands, anchor_i0, l_max, band=None):
     if len(rows) < 4:
         return None
     lm_n = min(int(np.percentile(lens, 70)), int(l_max * sr))
-    M = np.full((len(rows), lm_n), np.nan)
+    M = np.full((len(rows), lm_n) + rows[0].shape[1:], np.nan)
     for r, s in enumerate(rows):
         M[r, :min(lm_n, len(s))] = s[:lm_n]
-    valid = (~np.isnan(M)).sum(axis=0)
+    valid = (~np.isnan(M if M.ndim == 2 else M[..., 0])).sum(axis=0)
     cut = int(np.argmax(valid < 3)) if bool((valid < 3).any()) else lm_n
     if cut < int(0.05 * sr):
         return None                             # too little common tail
@@ -418,9 +431,68 @@ def _finish_seg(seg, sr):
     """Shared exemplar finishing: 2ms in (pre-attack air), 12ms out."""
     fi = min(len(seg), max(8, int(0.002 * sr)))
     fo = min(len(seg), max(16, int(0.012 * sr)))
-    seg[:fi] *= np.linspace(0.0, 1.0, fi)
-    seg[-fo:] *= np.linspace(1.0, 0.0, fo)
+    wi = np.linspace(0.0, 1.0, fi)
+    wo = np.linspace(1.0, 0.0, fo)
+    if seg.ndim > 1:                            # stereo replica: fade both
+        wi, wo = wi[:, None], wo[:, None]
+    seg[:fi] *= wi
+    seg[-fo:] *= wo
     return seg
+
+
+def _ring_extend(head, sr, bud_s, gm):
+    """THE RING LOOP (F6.4): when a long voice's real tail is unusable (the
+    groove survives subtraction in-band), extend the CLEAN head by
+    crossfade-looping its own final window under its own fitted decay — the
+    classic sampler cymbal-memory technique. Nothing foreign is invented:
+    the content is the head's measured ring, the decay is fitted from the
+    head (fallback: reach -60dB across the voice's TAIL_S budget)."""
+    n = len(head)
+    win = min(n // 3, int(0.15 * sr))
+    if win < int(0.05 * sr):
+        return head
+    mid = head.mean(axis=1) if head.ndim > 1 else head
+    e1 = float(np.sqrt((mid[n // 3:n // 3 + win] ** 2).mean()) + 1e-12)
+    e2 = float(np.sqrt((mid[-win:] ** 2).mean()) + 1e-12)
+    dt = (n - win - n // 3) / sr
+    if e2 < e1 and dt > 0.02:
+        rate = (e2 / e1) ** (1.0 / dt)          # linear ratio per second
+    else:
+        rate = 10.0 ** (-3.0 / max(0.3, bud_s))  # -60dB across the budget
+    rate = float(min(10.0 ** (-3.0 / (bud_s * 1.6)),
+                     max(10.0 ** (-3.0 / 0.15), rate)))
+    total = int(bud_s * 1.1 * sr)
+    if total <= n:
+        return head
+    shape = (total,) + head.shape[1:]
+    out = np.zeros(shape, dtype=np.float64)
+    out[:n] = head
+    w = np.hanning(2 * (win // 2))
+    if head.ndim > 1:
+        w = w[:, None]
+    grabs = [head[-win:][:len(w)].copy(),
+             head[-2 * win:-win][:len(w)].copy() if n >= 2 * win
+             else head[-win:][:len(w)].copy()]
+    for g in grabs:                              # unit-RMS carriers
+        gm_ = g.mean(axis=1) if g.ndim > 1 else g
+        g /= (float(np.sqrt((gm_ ** 2).mean())) + 1e-12)
+    hop = len(w) // 2
+    rng = np.random.default_rng(n)               # deterministic per slice
+    out[n - hop:n] *= w[hop:]                    # seam: head hands over
+    pos = n - hop
+    k = 0
+    while pos + len(w) <= total:
+        t_here = (pos + hop - n) / sr
+        target = e2 * (rate ** max(0.0, t_here))
+        g = grabs[k % 2]
+        if g.ndim > 1:
+            g = np.roll(g, int(rng.integers(0, len(g))), axis=0)
+        else:
+            g = np.roll(g, int(rng.integers(0, len(g))))
+        out[pos:pos + len(w)] += g * w * target
+        pos += hop
+        k += 1
+    return out
 
 
 def _tail_discipline(seg, sr, gm):
@@ -437,14 +509,21 @@ def _tail_discipline(seg, sr, gm):
     out = seg[:min(len(seg), k + fade_n)].copy()
     n = len(out) - k
     if n > 0:
-        out[k:] *= 10.0 ** (-3.0 * np.linspace(0.0, 1.0, n))   # 0 -> -60dB
+        fade = 10.0 ** (-3.0 * np.linspace(0.0, 1.0, n))       # 0 -> -60dB
+        out[k:] *= fade if out.ndim == 1 else fade[:, None]
     return out
 
 
 def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
     """Slice per-lane exemplars out of the stem. Returns kit name or None
-    (too few usable lanes -> caller keeps its stock-kit fallback)."""
-    sr, x = _load_mono(stem_wav)
+    (too few usable lanes -> caller keeps its stock-kit fallback).
+    THE STEREO REPLICA (F6): decisions (candidates, clusters, identity,
+    anchors) run on banded MONO; the shipped waveforms keep the stem's own
+    channels — the record's per-piece image rides every exemplar."""
+    sr, xw = _load_wav(stem_wav)
+    x = xw.mean(axis=1)
+    if xw.shape[1] < 2:                         # mono stem: legacy path exact
+        xw = x
     spb = 60.0 / bpm
     onsets_all = sorted(float(n["start"]) * spb for n in notes)
     lanes = {}
@@ -580,7 +659,7 @@ def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
         band = _identity_verdict(rep[0], sr, gm)
         if band is None:
             return rep, ""
-        rep2 = _median_replica(x, xb_gm, sr, cands, anchor,
+        rep2 = _median_replica(xw, xb_gm, sr, cands, anchor,
                                LANE_MAX_S[gm], band=band)
         hi_s = "top" if band[1] is None else f"{band[1]:.0f}"
         if rep2 is not None:
@@ -603,14 +682,14 @@ def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
         if multi:                               # per-cluster medians: the
             mem0, med0 = clusters[0]            # lane's distinct voices
             pool_u, anch_u = [pool[i] for i in mem0], pool[med0][2]
-            rep = _median_replica(x, xb[gm], sr, pool_u, anch_u, LANE_MAX_S[gm])
+            rep = _median_replica(xw, xb[gm], sr, pool_u, anch_u, LANE_MAX_S[gm])
             if rep is None:                     # thin after the vote: fall
                 multi = False                   # back to the one-voice path
                 pool_u, anch_u = pool, i0
-                rep = _median_replica(x, xb[gm], sr, pool, i0, LANE_MAX_S[gm])
+                rep = _median_replica(xw, xb[gm], sr, pool, i0, LANE_MAX_S[gm])
         else:
             pool_u, anch_u = pool, i0
-            rep = _median_replica(x, xb[gm], sr, pool, i0,
+            rep = _median_replica(xw, xb[gm], sr, pool, i0,
                                   LANE_MAX_S[gm]) if gm in xb else None
         if rep is not None:
             rep, idnote = _identity_gate(rep, xb[gm], pool_u, anch_u, gm)
@@ -624,7 +703,7 @@ def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
                 for j, (mem, med) in enumerate(clusters[1:]):
                     if j >= len(ALT_GM.get(gm, ())):
                         break
-                    repj = _median_replica(x, xb[gm], sr,
+                    repj = _median_replica(xw, xb[gm], sr,
                                            [pool[i] for i in mem],
                                            pool[med][2], LANE_MAX_S[gm])
                     if repj is None:
@@ -650,8 +729,21 @@ def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
                     alts[gm] = built
                     dry_receipts[gm] += f" +{len(built)}voice"
         else:
-            i1 = min(len(x), i0 + int(max(0.05, iso) * sr))
-            seg = x[i0:i1].copy()
+            # THE LONG TAIL (F6 regression court, Chezy's ears 2026-07-17:
+            # the record's crash rings ~2s, the iso cap shipped a 0.19s
+            # CLICK): a long-budget voice (crash/ride/open-hat/tom) slices
+            # its FULL tail budget; every KNOWN hit inside the window —
+            # onsets of voices already built — is spectral-subtracted at
+            # its measured level, the extended tail is conformed to the
+            # voice's own identity band, and a WET-TAIL GATE falls back to
+            # the iso slice when foreign energy survives. Short voices keep
+            # the iso slice exactly as before.
+            iso_n = int(max(0.05, iso) * sr)
+            bud = TAIL_S.get(gm)
+            extend = bud is not None and bud > max(0.05, iso) * 1.5
+            want = min(LANE_MAX_S[gm], bud * 1.15) if extend else max(0.05, iso)
+            i1 = min(len(x), i0 + int(want * sr))
+            seg = xw[i0:i1].copy()
             if len(seg) < int(0.03 * sr):
                 continue
             # SOUND-AWARE CORRECTION: subtract what the OTHER lanes contributed
@@ -661,11 +753,78 @@ def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
             for og, opk, dt in co_list:
                 if og in raw:
                     cseg = raw[og]
-                    own = float(np.abs(_band_filter(cseg, sr, *LANE_BAND_HZ[og])).max())
+                    cmid = cseg.mean(axis=1) if cseg.ndim > 1 else cseg
+                    own = float(np.abs(_band_filter(cmid, sr, *LANE_BAND_HZ[og])).max())
                     if own > 1e-6:
                         contams.append((cseg * (opk / own), dt, og))
+            if extend:
+                t_at = i0 / sr
+                for og, times in lane_times.items():
+                    if og == gm or og not in raw or og not in xb \
+                            or og not in lane_body:
+                        continue
+                    cseg = raw[og]
+                    cmid = cseg.mean(axis=1) if cseg.ndim > 1 else cseg
+                    own = float(np.abs(_band_filter(
+                        cmid, sr, *LANE_BAND_HZ[og])).max())
+                    if own <= 1e-6:
+                        continue
+                    for o in times:
+                        dt = o - t_at
+                        if dt < 0.02:
+                            continue
+                        if dt > want:
+                            break
+                        opk = _hit_band_peak(xb[og], sr, o)
+                        if opk >= lane_body[og] * (10.0 ** (-14.0 / 20.0)):
+                            contams.append((cseg * (opk / own), dt, og))
             if contams:
                 seg = _spectral_subtract(seg, sr, contams)
+            if extend and len(seg) > iso_n + 256:
+                fam_band = _ID_CONTRACT[_ID_FAMILY[gm]][1] \
+                    if gm in _ID_FAMILY else None
+                if fam_band is None:
+                    seg = seg[:iso_n]
+                else:
+                    # conform the extended tail to the voice's own band —
+                    # out-of-band bleed (kick under a cymbal ring) dies here
+                    # BY CONSTRUCTION, subtraction residuals included. The
+                    # filter warms up on a pre-roll of the slice itself, so
+                    # no un-conformed sample ever reaches the tail (a raw
+                    # crossfade leaked the kick residual at the seam).
+                    from scipy.signal import sosfilt as _sf2
+                    pre = min(iso_n, 512)
+                    tail = _sf2(_band_sos(fam_band, sr),
+                                seg[iso_n - pre:], axis=0)[pre:]
+                    seg[iso_n:] = tail
+                    # THE WET-TAIL GATE, on what actually SURVIVES in-band:
+                    # a clean one-shot decays; baked-in neighbor hits RE-RISE
+                    # the tail envelope. >2 audible re-attacks -> the groove
+                    # is in the slice; ship the honest iso cut instead.
+                    tmid = seg[iso_n:].mean(axis=1) if seg.ndim > 1 \
+                        else seg[iso_n:]
+                    hop = max(1, int(sr / 50))
+                    mfr = len(tmid) // hop
+                    if mfr >= 8:
+                        env = np.sqrt((tmid[:mfr * hop].reshape(-1, hop)
+                                       ** 2).mean(1))
+                        db = 20.0 * np.log10(
+                            np.maximum(env / (env.max() + 1e-12), 1e-5))
+                        rises = 0
+                        for i in range(3, len(db)):
+                            if db[i] - db[i - 3] > 6.0 and db[i] > -32.0:
+                                rises += 1
+                        if rises > 2:
+                            # THE RING LOOP: the groove survives in-band —
+                            # the real tail is unusable, but the head's own
+                            # ring is measured truth; extend it under its
+                            # own decay instead of shipping a click
+                            seg = _ring_extend(seg[:iso_n], sr,
+                                               float(bud), gm)
+                            print(f"[kit] LONG-TAIL gm{gm}: {rises} "
+                                  "re-attacks in-band -> RING LOOP from "
+                                  f"the head's own decay "
+                                  f"({len(seg) / sr:.2f}s)", flush=True)
             # IDENTITY CONTRACT on the thin path too: a single slice can't
             # re-vote, but it CAN be band-conformed — same filter, same law
             # (hat_open shipped 99% sub through this door, measured live).
@@ -673,7 +832,7 @@ def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
             band = _identity_verdict(seg, sr, gm)
             if band is not None:
                 from scipy.signal import sosfilt
-                seg = sosfilt(_band_sos(band, sr), seg)
+                seg = sosfilt(_band_sos(band, sr), seg, axis=0)
                 hi_s = "top" if band[1] is None else f"{band[1]:.0f}"
                 idn = f" ID-CONFORMED {band[0]:.0f}-{hi_s}Hz"
                 print(f"[kit] IDENTITY gm{gm}: single-exemplar wore the wrong"
@@ -699,7 +858,8 @@ def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
         if pk < 0.005:
             return None
         seg_n = seg * (0.9 / pk)
-        bp = float(np.abs(_band_filter(seg_n, sr, *LANE_BAND_HZ[gm])).max())
+        mid = seg_n.mean(axis=1) if seg_n.ndim > 1 else seg_n
+        bp = float(np.abs(_band_filter(mid, sr, *LANE_BAND_HZ[gm])).max())
         if bp < 1e-6:
             return None
         return seg_n, round(min(12.0, 20.0 * math.log10(lane_ref[gm] / bp)), 2)
@@ -717,7 +877,7 @@ def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
     for gm in sorted(picked):
         fn = LANE_NAME[gm] + ".wav"
         seg_n, gain_db = picked[gm]
-        _save_mono16(os.path.join(kdir, fn), seg_n, sr)
+        _save_wav16(os.path.join(kdir, fn), seg_n, sr)
         lref = round(20.0 * math.log10(lane_ref[gm] + 1e-12), 2)
         samples.append({"file": fn, "keyNote": gm, "minNote": gm,
                         "maxNote": gm, "gainDb": gain_db, "laneRefDb": lref})
@@ -728,7 +888,7 @@ def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
                 continue
             sa, ga = a
             fn_a = f"{LANE_NAME[gm]}_alt{ap}.wav"
-            _save_mono16(os.path.join(kdir, fn_a), sa, sr)
+            _save_wav16(os.path.join(kdir, fn_a), sa, sr)
             samples.append({"file": fn_a, "keyNote": ap, "minNote": ap,
                             "maxNote": ap, "gainDb": ga, "laneRefDb": lref})
             shipped.append({"pitch": ap, "file": fn_a, "n": int(n_rows),
@@ -740,6 +900,7 @@ def build_source_kit(stem_wav, notes, name, bpm=120.0, min_lanes=2):
                                 + shipped)
     kit_doc = {"name": name, "kind": "drum", "openEnded": True,
                "calib": "engine-db-v4-ceiling",
+               "channels": 2 if (picked and next(iter(picked.values()))[0].ndim > 1) else 1,
                "source": os.path.relpath(stem_wav, ROOT),
                "samples": samples}
     if ex_meta:
@@ -1152,13 +1313,36 @@ def build_pitched_kit(stem_wav, notes, name, bpm=120.0, min_notes=6, role="melod
         return None, notes
 
     work = [dict(n) for n in notes]
-    # ---- THE SUSTAIN LAW (loss anatomy 2026-07-08: the record still rings at
-    # 29-55% amplitude after note-off on EVERY stem measured — transcribers
-    # report the voiced core, the instrument rings longer). Extend each note
-    # until its own band envelope decays 26dB below its head, bounded by the
-    # next onset (any pitch when the stem plays one line at a time, same
-    # pitch when it plays chords, +0.22s ring-under allowance). The roll gets
-    # the TRUE lengths; the gate stops amputating sustains.
+    # ---- THE ARTICULATION LAW (2026-07-16, Chezy: "STILL OVERLAPS IN THE
+    # STEMS!"): the RING belongs to the VOICE, not the NOTE. Writing the
+    # measured ring into note lengths turned every dense roll into
+    # overlapping lasagna (pads at p50 3.5 beats, 5-7 bars stacked) — while
+    # the kit's own exemplar slices already CARRY each pitch's natural tail.
+    # Ring semantics decide the length law, and the DENSITY GATE below
+    # (proven on bass 2026-07-09: discrete lines ring OPEN +3.8..+12.6,
+    # mostly-glide lines gate) now judges melodic parts too:
+    #   open ring  -> one-shot playback, notes keep the transcriber's short
+    #                 ARTICULATION lengths (clean readable roll, same sound)
+    #   gated      -> the sustain law extends lengths so the gate stops
+    #                 amputating sustains (unchanged, glide/legato material)
+    open_ring = True
+    if len(work) >= 6:
+        ot = list(np.argsort(starts))
+        glide_t, cur = 0.0, [ot[0]]
+        for k in ot[1:]:
+            step = abs(int(pitches[k]) - int(pitches[cur[-1]]))
+            if (starts[k] - ends[cur[-1]]) < 0.06 and 1 <= step <= 2:
+                cur.append(k)
+            else:
+                if len(cur) >= 3:
+                    glide_t += float(ends[cur[-1]] - starts[cur[0]])
+                cur = [k]
+        if len(cur) >= 3:
+            glide_t += float(ends[cur[-1]] - starts[cur[0]])
+        open_ring = glide_t < 0.5 * max(float(lens.sum()), 1e-6)
+    if open_ring and role != "bass":
+        print("[kit] articulation law: discrete line -> open ring, "
+              "the roll keeps short articulation lengths", flush=True)
     ov = 0
     for i in range(len(work)):
         o = (starts < ends[i] - 0.05) & (ends > starts[i] + 0.05)
@@ -1167,6 +1351,8 @@ def build_pitched_kit(stem_wav, notes, name, bpm=120.0, min_notes=6, role="melod
     is_mono = (ov / max(1, len(work))) < 0.20
     hopE = int(sr / 100)
     for i in range(len(work)):
+        if open_ring:
+            break                # articulation lengths stand (ring = the voice)
         t, ln = starts[i], lens[i]
         if is_mono:
             j = np.searchsorted(sorted_starts, t + 0.01, side="right")
@@ -1179,8 +1365,17 @@ def build_pitched_kit(stem_wav, notes, name, bpm=120.0, min_notes=6, role="melod
             ring = -0.01 if role == "bass" else 0.22
             limit = (sorted_starts[j] + ring) if j < len(sorted_starts) else t + ln + 3.0
         else:
+            # THE LENGTH COURT F1 (docs/IMPORT_FINALE.md, 2026-07-15 "choir
+            # of the same instrument"): in a polyphonic bed the band envelope
+            # is CONTAMINATED — co-sounding notes keep feeding it, it never
+            # decays 26dB, and every note extended to its far bound (next
+            # same-pitch onset, seconds away; goldenbrown guitar p50 len
+            # 0.47 -> 5.97 beats, 5-15 voices ringing at once). A poly note
+            # may ring a bounded moment past its transcribed end, never
+            # chain into its own next articulation.
             same = starts[(pitches == pitches[i]) & (starts > t + 0.01)]
             limit = (float(same.min()) - 0.01) if len(same) else t + ln + 3.0
+            limit = min(limit, t + ln * 1.5 + 0.35)
         limit = min(limit, t + ln + 3.0, len(x) / sr)
         if limit <= t + ln + 0.03:
             continue
@@ -1315,21 +1510,8 @@ def build_pitched_kit(stem_wav, notes, name, bpm=120.0, min_notes=6, role="melod
     # of one continuous gesture, masked at once by the next step, so rings
     # stack into mud. Mostly-glide lines play GATED; discrete lines ring
     # OPEN (one-shot, length-blind — standard sampler semantics).
-    open_ring = role == "bass"
-    if open_ring and len(work) >= 6:
-        ot = list(np.argsort(starts))
-        glide_t, cur = 0.0, [ot[0]]
-        for k in ot[1:]:
-            step = abs(int(pitches[k]) - int(pitches[cur[-1]]))
-            if (starts[k] - ends[cur[-1]]) < 0.06 and 1 <= step <= 2:
-                cur.append(k)
-            else:
-                if len(cur) >= 3:
-                    glide_t += float(ends[cur[-1]] - starts[cur[0]])
-                cur = [k]
-        if len(cur) >= 3:
-            glide_t += float(ends[cur[-1]] - starts[cur[0]])
-        open_ring = glide_t < 0.5 * max(float(lens.sum()), 1e-6)
+    # open_ring was decided ABOVE (THE ARTICULATION LAW) — it owns both the
+    # length law and the kit's ring semantics for every role now.
 
     by_pitch = {}
     for i, p in enumerate(pitches):

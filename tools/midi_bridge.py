@@ -7,8 +7,19 @@
 Export: track 0 = tempo map; one MIDI track per song track (named). Sample-drum tracks
 go to channel 10 (GM convention), everything else cycles melodic channels.
 Import: notes -> beats (from division), first set_tempo -> bpm, channel-10 tracks -> gm_drums,
-melodic tracks -> piano kit by default (reassign sources afterwards in the app/agent)."""
-import json, os, struct, sys
+melodic tracks -> piano kit by default (reassign sources afterwards in the app/agent).
+
+AUTOMATION (v2): track gainDb/pan lanes ride as CC7/CC10 streams. MIDI CC is a
+STEP function, so curve=+1.0 (hold-then-step) is its NATIVE semantic — 2 events,
+exact; every other curve densifies through tools/tracktion_curve (the engine's
+own bezier) into 16 steps, consecutive-equal values deduped. Volume taper is the
+GM 40*log10 law (foreign players render the fade correctly); cc0 = -96 dB floor,
++dB has no CC7 form (capped at 0 = cc127, counted). Import lands CC7/CC10 back
+as hold-point lanes (the literal truth of what a MIDI player does); the value
+maps are exact inverses, so the bridge stays byte-idempotent after pass one.
+fx[i].*/source.* targets have no SMF form — skipped and counted, never silently.
+"""
+import json, math, os, struct, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # ONE RESOLVER law (grid_lint): all bar<->quarter math lives in tools/meter.py.
@@ -16,6 +27,51 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from meter import bar_start_q as _bar_start_q
 
 TPQ = 480  # ticks per quarter
+CC_DENSIFY = 16   # engine-sampled steps per non-hold automation segment
+CC_FLOOR_DB = -96.0   # cc 0 <-> -96 dB (exact-inverse pair; keeps idempotence)
+
+def _db_to_cc(v):
+    v = float(v)
+    if v <= CC_FLOOR_DB + 0.1:
+        return 0
+    return max(0, min(127, int(round(127.0 * 10.0 ** (min(0.0, v) / 40.0)))))
+
+def _cc_to_db(cc):
+    return CC_FLOOR_DB if cc == 0 else round(40.0 * math.log10(cc / 127.0), 3)
+
+def _pan_to_cc(v):
+    return max(0, min(127, 64 + int(round(float(v) * 63.5))))
+
+def _cc_to_pan(cc):
+    return round(max(-1.0, min(1.0, (cc - 64) / 63.5)), 4)
+
+def _cc_events(lane, ch, cc, conv):
+    """One automation lane -> deduped CC step events, engine-true shapes."""
+    from tracktion_curve import curve_value
+    pts = sorted(({"beat": float(p.get("beat", 0)), "v": float(p.get("v", 0)),
+                   "curve": float(p.get("curve", 0.0))}
+                  for p in lane.get("points", []) if isinstance(p, dict)),
+                 key=lambda p: p["beat"])
+    raw = []
+    for i, p in enumerate(pts):
+        raw.append((p["beat"], p["v"]))
+        if i == len(pts) - 1:
+            break
+        nxt = pts[i + 1]
+        span = nxt["beat"] - p["beat"]
+        if p["curve"] < 0.999 and span > 1e-9:      # hold needs NO interior steps
+            for k in range(1, CC_DENSIFY + 1):
+                x = p["beat"] + span * k / (CC_DENSIFY + 1)
+                raw.append((x, curve_value(x, p["beat"], p["v"],
+                                           nxt["beat"], nxt["v"], p["curve"])))
+    evs, last = [], None
+    for beat, v in raw:
+        val = conv(v)
+        if val == last:
+            continue
+        last = val
+        evs.append((int(round(beat * TPQ)), 0, bytes([0xB0 | ch, cc, val])))
+    return evs
 
 # ---------------- writing ----------------
 def vlq(n):
@@ -26,8 +82,22 @@ def vlq(n):
         n >>= 7
     return bytes(reversed(out))
 
-def export_midi(song_path, midi_path):
+def export_midi(song_path, midi_path, portable=False):
     song = json.load(open(song_path))
+    receipts = None
+    if portable:
+        # THE PORTABLE SCORE (Chezy 2026-08-03 "BY THE BOOK... STILL BE THE
+        # SAME ORIGINAL SONG in a generic DAW"): project through the producer
+        # pass (dewave/degun/pocket/gate/density/velocity + GM identity)
+        # before emitting bytes. The in-DAW lanes are untouched. DEFAULT OFF
+        # here: the bare function keeps the byte-idempotence law every
+        # bridge battery rides; user doors (CLI --portable, daw_mcp) opt in.
+        try:
+            import midi_producer
+            song, receipts = midi_producer.produce(song)
+        except Exception as pe:
+            print(f"[midi] producer pass skipped ({pe}) -> raw export",
+                  flush=True)
     bpm = float(song.get("bpm", 120))
     tracks = song.get("tracks", [])
 
@@ -60,6 +130,7 @@ def export_midi(song_path, midi_path):
 
     melodic_ch = [c for c in range(16) if c != 9]
     mi = 0
+    cc_skipped = 0
     for t in tracks:
         src = t.get("source", {})
         is_drum = src.get("kind") == "sample" and "drum" in str(src.get("kit", src.get("id", "")))
@@ -70,6 +141,23 @@ def export_midi(song_path, midi_path):
         events = []  # (tick, priority, bytes)
         name = t.get("name", "track").encode()[:60]
         events.append((0, 0, b"\xFF\x03" + bytes([len(name)]) + name))
+        if portable and not is_drum:
+            # GM identity: a generic DAW must hear bass as bass, choir as
+            # vocals — not thirteen grand pianos (portable-gated so the raw
+            # byte-idempotence contract stays exact).
+            import midi_producer as _mp
+            events.append((0, 0, bytes([0xC0 | ch,
+                                        _mp.program_of(t.get("name", ""))])))
+        for lane in t.get("automation", []) or []:
+            if not isinstance(lane, dict):
+                continue
+            tgt = str(lane.get("target", ""))
+            if tgt == "gainDb":
+                events += _cc_events(lane, ch, 7, _db_to_cc)
+            elif tgt == "pan":
+                events += _cc_events(lane, ch, 10, _pan_to_cc)
+            else:
+                cc_skipped += 1          # fx[i].*/source.*: no SMF form
         # normalize: truncate a note at the next same-pitch onset (MIDI can't overlap same pitch/ch)
         notes = sorted(t.get("notes", []), key=lambda n: float(n["start"]))
         next_onset = {}
@@ -95,8 +183,21 @@ def export_midi(song_path, midi_path):
 
     hdr = b"MThd" + struct.pack(">IHHH", 6, 1, len(chunks), TPQ)
     open(midi_path, "wb").write(hdr + b"".join(chunks))
+    if receipts:
+        moved = sum(1 for r in receipts.values()
+                    if r["before"] != r["after"])
+        wb = sum(r["before"]["wavy"] for r in receipts.values())
+        wa = sum(r["after"]["wavy"] for r in receipts.values())
+        print(f"[midi] PORTABLE SCORE: {moved} lanes produced "
+              f"(wavy {wb}->{wa}, velocities in musical bands, GM programs "
+              f"stamped)", flush=True)
     n = sum(len(t.get("notes", [])) for t in tracks)
-    return f"exported {len(tracks)} tracks / {n} notes @ {bpm:.0f}bpm -> {midi_path}"
+    n_cc = sum(1 for t in tracks for l in t.get("automation", []) or []
+               if isinstance(l, dict) and str(l.get("target")) in ("gainDb", "pan"))
+    return (f"exported {len(tracks)} tracks / {n} notes"
+            + (f" / {n_cc} automation lanes as CC7/CC10" if n_cc else "")
+            + (f" ({cc_skipped} fx/source lanes have no SMF form)" if cc_skipped else "")
+            + f" @ {bpm:.0f}bpm -> {midi_path}")
 
 # ---------------- reading ----------------
 def read_vlq(data, i):
@@ -127,6 +228,7 @@ def import_midi(midi_path, song_path, drum_kit="gm_drums", melodic_kit="piano"):
         active = {}   # (ch,pitch) -> (start_tick, vel)
         notes = []
         channels = set()
+        cc_lanes = {}   # cc number (7|10) -> [(tick, value)]
         while j < end:
             delta, j = read_vlq(data, j)
             tick += delta
@@ -154,7 +256,9 @@ def import_midi(midi_path, song_path, drum_kit="gm_drums", melodic_kit="piano"):
                 d1, d2 = data[j], 0; j += 1
             else:
                 j += 1; continue
-            if hi == 0x90 and d2 > 0:
+            if hi == 0xB0 and d1 in (7, 10):
+                cc_lanes.setdefault(d1, []).append((tick, d2))
+            elif hi == 0x90 and d2 > 0:
                 active[(ch, d1)] = (tick, d2); channels.add(ch)
             elif hi == 0x80 or (hi == 0x90 and d2 == 0):
                 st = active.pop((ch, d1), None)
@@ -163,14 +267,27 @@ def import_midi(midi_path, song_path, drum_kit="gm_drums", melodic_kit="piano"):
                                   "len": round(max(1, tick - st[0]) / division, 4),
                                   "pitch": d1, "vel": round(st[1] / 127.0, 3)})
         i = end
-        if notes:
+        autos = []
+        for ccn in sorted(cc_lanes):
+            pts = []
+            for tk, val in cc_lanes[ccn]:
+                p = {"beat": round(tk / division, 4),
+                     "v": _cc_to_db(val) if ccn == 7 else _cc_to_pan(val),
+                     "curve": 1.0}          # CC is a step stream: hold IS its truth
+                pts.append(p)
+            if pts:
+                pts[-1].pop("curve")
+                autos.append({"target": "gainDb" if ccn == 7 else "pan", "points": pts})
+        if notes or autos:
             notes.sort(key=lambda n: n["start"])
             is_drum = channels == {9} or (9 in channels and len(channels) == 1)
-            out_tracks.append({
-                "name": name or ("drums" if is_drum else f"midi_{len(out_tracks)+1}"),
-                "source": {"kind": "sample", "kit": drum_kit if is_drum else melodic_kit},
-                "gainDb": -6.0,
-                "notes": notes})
+            tr = {"name": name or ("drums" if is_drum else f"midi_{len(out_tracks)+1}"),
+                  "source": {"kind": "sample", "kit": drum_kit if is_drum else melodic_kit},
+                  "gainDb": -6.0,
+                  "notes": notes}
+            if autos:
+                tr["automation"] = autos
+            out_tracks.append(tr)
     # FF58 -> meterMap: walk regions in tick space (a bar of the running meter
     # is num*4/den QUARTER ticks); skip restatements of the running meter; a
     # lone 4/4-at-0 is the SMF default, not a map. Dedupe ticks (track 0 wins).
@@ -188,8 +305,11 @@ def import_midi(midi_path, song_path, drum_kit="gm_drums", melodic_kit="piano"):
                 num, den = n2, d2
                 meter.append({"bar": int(round(bar)), "num": num, "den": den})
     max_beat = max((n["start"] + n["len"] for t in out_tracks for n in t["notes"]), default=16)
+    for t in out_tracks:                 # a CC ride past the last note still needs world
+        for lane in t.get("automation", []) or []:
+            if lane["points"]:
+                max_beat = max(max_beat, lane["points"][-1]["beat"])
     if meter:
-        import math
         bar, pq, bpb = 0, 0.0, 4.0
         for mp in meter:
             mq = _bar_start_q(meter, int(mp["bar"]))
@@ -210,13 +330,22 @@ def import_midi(midi_path, song_path, drum_kit="gm_drums", melodic_kit="piano"):
         song["meterMap"] = meter
     json.dump(song, open(song_path, "w"), indent=1)
     n = sum(len(t["notes"]) for t in out_tracks)
-    return f"imported {len(out_tracks)} tracks / {n} notes @ {bpm:.1f}bpm -> {song_path} (sources default to kits; reassign as needed)"
+    n_cc = sum(len(t.get("automation", []) or []) for t in out_tracks)
+    return (f"imported {len(out_tracks)} tracks / {n} notes"
+            + (f" / {n_cc} CC automation lanes" if n_cc else "")
+            + f" @ {bpm:.1f}bpm -> {song_path} (sources default to kits; reassign as needed)")
 
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "export":
-        print(export_midi(sys.argv[2], sys.argv[3]))
+        portable = "--portable" in sys.argv
+        args = [a for a in sys.argv[2:] if a != "--portable"]
+        print(export_midi(args[0], args[1], portable=portable))
     elif cmd == "import":
         print(import_midi(sys.argv[2], sys.argv[3]))
     else:
-        sys.exit("usage: midi_bridge.py export <song.json> <out.mid> | import <in.mid> <song.json>")
+        sys.exit("usage: midi_bridge.py export <song.json> <out.mid> "
+                 "[--portable] | import <in.mid> <song.json>\n"
+                 "  --portable = THE PORTABLE SCORE producer pass (dewave/"
+                 "velocity/GM identity) — the .mid plays as THE SONG on "
+                 "generic instruments; bare export stays byte-faithful")

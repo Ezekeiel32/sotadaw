@@ -441,6 +441,72 @@ def bench_voice(name, note=60, vel=1.0, tag=None):
     return r
 
 
+# THE REGISTER + OVERLAP HEADROOM COURT (2026-07-31). The single-note C4 cert
+# had two measured blind spots: (a) REGISTER — bass_warm certs 0-clipped at C4
+# but clips 81 samples at D2/A1, where basses actually live (its resonant sweep
+# amplifies exactly the low harmonics C4 keeps out of the band); (b) OVERLAP —
+# trumpet_lead certs clean mono but clipped only when legato tails summed two
+# voices. The law is "0 clipped at vel 1.0 SOLO" — solo means any register a
+# user can play and any legato a phrase can contain, so the cert now probes
+# A1/C4/A5 plus a fifth-apart overlapping pair and reports each.
+HEADROOM_REGISTERS = (33, 60, 81)          # A1 / C4 / A5
+
+
+def headroom_probe(name, tag=None):
+    """-> {"registers": {"33": {peak_dbfs, clipped}, ...},
+           "overlap": {peak_dbfs, clipped}, "clipped_total": int} or {"error"}"""
+    out = {"registers": {}, "overlap": None}
+    total = 0
+    for note in HEADROOM_REGISTERS:
+        song = {"version": 2, "bpm": BPM, "lengthBars": 3, "masterGainDb": 0,
+                "master": [],
+                "tracks": [{"name": "probe", "source": {"kind": "faust", "id": name},
+                            "gainDb": 0.0,
+                            "notes": [{"start": 1.0, "len": 4.0, "pitch": note,
+                                       "vel": 1.0}]}]}
+        w, sha = render(song, f"{tag or name}_hr{note}")
+        if w is None:
+            return {"error": f"headroom render failed at note {note}: {sha}"}
+        x2 = read_wav(w)[0]
+        peak = float(np.abs(x2).max()) if len(x2) else 0.0
+        clipped = int((np.abs(x2) >= 0.999).sum())
+        out["registers"][str(note)] = {"peak_dbfs": _db(peak), "clipped": clipped}
+        total += clipped
+    # legato reality: two vel-1.0 voices a fifth apart, 3.5 beats of overlap
+    song = {"version": 2, "bpm": BPM, "lengthBars": 3, "masterGainDb": 0,
+            "master": [],
+            "tracks": [{"name": "probe", "source": {"kind": "faust", "id": name},
+                        "gainDb": 0.0,
+                        "notes": [{"start": 1.0, "len": 4.0, "pitch": 60, "vel": 1.0},
+                                  {"start": 1.5, "len": 4.0, "pitch": 67, "vel": 1.0}]}]}
+    w, sha = render(song, f"{tag or name}_hrov")
+    if w is None:
+        return {"error": f"headroom overlap render failed: {sha}"}
+    x2 = read_wav(w)[0]
+    peak = float(np.abs(x2).max()) if len(x2) else 0.0
+    clipped = int((np.abs(x2) >= 0.999).sum())
+    out["overlap"] = {"peak_dbfs": _db(peak), "clipped": clipped}
+    # retrigger reality: staccato root/fifth alternation at the LOW register —
+    # the exact pattern class that clipped bass_warm (81 samples) while every
+    # single-note probe passed: retrigger phase + release tails + resonant
+    # filter state sum past margins a lone note never reaches
+    rt = [{"start": 1.0 + i * 0.5, "len": 0.45,
+           "pitch": 33 if i % 2 == 0 else 40, "vel": 1.0} for i in range(8)]
+    song = {"version": 2, "bpm": BPM, "lengthBars": 3, "masterGainDb": 0,
+            "master": [],
+            "tracks": [{"name": "probe", "source": {"kind": "faust", "id": name},
+                        "gainDb": 0.0, "notes": rt}]}
+    w, sha = render(song, f"{tag or name}_hrrt")
+    if w is None:
+        return {"error": f"headroom retrigger render failed: {sha}"}
+    x2 = read_wav(w)[0]
+    peak = float(np.abs(x2).max()) if len(x2) else 0.0
+    clipped = int((np.abs(x2) >= 0.999).sum())
+    out["retrigger"] = {"peak_dbfs": _db(peak), "clipped": clipped}
+    out["clipped_total"] = total + out["overlap"]["clipped"] + clipped
+    return out
+
+
 def tails_probe():
     """G7/P15: does a render truncate fx tails past the edit end? Measure, don't vibe."""
     fx = [{"id": "fx_reverb", "params": {"mix": 1.0, "size": 0.97}}]
@@ -589,8 +655,16 @@ def cert_one(name, force=False):
                          ("peak_dbfs", "clipped_samples", "attack_ms",
                           "sustain_rms_db", "sustain_centroid_hz", "harmonics_top",
                           "decay_to_m60_s", "noise_tail_dbfs")})
+            hr = headroom_probe(name, tag=f"c_{name}")
+            if "error" not in hr:
+                base["headroom"] = hr
             base["verdicts"] = {
                 "headroom_pass_vel1": r["clipped_samples"] == 0,   # voice-headroom law
+                # the widened law: 0 clipped at vel 1.0 in EVERY register a user
+                # can play (A1/C4/A5) AND under legato overlap (register + overlap
+                # blind spots measured 2026-07-31: bass_warm / trumpet_lead)
+                "headroom_pass_registers": ("error" in hr or
+                                            hr["clipped_total"] == 0),
                 # peak_dbfs == 0.0 (FULL SCALE) is falsy — a bare `or` here once read
                 # slammed voices as "silent". Explicit None check only.
                 "audible": (-200.0 if r["peak_dbfs"] is None
@@ -674,12 +748,15 @@ def selftest(keep=False):
         check("S3 fx_saturate THD monotone in drive",
               thds[0] < thds[1] < thds[2], f"{thds} %")
 
-        # S4 fx_truepeak: latency ~= its 128-sample lookahead
+        # S4 fx_truepeak: latency ~= the W114 TWO-STAGE cascade's 2x(LA+GD) =
+        # 2x(128+16) = 288 samples (the 112..160 bound encoded the pre-W114
+        # single-stage wall and went stale when the cascade shipped; measured
+        # 288 exact on the post-AOT-bake binary 2026-07-31)
         r4 = bench_chain([{"id": "fx_truepeak", "params": {"ceiling": -1.0}}],
                          probes=("ess",), tag="s4")
         lat = r4["ess"]["latency_samples"]
-        check("S4 fx_truepeak latency ~= 128-sample lookahead",
-              112 <= lat <= 160, f"{lat} samples, gd {r4['ess']['gd_ms']} ms")
+        check("S4 fx_truepeak latency ~= 2x(128+16) two-stage cascade",
+              256 <= lat <= 320, f"{lat} samples, gd {r4['ess']['gd_ms']} ms")
 
         # S5 silence through fx_trim: the floor is the file format's, nothing more
         r5 = bench_chain([{"id": "fx_trim", "params": {"level": 0.0}}],

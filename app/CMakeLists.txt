@@ -119,6 +119,19 @@ set_target_properties(clap_host PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # juce_cryptography: the render seal's SHA256 print (docs/THE_PHYSICS.md E11) — m1 only
 target_link_libraries(m1 PRIVATE tracktion_engine juce::juce_cryptography ${SOTADAW_FAUST_LIB} nam_core clap_host ${CMAKE_DL_LIBS})
 
+# THE TYPE IS THE PRODUCT (relight v8): Inter (UI) + JetBrains Mono (LCDs/digits)
+# embedded as BinaryData — the same face on every machine. Public builds used to
+# render with whatever fontconfig offered (Noto here, DejaVu elsewhere). SIL OFL
+# licenses ride in app/fonts/. UI-only: m1 never links this.
+juce_add_binary_data(sotadaw_fonts SOURCES
+    fonts/Inter-Regular.ttf
+    fonts/Inter-SemiBold.ttf
+    fonts/JetBrainsMono-Regular.ttf
+    fonts/JetBrainsMono-Bold.ttf
+    fonts/Bravura.otf
+    icon.png)
+set_target_properties(sotadaw_fonts PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # --- GUI app (UI seam v0) ---
 juce_add_gui_app(sotadaw PRODUCT_NAME "SOTA DAW")
 target_sources(sotadaw PRIVATE ui_main.cpp)
@@ -139,7 +152,7 @@ target_compile_definitions(sotadaw PRIVATE
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
     TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     SOTADAW_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
-target_link_libraries(sotadaw PRIVATE tracktion_engine ${SOTADAW_FAUST_LIB} nam_core clap_host ${CMAKE_DL_LIBS})
+target_link_libraries(sotadaw PRIVATE tracktion_engine ${SOTADAW_FAUST_LIB} nam_core clap_host sotadaw_fonts ${CMAKE_DL_LIBS})
 
 juce_add_console_app(uismoke PRODUCT_NAME "uismoke")
 target_sources(uismoke PRIVATE uismoke.cpp)
@@ -149,6 +162,7 @@ target_compile_definitions(uismoke PRIVATE
     SOTADAW_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(uismoke PRIVATE
     juce::juce_gui_basics juce::juce_graphics juce::juce_gui_extra
+    sotadaw_fonts
     juce::juce_recommended_config_flags)
 
 # THE VOICE GPU RAIL (Chezy: "BUILD IT IN TO CMAKE>"): every build keeps the

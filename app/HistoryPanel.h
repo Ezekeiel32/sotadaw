@@ -120,7 +120,7 @@ public:
         if (scopeR (1).contains (p)) { if (! all && onScope) onScope (true); return; }
         if (! all)
         {
-            for (int i = 0; i <= chips.size() && i <= 12; ++i)
+            for (int i = 0; i <= visibleChips(); ++i)   // clipped chips never take clicks
                 if (chipR (i).contains (p))
                 {
                     const auto want = i == 0 ? juce::String() : chips[i - 1];
@@ -472,7 +472,8 @@ private:
         for (auto& r : rows)
             if (r.stats) for (auto& t : r.touched) counts[t]++;
         segAt (g, chipR (0), "ALL LANES", filter.isEmpty(), theme::accent);
-        for (int i = 0; i < chips.size() && i < 12; ++i)
+        const int fit = visibleChips();
+        for (int i = 0; i < fit; ++i)
         {
             const auto n = counts.count (chips[i]) ? counts[chips[i]] : 0;
             theme::chip (g, chipR (i + 1).toFloat(), laneColour (chips[i]),
@@ -481,6 +482,21 @@ private:
                          filter == chips[i] ? 0.30f : 0.10f,
                          filter == chips[i] ? 0.95f : 0.35f);
         }
+        const int lim = juce::jmin (chips.size(), 12);
+        if (fit < lim)   // the tail SPEAKS: lanes that didn't fit are counted, not cut mid-chip
+            theme::chip (g, chipR (fit + 1).withWidth (36).toFloat(), theme::textMute,
+                         "+" + juce::String (lim - fit), theme::caps (8.5f), 0.10f, 0.45f);
+    }
+    int visibleChips() const          // whole chips only — the row never clips mid-body
+    {
+        const int lim = juce::jmin (chips.size(), 12);
+        const int edge = chipsRowR().getRight();
+        int fit = lim;
+        for (int i = 0; i < lim; ++i)
+            if (chipR (i + 1).getRight() > edge) { fit = i; break; }
+        if (fit < lim)                                  // reserve room for the +N tail
+            while (fit > 0 && chipR (fit).getRight() > edge - 42) --fit;
+        return fit;
     }
 
     juce::Rectangle<int> chipR (int i) const
@@ -669,7 +685,7 @@ private:
         if (take)   fill = fill.interpolatedWith (kc, 0.035f);
         g.setColour (fill);
         g.fillRoundedRectangle (body, 6.0f);
-        g.setColour (active ? theme::good.withAlpha (0.60f)
+        g.setColour (active ? theme::good.withAlpha (0.33f)
                             : take ? kc.withAlpha (hot ? 0.45f : 0.22f)
                                    : theme::line.withAlpha (hot ? 1.0f : 0.55f));
         g.drawRoundedRectangle (body.reduced (0.5f), 6.0f, 1.0f);

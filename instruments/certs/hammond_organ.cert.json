@@ -2,9 +2,9 @@
  "name": "hammond_organ",
  "kind": "voice",
  "dsp_sha": "22d43c61319ff895",
- "m1_md5": "cec426b253528867",
+ "m1_md5": "caee7f9167c3a7bd",
  "machine": "chezy-LOQ-15IAX9E",
- "date": "2026-07-07",
+ "date": "2026-07-31",
  "law": "E2 (docs/THE_PHYSICS.md)",
  "peak_dbfs": -8.11,
  "clipped_samples": 0,
@@ -47,8 +47,34 @@
  ],
  "decay_to_m60_s": 1.95,
  "noise_tail_dbfs": -200.0,
+ "headroom": {
+  "registers": {
+   "33": {
+    "peak_dbfs": -7.58,
+    "clipped": 0
+   },
+   "60": {
+    "peak_dbfs": -8.11,
+    "clipped": 0
+   },
+   "81": {
+    "peak_dbfs": -9.32,
+    "clipped": 0
+   }
+  },
+  "overlap": {
+   "peak_dbfs": -7.64,
+   "clipped": 0
+  },
+  "retrigger": {
+   "peak_dbfs": -6.96,
+   "clipped": 0
+  },
+  "clipped_total": 0
+ },
  "verdicts": {
   "headroom_pass_vel1": true,
+  "headroom_pass_registers": true,
   "audible": true
  }
 }

@@ -205,6 +205,45 @@ def ingest():
     print(f"ingested {rows} verdicts ({total_y} accepted) across {len(stats)} genres:",
           {g: f"{s['y']}/{s['n']}" for g, s in stats.items()})
 
+    # THE MACHINE COMPLAINTS (2026-07-31): the reject autopsy's red courts
+    # (telemetry/courts.jsonl, genre-stamped since the court funnel) are the
+    # taste circle's MACHINE dimension — a genre whose rejected takes keep
+    # failing the pocket court has a groove problem no user put into words.
+    # Genre.court_flags mirrors the complaints string ("pocket:5;key:2") so
+    # the skill compiler surfaces both voices side by side. Historical rows
+    # without a genre stamp join through the verdict rows' own attribution;
+    # unjoinable rows are SKIPPED (never an _untagged smear).
+    courts_path = os.path.join(ROOT, "telemetry", "courts.jsonl")
+    if os.path.exists(courts_path):
+        song_map = {}
+        for row, genre in zip(all_rows, attribute_rows(all_rows, genres, song_genre)):
+            if genre != "_untagged" and row.get("song"):
+                song_map[row["song"]] = genre
+        cstats = {}
+        c_rows = 0
+        for line in open(courts_path):
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if r.get("kind") != "reject_autopsy" or not r.get("red_courts"):
+                continue
+            g = r.get("genre") or song_map.get(r.get("song", ""))
+            if not g or g not in genres:
+                continue
+            c_rows += 1
+            cs = cstats.setdefault(g, {})
+            for court in r["red_courts"]:
+                cs[court] = cs.get(court, 0) + 1
+        for g, cs in cstats.items():
+            flags = ";".join(f"{k}:{v}" for k, v in
+                             sorted(cs.items(), key=lambda kv: -kv[1]))
+            kg.g.query(f"MATCH (g:Genre {{name: '{esc(g)}'}}) "
+                       f"SET g.court_flags = '{esc(flags)}'")
+        if cstats:
+            print(f"machine courts: {c_rows} red-court autopsies ->",
+                  {g: ";".join(f"{k}:{v}" for k, v in cs.items()) for g, cs in cstats.items()})
+
     # THE CRANK TRIGGER (BEST_DAW_30 #4c): a genre whose complaint bucket hits 3
     # has told us the same thing three times — file advisor PROPOSALS immediately
     # (factory_advisor is free + proposals-only: a human or a supervised

@@ -336,7 +336,7 @@ class Duduk : public dsp {
 		float fSlow12 = fConst19 * float(fHslider5);
 		float fSlow13 = float(fHslider6);
 		float fSlow14 = float(fHslider7);
-		float fSlow15 = 0.6f * float(fHslider8);
+		float fSlow15 = 0.42f * float(fHslider8);
 		for (int i0 = 0; i0 < count; i0 = i0 + 1) {
 			iVec0[0] = 1;
 			fVec1[0] = fSlow0;

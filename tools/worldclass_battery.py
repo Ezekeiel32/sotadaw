@@ -135,9 +135,17 @@ def main():
     v = wc.floor_verdict(s, LOUD)
     fixed, rec = wc.heal(s, v)
     walls = [f for f in fixed["master"] if f.get("id") == "fx_truepeak"]
-    check("double wall merges to ONE, tightest ceiling survives",
-          len(walls) == 1 and walls[0]["params"]["ceiling"] == -1.5
+    check("double wall merges to ONE, tightest ceiling survives "
+          "(w48: the upgraded wall is LOUDNESS-AWARE — a -10.5 LUFS "
+          "master writes -2.0 per the Spotify rule, and -2.0 IS the "
+          "tightest)",
+          len(walls) == 1 and walls[0]["params"]["ceiling"] == -2.0
           and fixed["master"][-1]["id"] == "fx_truepeak", fixed["master"])
+    # the quiet-master path keeps -1.0 (codec headroom not needed)
+    check("loudness-aware ceiling: quiet master -> -1.0, hot -> -2.0, "
+          "unknown -> -1.2",
+          wc.ceiling_for(-16.0) == -1.0 and wc.ceiling_for(-9.0) == -2.0
+          and wc.ceiling_for(None) == -1.2, "kernel")
 
     # ---- misnamed-param aliases + the hipass twin (2026-07-12) ----
     s = base_song()
@@ -208,7 +216,37 @@ def main():
     check("drum lane with low GM numbers stays exempt",
           not any(h["code"] == "sub_stereo" for h in v["hard"]), v["hard"])
 
-    want = 23
+    # W64 (206): the LRA window — static masters warn softly
+    v = wc.floor_verdict({"tracks": [{"name": "kick", "notes": [
+        {"start": 0, "len": 1, "pitch": 36, "vel": 100}]}]},
+        {"lufs_integrated": -9.0, "peak_dbfs": -1.2, "clipped_samples": 0,
+         "lra": 2.1})
+    check("lra_static: 2.1 LU flags soft (no arc survived)",
+          any(s["code"] == "lra_static" for s in v["soft"]))
+    v2 = wc.floor_verdict({"tracks": [{"name": "kick", "notes": [
+        {"start": 0, "len": 1, "pitch": 36, "vel": 100}]}]},
+        {"lufs_integrated": -9.0, "peak_dbfs": -1.2, "clipped_samples": 0,
+         "lra": 6.0})
+    check("lra window: 6 LU (dense-genre normal) stays silent",
+          not any(s["code"] == "lra_static" for s in v2["soft"]))
+
+    # W65 (194): the pre-wall clipper for loud genres
+    dc = {"master": [{"id": "fx_trim", "params": {"level": -2}},
+                     {"id": "fx_truepeak", "params": {"ceiling": -1.0}}]}
+    rc = ["prior heal"]
+    wc.pre_wall_clipper(dc, "trap", rc)
+    check("clipper: trap (PSR floor <=6) gets softclip BEFORE the wall",
+          dc["master"][1]["id"] == "fx_softclip" and
+          dc["master"][2]["id"] == "fx_truepeak")
+    wc.pre_wall_clipper(dc, "trap", rc)
+    check("clipper: never doubled", sum(1 for f in dc["master"]
+                                        if f["id"] == "fx_softclip") == 1)
+    dj = {"master": [{"id": "fx_truepeak", "params": {"ceiling": -1.0}}]}
+    wc.pre_wall_clipper(dj, "jazz", rc)
+    check("clipper: jazz (dynamic genre) never clipped",
+          dj["master"][0]["id"] == "fx_truepeak" and len(dj["master"]) == 1)
+
+    want = 29        # w64 LRA pair + w65 clipper trio
     ok = not FAILS and N == want
     print(f"[wc-battery] {N}/{want} checks, "
           + ("ALL PASS — the floor holds" if ok else f"RED: {FAILS}"))

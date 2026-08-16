@@ -31,9 +31,22 @@ SONG = "_fb_e2e"
 PROP = os.path.join(sc.SONGS, f"_prop_{SONG}.json")
 BASE = os.path.join(sc.SONGS, f"{SONG}.json")
 
-git_calls, telemetry = [], []
+git_calls, telemetry, court_rows = [], [], []
 sc.run = lambda cmd, timeout=900: (git_calls.append(list(cmd)), (0, "", ""))[1]
 sc.log_telemetry = lambda song, accepted, note: telemetry.append((song, accepted, note))
+# THE COURT FUNNEL (2026-07-31): courts.jsonl writes go through sc.log_court —
+# mocked here so battery autopsies never leak rows into the REAL telemetry
+# (122 _fb_e2e rows had accumulated through the old inline open()).
+sc.log_court = lambda row: court_rows.append(row)
+# chronicle stub: the refusal story must land in PROJECT memory — but a
+# battery must never write real songs/.chat files (the courts.jsonl lesson).
+chron_notes = []
+class _ChronStub:
+    def append(self, song, kind, text, **kw):
+        chron_notes.append((song, kind, text))
+    def __getattr__(self, name):
+        return lambda *a, **kw: None
+sc.chronicle = _ChronStub()
 sc.stamp_provenance = lambda *a, **k: None
 sc.render_and_analyze = lambda *a, **k: None
 
@@ -248,6 +261,20 @@ if __name__ == "__main__":
        and sc.voice_ctx_block("dark techno banger 140bpm") == ""
        and "VOICE ASK" in sc.voice_ctx_block("pop song with vocals"),
        "W129: vocal-led genres get the nudge; instrumental/others silent")
+    # THE REPLICATION HONESTY LAW (untitled_65): external-song replication
+    # asks get the know-the-tune-or-say-so law; song-internal copies don't
+    ok("REPLICATION ASK" in sc.replication_ctx_block(
+           "MAKE A PERFECT REPLICATION OF Journey of the Sorcerer by the Eagles")
+       and "REPLICATION ASK" in sc.replication_ctx_block(
+           "do a cover of Hotel California")
+       and "REPLICATION ASK" in sc.replication_ctx_block(
+           "make the tune identical to the original")
+       and sc.replication_ctx_block("make a new goa trance song") == ""
+       and sc.replication_ctx_block(
+           "replicate the verse groove into the chorus") == ""
+       and sc.replication_ctx_block("recreate the intro but darker") == ""
+       and sc.replication_ctx_block("") == "",
+       "replication honesty: fires on external-song replication asks only")
 
     # W116: the breath guard fires only NEAR THE WALL — a flat quiet take
     # lifts as pure gain; a flat take already at the wall stays guarded
@@ -259,6 +286,66 @@ if __name__ == "__main__":
          "lra": 0.8}, -12.0, 5.0, 0.0, lra_floor=3.2)
     ok(d_quiet >= 4.0 and d_wall == 0.0 and "squash guard" in w_wall,
        "W116: quiet-flat (dBTP -20) lifts as pure gain; at-wall flat stays guarded")
+
+    # THE SILENT REJECT SPEAKS (2026-07-31): an empty-WHY reject rides the
+    # take's MEASURED story (semantic diff) instead of silence.
+    import surgical as _sg
+    base_doc = {"version": 2, "bpm": 120, "lengthBars": 2, "masterGainDb": 0.0,
+                "master": [], "tracks": [
+                    {"name": "kick", "source": {"kind": "faust", "id": "hardkick"},
+                     "gainDb": -3.0,
+                     "notes": [{"start": float(i), "len": 0.2, "pitch": 36, "vel": 0.9}
+                               for i in range(4)]}]}
+    prop_doc = json.loads(json.dumps(base_doc))
+    prop_doc["tracks"][0]["gainDb"] = 2.0
+    prop_doc["tracks"][0]["notes"].append({"start": 4.0, "len": 0.2, "pitch": 36, "vel": 0.9})
+    prop_doc["tracks"].append({"name": "cowbell", "source": {"kind": "faust", "id": "cowbell"},
+                               "gainDb": -6.0,
+                               "notes": [{"start": 0.5, "len": 0.1, "pitch": 60, "vel": 0.8}]})
+    prop_doc["bpm"] = 140
+    fline = _sg.reject_forensics(base_doc, prop_doc)
+    ok("cowbell" in fline and "gain -3.0->+2.0dB" in fline and "notes +1" in fline
+       and "bpm 120->140" in fline and len(fline) <= 380,
+       f"forensics kernel: factual line covers tracks/gain/notes/bpm ({fline!r})")
+    ok(_sg.reject_forensics(base_doc, base_doc) == "",
+       "forensics kernel: identical songs -> empty (no fake story)")
+    ok("machine courts flagged: key,pocket" in _sg.reject_forensics(
+        base_doc, prop_doc, red_courts=("key", "pocket")),
+       "forensics kernel: red courts join the line")
+    # end-to-end: wordless reject -> MEASURED line rides ONCE; typed WHY wins
+    json.dump(base_doc, open(BASE, "w"))
+    json.dump(prop_doc, open(PROP, "w"))
+    sc.handle({"id": 8, "type": "reject", "song": SONG})
+    ok("cowbell" in sc.last_reject.get(SONG, {}).get("forensics", ""),
+       "wordless reject: forensics stashed in last_reject")
+    blk = sc.feedback_context_block(SONG, revise=False)
+    ok("MEASURED story" in blk and "cowbell" in blk and "VERBATIM" not in blk,
+       "wordless reject: the next prompt carries the MEASURED story")
+    ok(sc.feedback_context_block(SONG, revise=False) == "",
+       "measured story rides exactly ONCE (popped with the reject)")
+    json.dump(base_doc, open(BASE, "w"))
+    json.dump(prop_doc, open(PROP, "w"))
+    sc.handle({"id": 9, "type": "reject", "song": SONG, "reason": "hate the cowbell"})
+    blk = sc.feedback_context_block(SONG, revise=False)
+    ok('VERBATIM: "hate the cowbell"' in blk and "MEASURED story" not in blk,
+       "typed WHY outranks forensics (one voice, the user's)")
+    saved = json.load(open(sc.FEEDBACK_STATE))
+    ok("cowbell" in saved.get("last_reject", {}).get(SONG, {}).get("forensics", ""),
+       "forensics persists to ipc/feedback_state.json (restart survival)")
+    autop = [r for r in court_rows if r.get("kind") == "reject_autopsy"]
+    ok(autop and all("genre" in r for r in autop),
+       "court funnel: autopsy rows reach log_court, genre-stamped")
+    ok(any("rejected without words; measured:" in t and "cowbell" in t
+           for _s, _k, t in chron_notes),
+       "the refusal story lands in PROJECT memory (chronicle)")
+    ok(not os.path.exists(os.path.join(sc.SONGS, ".chat", f"{SONG}.jsonl")),
+       "no battery chat file leaks into the real songs/.chat")
+    real_courts = os.path.join(ROOT, "telemetry", "courts.jsonl")
+    n_after = sum(1 for l in open(real_courts) if SONG in l) if os.path.exists(real_courts) else 0
+    ok(n_after == 0, f"NO battery rows leak into the real courts.jsonl ({n_after} found)")
+    scrub()
+    if os.path.exists(BASE):
+        os.remove(BASE)
 
     print(f"feedback-loop battery: {PASS}/{PASS + len(FAIL)} {'clean' if not FAIL else 'RED'}")
     sys.exit(1 if FAIL else 0)

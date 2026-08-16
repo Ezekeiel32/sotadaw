@@ -123,8 +123,12 @@ def genre_dna(genre):
     except Exception as e:
         return None, (f"no knowledge graph AND no baked DNA ({e!r}) — "
                       "run tools/kg_export_cache.py on the dev box and ship agent/dna_cache.json")
-    if genre not in cached:
-        return None, f"no loop DNA for '{genre}' — available: " + ", ".join(sorted(cached))
+    if genre not in cached or not cached[genre].get("grid"):
+        # grid-less cache entries exist (form_family-only rows for
+        # arrange.py, 2026-07-17) — they must refuse HERE like a missing
+        # genre, not KeyError three lines down
+        return None, f"no loop DNA for '{genre}' — available: " + ", ".join(
+            sorted(k for k, v in cached.items() if v.get("grid")))
     g = cached[genre]
     return {"archetype": g.get("archetype"), "grid": g["grid"], "bpm_lo": g.get("bpm_lo"),
             "bpm_hi": g.get("bpm_hi"), "key": g.get("key"), "voice": g.get("voice"),
@@ -321,7 +325,7 @@ def color_character(genre, voice):
 
 
 def hook_notes(cell, lead_bars, iv, root, base_oct, deg_at, bars, rng,
-               seventh=False, bar_steps=16, heads=None):
+               seventh=False, bar_steps=16, heads=None, contour_fn=None):
     """THE HOOK ENGINE (W14): melody with INTENT instead of a seeded walk —
     the human verdict on 13 mix-waves was "still sucks"; the gap was HERE.
     The genre's cell (grid lead steps) keeps its RHYTHM — identity — but the
@@ -348,6 +352,13 @@ def hook_notes(cell, lead_bars, iv, root, base_oct, deg_at, bars, rng,
     kinds = ("A", "A2", "A", "B")
 
     def contour(x):
+        # THE MARRIAGE (B1 mount wave 3): a learned corpus arc outranks the
+        # synthetic shapes when the cell prior serves one — the DNA still
+        # owns the rhythm, anchors still snap to chord tones, the climax/
+        # breath/performance laws still govern. contour_fn None = the old
+        # path, byte-exact (generation_court's fallback-parity proof).
+        if contour_fn is not None:
+            return contour_fn(x)
         if shape == "arch":
             return math.sin(math.pi * x)
         if shape == "ramp":
@@ -804,14 +815,22 @@ def bass_notes(style, root, pcs, bars, rng, kick_steps, spb16=0.25, bar_degrees=
             put(b, 6, 5.5, f_, 0.82)
             put(b, 12, 7.5, nb, 0.88)
     elif style == "log":                       # log drum answers in the kick's holes
+        # THE ROOT WAS NOT IN THE POOL (key court 2026-07-25): [f_,f_,s_,q_]
+        # meant the log bass physically could not state ANY chord's root —
+        # a "D minor" amapiano take's bassline never played a D and the whole
+        # corpus read as the relative/♭VII key. Real log drum is the tonal
+        # anchor: first sounded hole states the change's ROOT, answers pull
+        # from a root-weighted pool.
         holes = [3, 9, 14]
         for bar in range(bars):
             b = bar * bar_steps
             b_, f_, q_, s_ = harm(b)
-            pool = [f_, f_, s_, q_]
+            pool = [b_, b_, f_, s_, q_]
+            stated = False
             for h in holes:
                 if rng.random() < 0.85:
-                    put(b, h, 1.6, rng.choice(pool), 0.85)
+                    put(b, h, 1.6, b_ if not stated else rng.choice(pool), 0.85)
+                    stated = True
     # THE TURNAROUND: records breathe at the loop seam — the last 16th walks
     # into the loop-top root (chromatic leading tone, or the step above). The
     # walking style already approaches; sustained/log hold their role.
@@ -926,6 +945,15 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
         steps = grid.get(lane)
         if not steps and fill.get(lane) is None:
             continue                       # lane absent in base AND fill
+        if lane == "kick":
+            # THE KICK IN KEY (2026-07-24): kick voices are TONAL — freq rides
+            # the trigger note and kick_punch's 0.55s tail is a sine AT that
+            # pitch, so the fixed C2 trigger droned off-key in every non-C
+            # take (key_battery forensics: a C thump every beat of an A-minor
+            # loop). Producers tune kicks: trigger at the TONIC, nearest
+            # octave to C2 (register window 28..44 keeps it a kick).
+            pitch = min((m for m in range(28, 45) if m % 12 == root % 12),
+                        key=lambda m: abs(m - 36))
         steps = steps or []                # fill-only lane: empty base, fill stamps the last bar
         vmap = vel_maps.get(lane, {})
         fsteps = fill.get(lane)
@@ -1056,6 +1084,7 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
     # THE LEAD (melody DNA): grid.lead = {"steps": [[step16, scale_degree, len16], ...],
     # "octave": 5, "voice": "pluck2"} — degrees (1-based, 8=octave up) resolve in the
     # song key; the hook repeats each pattern span like the drums do.
+    search_lines = []      # AMAZING PIII: the search law's honest readout
     lead = grid.get("lead")
     if lead and lead.get("steps"):
         # W76: curated lead voice rides the grid blob without replacing the
@@ -1088,11 +1117,68 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
         # n_ops can be 0 (pure-DNA takes remain). Census before this:
         # 4 seeds = 4 melodies but ONE rhythm forever. SOTADAW_RHYTHMTAKE=0.
         _steps84 = rhythm_take(lead["steps"], rng)
-        lnotes = hook_notes(_steps84, max(pat_bars, lead_bars), iv, root,
-                            base_oct, _ldeg_at, bars, rng,
-                            seventh=genre.lower() in EXT_SEVENTH,
-                            bar_steps=bar_steps, heads=heads)
+        # THE MARRIAGE: the hook's plan-level arc comes from a real corpus
+        # line when the cell prior serves one (search_law.learned_contour,
+        # seeded by THIS take's seed — same seed, same song). None = the
+        # synthetic arch/ramp/valley stand, byte-exact. SOTADAW_HOOK_CELLS=0.
+        _cfn = None
+        try:
+            import search_law as _slaw
+            _plan_bars = max(pat_bars, lead_bars) * max(
+                1, min(4, bars // max(pat_bars, lead_bars)))
+            _cfn = _slaw.learned_contour(genre, key or "A minor",
+                                         _plan_bars, seed)
+        except Exception:
+            _cfn = None
+        _hkw = dict(seventh=genre.lower() in EXT_SEVENTH,
+                    bar_steps=bar_steps, heads=heads)
+        if _cfn is None:
+            lnotes = hook_notes(_steps84, max(pat_bars, lead_bars), iv, root,
+                                base_oct, _ldeg_at, bars, rng, **_hkw)
+        else:
+            # THE INCUMBENT LAW AT THE HOOK SEAM (2026-07-17: the bank
+            # served indiscriminately and funk's perfect synthetic take
+            # was destroyed): build BOTH takes on forked rngs — identical
+            # draw sequences, same rhythm/anchors/jitter — judge against
+            # the BANKED lane hists (git truth, seal-safe), synthetic wins
+            # ties; the main rng then advances exactly once.
+            _rA = random.Random()
+            _rA.setstate(rng.getstate())
+            _rB = random.Random()
+            _rB.setstate(rng.getstate())
+            _syn = hook_notes(_steps84, max(pat_bars, lead_bars), iv, root,
+                              base_oct, _ldeg_at, bars, _rA, **_hkw)
+            _lrn = hook_notes(_steps84, max(pat_bars, lead_bars), iv, root,
+                              base_oct, _ldeg_at, bars, _rB,
+                              contour_fn=_cfn, **_hkw)
+            try:
+                lnotes, _hsrc = _slaw.pick_hook(genre, _syn, _lrn)
+            except Exception:
+                lnotes = _syn
+            rng.setstate(_rA.getstate())
         if lnotes:
+            try:
+                # THE MARRIAGE (B1 wave 3): the SEARCH LAW upgrades the
+                # MELODIC PATH on the DNA's own rhythm — K fresh path rolls
+                # + a corpus cell-contour transplant, judged by the courts +
+                # corpus meter; the canonical take stands unless STRICTLY
+                # beaten. Sub-rolls ride fresh rngs so the shared rng is
+                # never re-consumed (downstream rolls stay put; determinism
+                # per seed holds). SOTADAW_HOOKSEARCH=0 kills.
+                import hook_search as _hs
+                _scale_abs = sorted({(root + _i) % 12 for _i in iv})
+                _sev = genre.lower() in EXT_SEVENTH
+                lnotes, _hswhy = _hs.improve(
+                    lnotes,
+                    lambda s: hook_notes(_steps84, max(pat_bars, lead_bars),
+                                         iv, root, base_oct, _ldeg_at, bars,
+                                         random.Random(s), seventh=_sev,
+                                         bar_steps=bar_steps, heads=heads),
+                    genre, key or "A minor", _scale_abs, seed)
+                if _hswhy:
+                    search_lines.append(_hswhy)
+            except Exception:
+                pass
             _lgg = grid.get("lead_gain_db")    # W67: per-genre melodic staging
             ltrack = {"name": "lead", "source": {"kind": "faust", "id": lv},
                       "gainDb": (float(_lgg) if _lgg is not None else -9),
@@ -1117,6 +1203,28 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
         bvoice, bnotes = bass_notes(bstyle, root, pcs, bars, rng, grid.get("kick", []),
                                     bar_degrees=bar_degs,
                                     bar_steps=bar_steps, heads=heads)
+        if bnotes:
+            try:
+                # THE MARRIAGE, bass lane (B1 wave 3b): same law as the hook
+                # — K fresh path rolls + a bass-cell contour transplant on
+                # the SAME rhythm, judged by courts + corpus meter; the
+                # canonical stands unless STRICTLY beaten. The winner still
+                # rides the genre's octave curation below (_bos applies to
+                # whichever take won). SOTADAW_HOOKSEARCH=0 kills both lanes.
+                import hook_search as _hs2
+                _bscale = sorted({p % 12 for p in pcs})
+                bnotes, _bwhy = _hs2.improve(
+                    bnotes,
+                    lambda s: bass_notes(bstyle, root, pcs, bars,
+                                         random.Random(s),
+                                         grid.get("kick", []),
+                                         bar_degrees=bar_degs,
+                                         bar_steps=bar_steps, heads=heads)[1],
+                    genre, key or "A minor", _bscale, seed, role="bass")
+                if _bwhy:
+                    search_lines.append(_bwhy)
+            except Exception:
+                pass
         # W47: per-genre bass VOICE override (grid JSON field "bass_voice" —
         # rides the whole-blob grid through BOTH KG-query and cache paths, so
         # the KG-field law is satisfied by construction). Curation truth in
@@ -1349,7 +1457,7 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
     # Raw voices sound like demos. Every lane gets its production chain here so
     # MAKE/generate_loop are produced from the first render. Zone names verified
     # against the .dsp truth (fx_filter is LP-ONLY: hats clean up via eq shelf).
-    dotted8 = round(0.75 * 60.0 / bpm, 4)
+    dotted8 = round(0.75 * 60000.0 / bpm, 1)   # ms — the zone is ms (w39: the seconds bug shipped 20ms combs)
     # BAND TRUTH (W6, stem-attributed): the mix's 120-500Hz is owned by
     # kick/bass/lead; records run kick low:lowmid ~8:1 where ours ran 1.7:1
     # (the 808 pitch-drop box) and the lead sat 84% own-lowmid with nothing
@@ -1618,7 +1726,8 @@ def generate(genre, name, bars=4, seed=0, bpm=None, key=None):
     feel += (", " + "+".join(extras)) if extras else ""
     return out, (f"{genre} loop '{name}': {bars} bars @ {bpm:.0f}bpm in {key}, "
                  f"{len(tracks)} tracks / {total} notes (archetype {pname}, bass {bstyle}, "
-                 f"swing {grid.get('swing', 0.5)}, seed {seed}{feel})")
+                 f"swing {grid.get('swing', 0.5)}, seed {seed}{feel})"
+                 + ("\n" + "\n".join(search_lines) if search_lines else ""))
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

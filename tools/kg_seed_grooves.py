@@ -82,6 +82,14 @@ ATLAS = {
     # --- the drag (halftime / memphis / doom) ---
     "phonk": "halftime_drag", "driftphonk": "halftime_drag",
     "memphis_rap": "halftime_drag", "dubstep": "halftime_drag",
+    # lineage children born generating 2026-07-17 (kg_seed_lineage_archetypes
+    # to fixpoint gave the whole 808 tree its ancestors' grids) — considered
+    # HERE with the lineage feel until each gets its own curation:
+    "memphis_phonk": "halftime_drag", "chicago_drill": "trap_grid",
+    "driftphonk": "halftime_drag", "brazilian_phonk": "halftime_drag",
+    "house_phonk": "halftime_drag",
+    "uk_drill": "trap_grid", "ny_drill": "trap_grid",
+    "sample_drill": "trap_grid", "afro_drill": "trap_grid",
     "vaporwave": "halftime_drag", "witch_house": "halftime_drag",
     "doom_metal": "halftime_drag", "stoner_rock": "halftime_drag",
     "downtempo": "dilla",                  # the lazy drag family

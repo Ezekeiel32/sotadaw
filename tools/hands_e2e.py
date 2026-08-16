@@ -132,8 +132,14 @@ def run_once(i):
         # (+1 2026-07-11: THE VEILED DROP — agent-mode drop mints + the stage answers)
         # (+5 2026-07-11: Codex catalog/filter/rider + retired-model + chat-bar honesty)
         # + 1 optional mp3-drop leg (present iff ffmpeg made the fixture)
+        # (+7 2026-07-31 ux-campaign waves ROLL-1/2: alt+wheel vel shadow, Z dive
+        #  round-trip, ctrl+L legato, CHASE locate + follow-truce triplet)
+        # (+3 wave ROLL-3: P44 props strip — pitch grammar, anchored scrub, typed VEL)
+        # (+1 wave ROLL-5: P38 scale fold shrinks the tower)
+        # (+3 wave CHAT-1: P71 prompt history up/down/draft)
+        # (+2 wave CHAT-2: P65 run dividers fold + reopen)
         import shutil as _sh
-        want = 50 if _sh.which("ffmpeg") else 49
+        want = 66 if _sh.which("ffmpeg") else 65
         need(any(l.endswith(f"{want}/{want} passed") for l in lines),
              f"{want}/{want} self-checks green")
         verdict = os.path.join(fix, "verdict.json")

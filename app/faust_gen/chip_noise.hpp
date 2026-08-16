@@ -194,7 +194,7 @@ class ChipNoise : public dsp {
 		float fSlow11 = (fSlow10 - fSlow9) / fSlow7 + 1.0f;
 		float fSlow12 = (fSlow10 + fSlow9) / fSlow7 + 1.0f;
 		float fSlow13 = 1.0f / fSlow12;
-		float fSlow14 = 0.6f * (float(fHslider4) / (fSlow7 * fSlow12));
+		float fSlow14 = 0.5f * (float(fHslider4) / (fSlow7 * fSlow12));
 		for (int i0 = 0; i0 < count; i0 = i0 + 1) {
 			fVec0[0] = fSlow5;
 			iRec1[0] = (iRec1[1] + (iRec1[1] > 0)) * (fSlow5 <= fVec0[1]) + (fSlow5 > fVec0[1]);

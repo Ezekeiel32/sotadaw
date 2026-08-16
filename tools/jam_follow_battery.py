@@ -449,7 +449,10 @@ def live_leg():
             ok(d1.get("human", {}).get("density", 0) > 0.5,
                f"gate yielded: the burst is heard at the NEXT decide "
                f"(p1 density {d1.get('human', {}).get('density')})")
-        ok(all(e.get("t_in_window", 1) <= 0.2 for e in dj[1:-1] or dj[1:]),
+        later = dj[1:-1] or dj[1:]
+        if not engaged:
+            later = later[1:]   # gate yielded under load: the slid burst OWNS decide #1's window
+        ok(all(e.get("t_in_window", 1) <= 0.2 for e in later),
            f"novelty gate YIELDS on short human windows ({[e.get('t_in_window') for e in dj]})")
         ok(res_j is not None and all(t["ready"] for t in res_j["timing"][:-1] or res_j["timing"]),
            f"JIT: still NO underruns ({[t['slack_s'] for t in res_j['timing']]})")

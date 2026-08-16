@@ -62,7 +62,6 @@ public:
         const bool filtered = search.getText().trim().isNotEmpty();
         juce::String left = filtered
             ? juce::String (matchTotal) + (matchTotal == 1 ? " match" : " matches")
-                  + (matchTotal > (int) shown.size() ? "  -  showing " + juce::String ((int) shown.size()) : "")
             : withCommas ((int) all.size()) + " sounds";
         g.setColour (juce::Colours::white.withAlpha (filtered ? 0.55f : 0.38f));
         g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
@@ -132,12 +131,21 @@ private:
                     if (hay.contains (t)) { hit = true; break; }
             }
             if (! hit) continue;
-            ++matchTotal;                             // census counts EVERYTHING...
+            ++matchTotal;
             ++perPlugin[e.plugin.contains ("TAL") ? 0 : e.plugin.contains ("Odin") ? 1
                         : e.plugin.contains ("Effects") ? 2 : 3];
-            if (shown.size() < 400)                   // ...the list stays snappy
-                shown.push_back (&e);
-        }
+            shown.push_back (&e);                     // ALL of it: paint clip-culls, the
+        }                                             // old 400 cap hid every Surge sound
+        // THE SHELVES: category-sorted so the library reads as one indexed wall
+        // (library order clustered by plugin — the first screen was all TAL amber
+        // and 3,559 Surge sounds sat past the cap, unreachable by browsing)
+        std::sort (shown.begin(), shown.end(), [] (const Entry* a, const Entry* b)
+        {
+            const auto& ca = a->category.isEmpty() ? a->plugin : a->category;
+            const auto& cb = b->category.isEmpty() ? b->plugin : b->category;
+            const int c = ca.compareIgnoreCase (cb);
+            return c != 0 ? c < 0 : a->name.compareIgnoreCase (b->name) < 0;
+        });
         content.setSize (juce::jmax (60, vp.getWidth() - 10), (int) shown.size() * rowH + 8);
         content.repaint();
         repaint();                                    // census strip follows the query
@@ -156,9 +164,16 @@ private:
         }
         void paint (juce::Graphics& g) override
         {
-            int y = 4, i = 0;
-            for (auto* e : owner->shown)
+            // clip-cull: the list is the WHOLE library now (4,366 rows) — paint
+            // only the viewport's window of it
+            const auto clip = g.getClipBounds();
+            const int n  = (int) owner->shown.size();
+            const int i0 = juce::jmax (0, (clip.getY() - 4) / rowH);
+            const int i1 = juce::jmin (n, (clip.getBottom() - 4) / rowH + 1);
+            for (int i = i0; i < i1; ++i)
             {
+                auto* e = owner->shown[(size_t) i];
+                const int y = 4 + i * rowH;
                 const auto c = colFor (e->plugin);
                 if (i == hover)
                 {
@@ -174,10 +189,19 @@ private:
                 g.setColour (juce::Colours::white.withAlpha (i == hover ? 0.95f : 0.85f));
                 g.setFont (juce::Font (juce::FontOptions (12.0f)));
                 g.drawText (e->name, 25, y, getWidth() - 130, rowH, juce::Justification::centredLeft);
-                g.setColour (juce::Colours::white.withAlpha (0.35f));
-                g.setFont (juce::Font (juce::FontOptions (9.5f)));
-                g.drawText (e->category, getWidth() - 104, y, 100, rowH, juce::Justification::centredRight);
-                y += rowH; ++i;
+                // THE SHELF HEAD: the category names itself ONCE, on its first row —
+                // rows inside a shelf stay clean (no ARP ARP ARP column)
+                const bool head = i == 0
+                    || ! owner->shown[(size_t) i - 1]->category.equalsIgnoreCase (e->category);
+                if (head)
+                {
+                    g.setColour (juce::Colours::white.withAlpha (0.05f));
+                    g.drawHorizontalLine (y, 4.0f, (float) getWidth() - 4.0f);
+                    g.setColour (juce::Colours::white.withAlpha (0.55f));
+                    g.setFont (theme::caps (8.5f));
+                    g.drawText (e->category.toUpperCase(), getWidth() - 104, y, 100, rowH,
+                                juce::Justification::centredRight);
+                }
             }
             if (owner->shown.empty())
             {

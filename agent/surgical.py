@@ -24,6 +24,8 @@ what a bar is; mapless songs are bit-exact 4/4 identity (grid_lint is the law).
 """
 import bisect, json, math, os, random, re, sys, time
 
+import prompt_fence   # fence-tolerant name matching: displays are fenced, addresses must still land
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from meter import bar_start_q, bar_at_q, song_meter   # the ONE bar<->beat resolver
@@ -354,7 +356,8 @@ class Resolution:
 def resolve_tracks(song, spec):
     """'all' | name | [names] | {'match': substr} | {'role': 'bass'} -> (idxs, explain)."""
     tracks = song.get("tracks", [])
-    names = [t.get("name", f"#{i}") for i, t in enumerate(tracks)]
+    names = [t.get("name", f"#{i}") if isinstance(t, dict) else f"#{i}"
+             for i, t in enumerate(tracks)]   # a traveled song's garbage track errors clean, never dies
     if spec in (None, "all", "*"):
         return list(range(len(tracks))), "tracks: all"
     def find_one(nm):
@@ -362,7 +365,17 @@ def resolve_tracks(song, spec):
         exact = [i for i, n in enumerate(names) if n.lower() == nml]
         if exact:
             return exact
-        return [i for i, n in enumerate(names) if nml in n.lower()]
+        got = [i for i, n in enumerate(names) if nml in n.lower()]
+        if got:
+            return got
+        # PROMPT FENCE fallback: prompts show traveled names FENCED (single-line,
+        # capped with "…") — accept the displayed form for the raw stored one.
+        want = prompt_fence.fold(nm)
+        folds = [i for i, n in enumerate(names) if prompt_fence.fold(n) == want]
+        if not folds and want.endswith("…"):
+            folds = [i for i, n in enumerate(names)
+                     if prompt_fence.fold(n).startswith(want[:-1])]
+        return folds
     if isinstance(spec, str):
         idxs = find_one(spec)
         if not idxs:
@@ -384,7 +397,8 @@ def resolve_tracks(song, spec):
             return idxs, f"tracks ~'{spec['match']}': {[names[i] for i in idxs]}"
         if "role" in spec:
             want = str(spec["role"]).lower()
-            idxs = [i for i, t in enumerate(tracks) if track_role(t)[0] == want]
+            idxs = [i for i, t in enumerate(tracks)
+                    if isinstance(t, dict) and track_role(t)[0] == want]
             if not idxs:
                 raise ValueError(f"no track with role '{want}'. roles: "
                                  f"{[(names[i], track_role(t)[0]) for i, t in enumerate(tracks)]}")
@@ -1238,6 +1252,64 @@ def containment(diff, receipts):
         summary = "FULL WRITE receipted (write_song/macro) — not a surgical proposal."
     return {"clean": n_out == 0, "full_write": full_write, "explained": explained,
             "out_of_scope": out_of, "summary": summary}
+
+def reject_forensics(base_song, prop_song, red_courts=()):
+    """THE SILENT REJECT SPEAKS (2026-07-31): most rejects carry no words
+    (9 of 11 in telemetry) — the taste circle starves on its richest signal.
+    Distill the semantic diff of the REFUSED take into one factual line the
+    next prompt can carry: what the take DID, never a guess at why it
+    displeased. Pure; capped ~380 chars; empty diff -> ''."""
+    d = semantic_diff(base_song, prop_song)
+    bits = []
+    if d["tracks"]["added"]:
+        bits.append("added track(s) " + "/".join(d["tracks"]["added"][:4])
+                    + ("+" if len(d["tracks"]["added"]) > 4 else ""))
+    if d["tracks"]["removed"]:
+        bits.append("removed track(s) " + "/".join(d["tracks"]["removed"][:4])
+                    + ("+" if len(d["tracks"]["removed"]) > 4 else ""))
+    per = []
+    for nm, ch in d["tracks"]["changed"].items():
+        parts = []
+        det = (ch.get("notes") or {}).get("detail") or {}
+        if det:
+            parts.append(f"notes +{det.get('n_added', 0)}/-{det.get('n_removed', 0)}"
+                         f"/~{det.get('n_changed', 0)}")
+        pr = ch.get("props") or {}
+        if "gainDb" in pr:
+            try:
+                parts.append(f"gain {float(pr['gainDb'][0] or 0):+.1f}->"
+                             f"{float(pr['gainDb'][1] or 0):+.1f}dB")
+            except (TypeError, ValueError):
+                pass
+        if "muted" in pr:
+            parts.append("muted" if pr["muted"][1] else "unmuted")
+        if "pan" in pr:
+            parts.append("re-panned")
+        flags = [k for k in ("fx", "source", "automation") if ch.get(k)]
+        if flags:
+            parts.append("/".join(flags) + " changed")
+        if parts:
+            per.append(f"{nm} " + ", ".join(parts))
+    if per:
+        bits.append("; ".join(per[:4]) + ("; more tracks changed" if len(per) > 4 else ""))
+    meta_bits = []
+    for k in ("bpm", "key", "lengthBars"):
+        if k in d["meta"]:
+            a, b = d["meta"][k]
+            meta_bits.append(f"{k} {a}->{b}")
+    for k in ("swing", "automation"):
+        if k in d["meta"]:
+            meta_bits.append(f"{k} changed")
+    if d["master"]:
+        meta_bits.append("master chain changed")
+    if any(d["buses"].values()):
+        meta_bits.append("buses changed")
+    if meta_bits:
+        bits.append(", ".join(meta_bits))
+    if red_courts:
+        bits.append("machine courts flagged: " + ",".join(red_courts))
+    return "; ".join(bits)[:380]
+
 
 def scope_report(base_song, prop_song, receipts):
     """One call for the sidecar: diff + law + human line."""

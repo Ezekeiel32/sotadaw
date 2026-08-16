@@ -2,14 +2,14 @@
   "registry_version": 1,
   "skills": {
     "3step-arrangement": {
-      "file": "3step-arrangement.v4.md",
-      "version": 4,
+      "file": "3step-arrangement.v5.md",
+      "version": 5,
       "kind": "genre",
       "tags": [
         "3step",
         "arrangement"
       ],
-      "sha256": "62a421d9d3b62456493b4f7359ebcd0adc2342405c649de90eca64247d1438f1"
+      "sha256": "ffb020dd926294187625bf6e182d0b7371e1ca7560a448d4e7ce30ce5f95d51e"
     },
     "a2m-byte-par": {
       "file": "a2m-byte-par.v4.md",
@@ -29,86 +29,86 @@
       "sha256": "02f3e3c8d11a601a0b4fa01d3c9730d0b0a48397ca7a63c42bd12bdd2e2b669d"
     },
     "acid_house-arrangement": {
-      "file": "acid_house-arrangement.v4.md",
-      "version": 4,
+      "file": "acid_house-arrangement.v5.md",
+      "version": 5,
       "kind": "genre",
       "tags": [
         "acid_house",
         "arrangement"
       ],
-      "sha256": "d2cfbe1e58ab9de0328cee4706ad2e885475c19cde01d22c53d82efb543e1b17"
+      "sha256": "b563d94c6a96cc40b2819e7dc10d630a037502c86ada83a9f2cdd1cad6e2e29e"
     },
     "afro_house-arrangement": {
-      "file": "afro_house-arrangement.v3.md",
-      "version": 3,
+      "file": "afro_house-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "afro_house",
         "arrangement"
       ],
-      "sha256": "e23b8474a02d98ab1bcd63cb08025b495233236f316ddf45d5954901d93f8067"
+      "sha256": "f8d873f5a4dd3f2344fe47eaf96753261beb6a9e7200f96e7a7056f5bf583e8c"
     },
     "afrobeat-arrangement": {
-      "file": "afrobeat-arrangement.v3.md",
-      "version": 3,
+      "file": "afrobeat-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "afrobeat",
         "arrangement"
       ],
-      "sha256": "5218a37d9c380867194f612ae9298b2b0884e65badfad4378de10bc43158a483"
+      "sha256": "69b6730f1339cfff6cd94d24bc6421763f4f7fb5bd763ab4a77142ca535c1678"
     },
     "afrobeats-arrangement": {
-      "file": "afrobeats-arrangement.v5.md",
-      "version": 5,
+      "file": "afrobeats-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "afrobeats",
         "arrangement"
       ],
-      "sha256": "4ca04755fdbf15576075cb212a7b7f91a301d152e915e2d463735b1c59cf60a4"
+      "sha256": "be783c18e1561a52b776eb5c27f1175c9e777884d7adb00cd29efe3b0d03248f"
     },
     "afroswing-arrangement": {
-      "file": "afroswing-arrangement.v1.md",
-      "version": 1,
+      "file": "afroswing-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "afroswing",
         "afrobeats",
         "arrangement"
       ],
-      "sha256": "7c07c46f778295a40eff6d6cd17852c007000d2620f784d7a9af1329c8fce0ae"
+      "sha256": "0d159ee9c716456cdb8f43294e65e41761ad31d66327acaebf58ad37772bc6c4"
     },
     "amapiano-arrangement": {
-      "file": "amapiano-arrangement.v6.md",
-      "version": 6,
+      "file": "amapiano-arrangement.v7.md",
+      "version": 7,
       "kind": "genre",
       "tags": [
         "amapiano",
         "afrobeats",
         "arrangement"
       ],
-      "sha256": "3cac75cf97056ddff43218b48a02f68c583fa7dbc8e6d325cce2780c3bd5f7c3"
+      "sha256": "0d0384451ef8efd95e735f8e9a50b0f5c5d258fd0ac6862604f3deb5a559aeab"
     },
     "ambient-arrangement": {
-      "file": "ambient-arrangement.v11.md",
-      "version": 11,
+      "file": "ambient-arrangement.v12.md",
+      "version": 12,
       "kind": "genre",
       "tags": [
         "ambient",
         "arrangement"
       ],
-      "sha256": "bc751e1e026710867e8a971f024862fcd91387b06030ed880729a74cbb6da2d8"
+      "sha256": "ed866fe9b98b26e1de6d59c595bf0b6fe717968a9934563292ac9b00ca8f4f7d"
     },
     "arabesk-arrangement": {
-      "file": "arabesk-arrangement.v1.md",
-      "version": 1,
+      "file": "arabesk-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "arabesk",
         "arrangement"
       ],
-      "sha256": "e6b39511fcd9b3a41c1734815b6e6528ebd15a7e6023d6f7d0ba602ed2251ceb"
+      "sha256": "ab240c046095cf9c89257c0e14898a27a4e4b1bad96a1483e772f5cfa36b7b20"
     },
     "automation-motion": {
       "file": "automation-motion.v2.md",
@@ -125,65 +125,65 @@
       "sha256": "025bccdb80776a3f99166bc01ba2fbe5f54e458a2d2d4fe7d667a7c1bf20db23"
     },
     "automotivo-arrangement": {
-      "file": "automotivo-arrangement.v1.md",
-      "version": 1,
+      "file": "automotivo-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "automotivo",
         "baile_funk",
         "arrangement"
       ],
-      "sha256": "3b5feff857f664207d7090e85757a48aa6a79dd502074629f2af14c5b8a64355"
+      "sha256": "d234140897f16b0b02258226d73cee1a7d6603430b17599d33c0c8dc484863bf"
     },
     "bachata-arrangement": {
-      "file": "bachata-arrangement.v3.md",
-      "version": 3,
+      "file": "bachata-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "bachata",
         "arrangement"
       ],
-      "sha256": "6d726c4ccc4fed6ddf36897cececda447b0f22005533754468b5af6ddb75e820"
+      "sha256": "61ae73701b5ab05b7118c959c2227d290892a934cac8f8140788ee10e2fae259"
     },
     "baile_funk-arrangement": {
-      "file": "baile_funk-arrangement.v2.md",
-      "version": 2,
+      "file": "baile_funk-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "baile_funk",
         "arrangement"
       ],
-      "sha256": "7bd7caaa227f7584602b5032adb1796d815df7a369cfcbd8c68a04292b25e240"
+      "sha256": "0a429d5a0bdafb72eb32c0b543f07a2dc46bf3dc9beaddefd9e2e6b1454783e6"
     },
     "balearic-arrangement": {
-      "file": "balearic-arrangement.v2.md",
-      "version": 2,
+      "file": "balearic-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "balearic",
         "arrangement"
       ],
-      "sha256": "55efacf9c2b19f4f1f34ff225fd504241ac7abeb8b1c97ee046175706ec355f4"
+      "sha256": "ba012c41f7895b1a0f728290d435d8280dec093d92b97534caf68a4539461e2f"
     },
     "balkan_brass-arrangement": {
-      "file": "balkan_brass-arrangement.v1.md",
-      "version": 1,
+      "file": "balkan_brass-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "balkan_brass",
         "arrangement"
       ],
-      "sha256": "ae073e8d085f68979b86dec33cf4db31e4c9b97faaccb9821c98d346d55e2fc0"
+      "sha256": "7aad68f6ea1473ddc9a9aa1c0db2006a06a4bc7d4c62eee5cb4567d326c4b156"
     },
     "baltimore_club-arrangement": {
-      "file": "baltimore_club-arrangement.v2.md",
-      "version": 2,
+      "file": "baltimore_club-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "baltimore_club",
         "arrangement"
       ],
-      "sha256": "d336081bc25b40e27b3fc42d7d7edbf78e712ed8239e66d1cb44d982016e5567"
+      "sha256": "a2dcbe802bf14c57d0bdb95162b7ffa18080658aa3b0bb83aedbea7bf330600c"
     },
     "band-seat": {
       "file": "band-seat.v2.md",
@@ -202,107 +202,107 @@
       "sha256": "a18ab22395c01297fe23df77e5d308f61b807a0240123d9351bb1a38d83cb6bd"
     },
     "bassline-arrangement": {
-      "file": "bassline-arrangement.v3.md",
-      "version": 3,
+      "file": "bassline-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "bassline",
         "arrangement"
       ],
-      "sha256": "775bb25dfc64a60a16d2452164ed550194e3a9a70e23e73267cad729773d6807"
+      "sha256": "d405d3f503355890d996a937c487ad80903f99742f659e146f13f094b53cf51c"
     },
     "bebop-arrangement": {
-      "file": "bebop-arrangement.v2.md",
-      "version": 2,
+      "file": "bebop-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "bebop",
         "jazz",
         "arrangement"
       ],
-      "sha256": "6d07ae1ae0f8408b414965b78e5afab7a5fd7d3dd46c5fa15e68e7ad13df82c4"
+      "sha256": "328f0a1019396c074f408362263053553e63c3b0b5acdc6965a71e6454dacaa6"
     },
     "benga-arrangement": {
-      "file": "benga-arrangement.v2.md",
-      "version": 2,
+      "file": "benga-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "benga",
         "arrangement"
       ],
-      "sha256": "b419ba6a7c97ad377f801a5ff6583ed021dccc0e435bdc6e59173460994846a1"
+      "sha256": "38b0ac0c410b42bc9fe6ef8af5378da49f4d19069f8ce1c072d02dff677ac725"
     },
     "berlin_school-arrangement": {
-      "file": "berlin_school-arrangement.v1.md",
-      "version": 1,
+      "file": "berlin_school-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "berlin_school",
         "arrangement"
       ],
-      "sha256": "faac519e1afc8dd489e2999f1566e872b93c04cd03b90c4048630461e5e1c2b1"
+      "sha256": "3e3a8377a3a4b8136326a225852fddce37070fd39fa4d2801b97ba4081716293"
     },
     "bhangra-arrangement": {
-      "file": "bhangra-arrangement.v2.md",
-      "version": 2,
+      "file": "bhangra-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "bhangra",
         "arrangement"
       ],
-      "sha256": "115ce32c2aab6124adbc62d7b6dff63a58731420a34d3f6c177ac75f995ba5b2"
+      "sha256": "fe514d4496997cb0bf3bb43c138aa2131465ca984d9dc7a81eccfe066180778f"
     },
     "big_beat-arrangement": {
-      "file": "big_beat-arrangement.v3.md",
-      "version": 3,
+      "file": "big_beat-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "big_beat",
         "arrangement"
       ],
-      "sha256": "68dfe2f993e50e859041f5272380cef58ee18ccdca712759e3b02e2389ad2fe5"
+      "sha256": "8a28bba573b7cacdc07c8ccefb864543568a40ef55f4047c8d2bc376e3b18b75"
     },
     "bigroom-arrangement": {
-      "file": "bigroom-arrangement.v2.md",
-      "version": 2,
+      "file": "bigroom-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "bigroom",
         "arrangement"
       ],
-      "sha256": "90099d1dab4271f8366814e8f6fad3aac1d8dde2407ace9beb838a62013fb0e9"
+      "sha256": "56f3d1eea167ebd1a2ebea77c3eef89345561f36c750d1d64eabd5e403c028bc"
     },
     "black_metal-arrangement": {
-      "file": "black_metal-arrangement.v2.md",
-      "version": 2,
+      "file": "black_metal-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "black_metal",
         "metal",
         "arrangement"
       ],
-      "sha256": "19ad627206d7bf141c6287a64c7f1d69b7799bb7c6f13164290ea0b1c5f391d8"
+      "sha256": "897213f7c13a6ac2e68ff57f33c2119cd380d94364c35da58d0292be63d465ff"
     },
     "bluegrass-arrangement": {
-      "file": "bluegrass-arrangement.v2.md",
-      "version": 2,
+      "file": "bluegrass-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "bluegrass",
         "country",
         "arrangement"
       ],
-      "sha256": "9a7572dc82fc75f6496aeaad4750e18641a6843a4820d6036a8e7d68c334fb77"
+      "sha256": "5341e6f922bac37415c8612c63a7307c52b75f20d5ecdf5601455a663d36cd0f"
     },
     "blues-arrangement": {
-      "file": "blues-arrangement.v6.md",
-      "version": 6,
+      "file": "blues-arrangement.v7.md",
+      "version": 7,
       "kind": "genre",
       "tags": [
         "blues",
         "arrangement"
       ],
-      "sha256": "6617333a3964978d5ee8e897cdee5e338bf518adf9119a6bd0e95d625d8ddf2b"
+      "sha256": "51caa6c08d210e2031b880fd2cbf7de0b29f8357a526a3c0f1ea9d034e7c2905"
     },
     "bollywood_filmi-arrangement": {
       "file": "bollywood_filmi-arrangement.v1.md",
@@ -315,86 +315,86 @@
       "sha256": "72ce7276f36add47ee1eb347ba5906c8ce279462406d896533ce736535a575b9"
     },
     "boogie-arrangement": {
-      "file": "boogie-arrangement.v1.md",
-      "version": 1,
+      "file": "boogie-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "boogie",
         "disco",
         "arrangement"
       ],
-      "sha256": "67fc5c8a81a4b3a8705b73b63eca3626faeb6606a3936164a62c2ee7eb3c1183"
+      "sha256": "4e370b7c25cc28b0d50eb985e11f8ab68293f04b691f468b3c2ec07334197a1e"
     },
     "boombap-arrangement": {
-      "file": "boombap-arrangement.v10.md",
-      "version": 10,
+      "file": "boombap-arrangement.v11.md",
+      "version": 11,
       "kind": "genre",
       "tags": [
         "boombap",
         "arrangement"
       ],
-      "sha256": "1f0a1f38ac94194616e668233035d03c764b746f746b7f625ec0807b9bda3c1e"
+      "sha256": "17c6cf80e3f93232d40bb995de71a316344ee9112ced3a3ea97ec80200e9cfff"
     },
     "bossanova-arrangement": {
-      "file": "bossanova-arrangement.v6.md",
-      "version": 6,
+      "file": "bossanova-arrangement.v7.md",
+      "version": 7,
       "kind": "genre",
       "tags": [
         "bossanova",
         "arrangement"
       ],
-      "sha256": "ca1a9226ebe043b192299ea39908c6d34b3bca4eff2cc9bbe2d70019632d1fab"
+      "sha256": "99cc487be68b6095a453c33d36985089791436d39f76ca1b6ff9bf6961eb9d6c"
     },
     "bounce-arrangement": {
-      "file": "bounce-arrangement.v2.md",
-      "version": 2,
+      "file": "bounce-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "bounce",
         "arrangement"
       ],
-      "sha256": "55d70918c1f5485bd6a0c717647efdd1091ef68674a1f15925883e282b9d9513"
+      "sha256": "c33565fa582f2dac3f104a7c76f433f7feca90b2b99ad5d46dc0eb7b6631627b"
     },
     "breakbeat_hardcore-arrangement": {
-      "file": "breakbeat_hardcore-arrangement.v2.md",
-      "version": 2,
+      "file": "breakbeat_hardcore-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "breakbeat_hardcore",
         "arrangement"
       ],
-      "sha256": "e9d5e829b4bbcd2bfb904605675becf5ace8aeaf225cef7654d5180395fd3525"
+      "sha256": "25b66d50692801264a055e0e4c3c8d23d0bc1da6a2f430c6b75fe4e7a814eb14"
     },
     "breakcore-arrangement": {
-      "file": "breakcore-arrangement.v2.md",
-      "version": 2,
+      "file": "breakcore-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "breakcore",
         "jungle",
         "arrangement"
       ],
-      "sha256": "1a70d39e97aad26724cc7fae1c2a12890f50dad74556a8c33b51658b1bedf19e"
+      "sha256": "306ca8bb2222e2a1ed84f1c02c95d5c1136900047fbf6485601360b5a47c8d1f"
     },
     "breaks-arrangement": {
-      "file": "breaks-arrangement.v2.md",
-      "version": 2,
+      "file": "breaks-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "breaks",
         "arrangement"
       ],
-      "sha256": "27732945ef83362b1a1f99f445d94904d9ab53647db350b29f1b50ce608f4376"
+      "sha256": "8ba8b173aada62d5d4e78487d83b2c69799ecea16cfb7a1bcd8280bf41252df6"
     },
     "calypso-arrangement": {
-      "file": "calypso-arrangement.v2.md",
-      "version": 2,
+      "file": "calypso-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "calypso",
         "arrangement"
       ],
-      "sha256": "aef42d124f135b725c9ecc6a21b793ced42e8e0a7c6706fb19bd7eec8cd8aff8"
+      "sha256": "8bab6c55fd38b938436d80c4e92d846eb3ad94b1f86fcdfcaa923160122e0e37"
     },
     "carnatic-arrangement": {
       "file": "carnatic-arrangement.v1.md",
@@ -407,124 +407,124 @@
       "sha256": "b82c4022df6363f791b003b2fded7e580d04abcc2cb69761dea90d9d5fff56ae"
     },
     "celtic-arrangement": {
-      "file": "celtic-arrangement.v2.md",
-      "version": 2,
+      "file": "celtic-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "celtic",
         "arrangement"
       ],
-      "sha256": "d8b50a5f0f8f6de3a0afc2243fa064d33dbc0c36280701f3d769f11982ebe1fd"
+      "sha256": "c1e71876710428105b5030718a9917ef68f1a352ac13fa5b19510fc5c615f9b2"
     },
     "chaabi-arrangement": {
-      "file": "chaabi-arrangement.v1.md",
-      "version": 1,
+      "file": "chaabi-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "chaabi",
         "arrangement"
       ],
-      "sha256": "d2984ff48f8920c00fcc3c128b9808cfb1175e9e424c4942572695e0d23aa5d6"
+      "sha256": "5b46724119186236d12f4b1d6ee77f786ba0364eb7ac4de0a3c18ed631860824"
     },
     "champeta-arrangement": {
-      "file": "champeta-arrangement.v2.md",
-      "version": 2,
+      "file": "champeta-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "champeta",
         "arrangement"
       ],
-      "sha256": "7857246c7f171905d0ac6cb0c0438506ef70f1bda52391e716f5ecb40fee3cb6"
+      "sha256": "d375756d8a88f046242ff953de2e974553d8a07c89bb93a6f665af48e6bf3d39"
     },
     "chicago_house-arrangement": {
-      "file": "chicago_house-arrangement.v3.md",
-      "version": 3,
+      "file": "chicago_house-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "chicago_house",
         "arrangement"
       ],
-      "sha256": "5aa1ae19f08c395a6ac35da66614c211e3ac6a068382a41cb3ba9cb0e799dda8"
+      "sha256": "10a43f630697a22ddff297e8e950552f6f20cd77c102c6af4b767d2850047068"
     },
     "chillwave-arrangement": {
-      "file": "chillwave-arrangement.v3.md",
-      "version": 3,
+      "file": "chillwave-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "chillwave",
         "arrangement"
       ],
-      "sha256": "33b8f456176c666f5293a2ffd35ab729213ac167da6ce3eae255aad088f7f4fa"
+      "sha256": "ac27efca2ede1825d9912d40b5549e3ffe877926cf96702b486c297dc6091861"
     },
     "chimurenga-arrangement": {
-      "file": "chimurenga-arrangement.v1.md",
-      "version": 1,
+      "file": "chimurenga-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "chimurenga",
         "arrangement"
       ],
-      "sha256": "7dd5d87edcaeed9ff98ee4c013ec2c11cdf30eb319c1d5cf995ca7ab8f45cc0b"
+      "sha256": "66657d88cc9a31429395f2beb74a2b670a0a8ebe9178fb6e64e6904197d2052d"
     },
     "citypop-arrangement": {
-      "file": "citypop-arrangement.v3.md",
-      "version": 3,
+      "file": "citypop-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "citypop",
         "arrangement"
       ],
-      "sha256": "91b5fa82b576cf09daa7d9e7e42aed5573b45edca25615707e993a613f64de0e"
+      "sha256": "a7f48b7a77bc60cdb72b4ca6c72011b0f3cdaae5e78473edf229a6be8a5e27ae"
     },
     "corridos_tumbados-arrangement": {
-      "file": "corridos_tumbados-arrangement.v3.md",
-      "version": 3,
+      "file": "corridos_tumbados-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "corridos_tumbados",
         "arrangement"
       ],
-      "sha256": "b2f534c170daacdfc58d492ae5e50000637d8596fc2b21d46b5429f781b1c320"
+      "sha256": "79a46d62b55d039a0d16e96874989a1d535df863de31c12bc3fb5fd3f87ecdfa"
     },
     "country-arrangement": {
-      "file": "country-arrangement.v4.md",
-      "version": 4,
+      "file": "country-arrangement.v5.md",
+      "version": 5,
       "kind": "genre",
       "tags": [
         "country",
         "arrangement"
       ],
-      "sha256": "7c764957573c8065fe14a9ce1f9ce4a920847facac8e3548bc22bad2bfcbb0be"
+      "sha256": "dd48d6008d74e3e1421d781af8a65457086cecc30f733492cf7fcc10561e50e7"
     },
     "coupe_decale-arrangement": {
-      "file": "coupe_decale-arrangement.v2.md",
-      "version": 2,
+      "file": "coupe_decale-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "coupe_decale",
         "arrangement"
       ],
-      "sha256": "e7052de3d44d491bc1bd938bd8a7c05820c374fd2f32d97beb2bd437d49e5657"
+      "sha256": "d9cfb060926336d96753958f810e42e86b4a7a3d18ab0c517f7d1da8a848cc3d"
     },
     "crunk-arrangement": {
-      "file": "crunk-arrangement.v2.md",
-      "version": 2,
+      "file": "crunk-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "crunk",
         "arrangement"
       ],
-      "sha256": "2697b2e6eb32a96fb0bbbdc3496a0bb152b5efea29ee88dcf1a4feaae1450d84"
+      "sha256": "da1ab6e15f578973a05b8305c56d5f1ac3c4a761145a4ebcba129c019c9bc533"
     },
     "cumbia-arrangement": {
-      "file": "cumbia-arrangement.v5.md",
-      "version": 5,
+      "file": "cumbia-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "cumbia",
         "arrangement"
       ],
-      "sha256": "b952903ad6afcffbf2aba30a5f11c989b6c3aa05312340d33507dbd599190c0e"
+      "sha256": "e0a7f65a256adb80b2195e92dc1001005650acc0f01418f36673c521dcbe13f1"
     },
     "dabke-arrangement": {
       "file": "dabke-arrangement.v1.md",
@@ -537,14 +537,14 @@
       "sha256": "1e76a7207cbb13aae115c44beb3d6c0826fe44e3e406e2a2b33ad70d944dc40b"
     },
     "dancehall-arrangement": {
-      "file": "dancehall-arrangement.v5.md",
-      "version": 5,
+      "file": "dancehall-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "dancehall",
         "arrangement"
       ],
-      "sha256": "e2ca82e84482221fafd20da01fd8edc5ef848db522aae68454e4c6b94e624f0c"
+      "sha256": "18dc3797e0bf08f4b449a47bd3833aaffc6e819b44bb10cd96544f3d0d50a878"
     },
     "dangdut-arrangement": {
       "file": "dangdut-arrangement.v1.md",
@@ -557,89 +557,89 @@
       "sha256": "b0636bd48427549204db5575e2b8a06b48a1894f24a0d0155256f56569a57d5e"
     },
     "dariacore-arrangement": {
-      "file": "dariacore-arrangement.v2.md",
-      "version": 2,
+      "file": "dariacore-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "dariacore",
         "jerseyclub",
         "arrangement"
       ],
-      "sha256": "85cdf069433905abff96fb555ccdbcee1782c84a6f2d8e204ac2e40af74ac1a7"
+      "sha256": "818897946cbc7468cc8c475e0f064c6871212565cdce0254c74173cd7630fad3"
     },
     "darksynth-arrangement": {
-      "file": "darksynth-arrangement.v1.md",
-      "version": 1,
+      "file": "darksynth-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "darksynth",
         "synthwave",
         "arrangement"
       ],
-      "sha256": "686aa93447da50ff0be99710c54ee162622f4bd57461676e50193425aec06e2b"
+      "sha256": "daae4a3a61ed4df3694bf1f6388c2d1388d8d1b4115db38e7a907a69a7b242e0"
     },
     "death_metal-arrangement": {
-      "file": "death_metal-arrangement.v2.md",
-      "version": 2,
+      "file": "death_metal-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "death_metal",
         "metal",
         "arrangement"
       ],
-      "sha256": "30571fa35beed2d90e23420fa6c06193c337c0ac74882a3f350fded676324f7a"
+      "sha256": "7a7532de1f1cfe1f6fb99b222488335a6871b9aa464964d3256f2e40e78d4c02"
     },
     "deephouse-arrangement": {
-      "file": "deephouse-arrangement.v2.md",
-      "version": 2,
+      "file": "deephouse-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "deephouse",
         "house",
         "arrangement"
       ],
-      "sha256": "d0ada5acd0f2152752c36c2de35b07ebb46f71b14b71e3630bc7f128714604a1"
+      "sha256": "6ba5b817711f39c0fc8ccceb719775a85ca737af7c1e1d659d6f237460fc3349"
     },
     "dembow-arrangement": {
-      "file": "dembow-arrangement.v5.md",
-      "version": 5,
+      "file": "dembow-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "dembow",
         "arrangement"
       ],
-      "sha256": "441382e808b6bd3a6eff37b77c8bd4554c8f203ae0554dc72501e46e3727a046"
+      "sha256": "b3967c483e2a84e9efe4494f6c74bf0c6309088071e618e5cba3f3190cb9887d"
     },
     "detroit_techno-arrangement": {
-      "file": "detroit_techno-arrangement.v2.md",
-      "version": 2,
+      "file": "detroit_techno-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "detroit_techno",
         "arrangement"
       ],
-      "sha256": "603674780b41b9364419231866f97e8d24c97ce16489617a8668a63dca089097"
+      "sha256": "e4578e34e7a5072878f018952298c17b3543e78ca7eeb8ba22e03719cc48afc5"
     },
     "digicore-arrangement": {
-      "file": "digicore-arrangement.v2.md",
-      "version": 2,
+      "file": "digicore-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "digicore",
         "hyperpop",
         "arrangement"
       ],
-      "sha256": "29459581012588f1bdd6565a81647445a46fc9bd4e30e4b9550eaafee5f673c9"
+      "sha256": "d12513dd412cc7ac3a1bec99da297505fec81be52c82498ae85bfbfc7bb4b5b7"
     },
     "disco-arrangement": {
-      "file": "disco-arrangement.v9.md",
-      "version": 9,
+      "file": "disco-arrangement.v10.md",
+      "version": 10,
       "kind": "genre",
       "tags": [
         "disco",
         "arrangement"
       ],
-      "sha256": "ca28e08bb5dce2fb0ec8c2b14c4a3d0f5f3570ae4ed2443e083175a8e5f80d65"
+      "sha256": "c36e5fb774f3fd89ab1b2baea0ca7fd1e722273d0b344c390a067c3bcb228acc"
     },
     "dj-blend": {
       "file": "dj-blend.v5.md",
@@ -657,151 +657,152 @@
       "sha256": "6d14a0f57aaa043ac444999a15ebce12a47cd119a5c755364c2a2567a33c1130"
     },
     "djent-arrangement": {
-      "file": "djent-arrangement.v1.md",
-      "version": 1,
+      "file": "djent-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "djent",
         "metal",
         "arrangement"
       ],
-      "sha256": "0f7930002b4df084aa6d49a9830c23df7bef87bf9d5aa82017396b9ee1445a48"
+      "sha256": "458c18cb76a0bcc2beafc69090af89981c861829b73180db465449be3a023bb1"
     },
     "dnb-arrangement": {
-      "file": "dnb-arrangement.v6.md",
-      "version": 6,
+      "file": "dnb-arrangement.v7.md",
+      "version": 7,
       "kind": "genre",
       "tags": [
         "dnb",
         "arrangement"
       ],
-      "sha256": "4a89a5c30776086bf706627b65ccaffd5b77f4f4e6fbdd7e35d53955ae5c51da"
+      "sha256": "72ac3cf430bf7f1decb8e01422f8adee4f9869d44b7c4f6a29eaab0e3e5e85d9"
     },
     "doo_wop-arrangement": {
-      "file": "doo_wop-arrangement.v1.md",
-      "version": 1,
+      "file": "doo_wop-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "doo_wop",
         "rnb",
         "arrangement"
       ],
-      "sha256": "7ab426a5f3845c2a2100bea9cf8124aa7e87d428c30fe51396e91cdb2be11cc3"
+      "sha256": "ecc15061a455838a92d14fb3ecd809154f5a8dd397755ae84940930097a27e18"
     },
     "doom_metal-arrangement": {
-      "file": "doom_metal-arrangement.v2.md",
-      "version": 2,
+      "file": "doom_metal-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "doom_metal",
         "metal",
         "arrangement"
       ],
-      "sha256": "314f348589f25a9337c691eddede8fba160d51c10b6334beed4d72fc6234060d"
+      "sha256": "be94eb44fb5b2971702c53005693ca8e7c1be4360f7150f6ff8799ea5f175250"
     },
     "downtempo-arrangement": {
-      "file": "downtempo-arrangement.v2.md",
-      "version": 2,
+      "file": "downtempo-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "downtempo",
         "arrangement"
       ],
-      "sha256": "3a8f5904f73013b204c17ed64178997a06dde7186fea61a8deb2f4082dba65b6"
+      "sha256": "86e477d2fe37d44acf10e3c92e9ddedaab366f9b3c3fb6478246ed0927e7af99"
     },
     "driftphonk-arrangement": {
-      "file": "driftphonk-arrangement.v2.md",
-      "version": 2,
+      "file": "driftphonk-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "driftphonk",
         "phonk",
+        "memphis_phonk",
         "arrangement"
       ],
-      "sha256": "78a54eef181dd5b8b8d54e83001a2a4a512ee8328caa5b1124615eb0b93014ab"
+      "sha256": "5ba52d7090ac17c9c402e961907c7a99582ba654b5ea38a94ab6f0308a9fc9b5"
     },
     "drill-arrangement": {
-      "file": "drill-arrangement.v5.md",
-      "version": 5,
+      "file": "drill-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "drill",
         "trap",
         "arrangement"
       ],
-      "sha256": "35c39d38dd737f09286fd8d64cd9aa33e59d7505a41b390ed3226ed1fc102d9c"
+      "sha256": "3644e33895a90be9dfc5ac1b589a92e6536937f5358bf6937b5f7697e2310dec"
     },
     "drone-arrangement": {
-      "file": "drone-arrangement.v2.md",
-      "version": 2,
+      "file": "drone-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "drone",
         "arrangement"
       ],
-      "sha256": "0a58a5c0c742aa66dfe74f91f22768b40857cd1ea6b54f3f2e3f744d19033767"
+      "sha256": "b2daa07981d223e11e2521b7d6dbc726e6e3523a8a3280e379f32a3dc4467161"
     },
     "dub-arrangement": {
-      "file": "dub-arrangement.v3.md",
-      "version": 3,
+      "file": "dub-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "dub",
         "arrangement"
       ],
-      "sha256": "203d5ddf2dcc660eb5e37628ee9d02584f236b0a52fb90ecbb2c9f73e58dd4ac"
+      "sha256": "38680cb100dfeb18b21781659127cce767173cd6985323d0afa736ed2abdbd98"
     },
     "dub_techno-arrangement": {
-      "file": "dub_techno-arrangement.v9.md",
-      "version": 9,
+      "file": "dub_techno-arrangement.v10.md",
+      "version": 10,
       "kind": "genre",
       "tags": [
         "dub_techno",
         "arrangement"
       ],
-      "sha256": "345f49368eb8f6cb754ac7d46114392501557160540716699783c60e392fd08f"
+      "sha256": "34c5d3f5d42f8bcbd211231011fe09ca27261f44f5ae243dcbae8f28c9a57060"
     },
     "dubstep-arrangement": {
-      "file": "dubstep-arrangement.v10.md",
-      "version": 10,
+      "file": "dubstep-arrangement.v11.md",
+      "version": 11,
       "kind": "genre",
       "tags": [
         "dubstep",
         "ukgarage",
         "arrangement"
       ],
-      "sha256": "9e59d634661759fcb35293509d82e746e9812361cedba38f35da82988cd99247"
+      "sha256": "8a467fc047980c28bf6533ccf1976520f5c32545f1d72e3af335fd8aabbd9a40"
     },
     "dungeon_synth-arrangement": {
-      "file": "dungeon_synth-arrangement.v2.md",
-      "version": 2,
+      "file": "dungeon_synth-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "dungeon_synth",
         "ambient",
         "arrangement"
       ],
-      "sha256": "dc912db421791fcfb577317341c1f5b5d8fc9d15a5b35c52aa694d4eb54ecc12"
+      "sha256": "4b3c8d88e6f77472c2e4f5f943cd6ebb42ee8c71a8f72dac0554a627b20c564b"
     },
     "ebm-arrangement": {
-      "file": "ebm-arrangement.v8.md",
-      "version": 8,
+      "file": "ebm-arrangement.v9.md",
+      "version": 9,
       "kind": "genre",
       "tags": [
         "ebm",
         "arrangement"
       ],
-      "sha256": "bf1d39f84dab88b21d06fb6499c590c1e62f81b6ba8e1c0ae9d36bd5c5f119a6"
+      "sha256": "1e1c73d65f403a480cd11f3bd43ec54c39b2ddeaeecb99ba570f1e57874b5aeb"
     },
     "electro-arrangement": {
-      "file": "electro-arrangement.v7.md",
-      "version": 7,
+      "file": "electro-arrangement.v8.md",
+      "version": 8,
       "kind": "genre",
       "tags": [
         "electro",
         "arrangement"
       ],
-      "sha256": "412b852d2928922d5836937d0e2550e145d03397ab9d6a03296f5af46324c1dc"
+      "sha256": "2aff5fed5571cd1786231c86ba0709438f6c0515af2a078b761920d86a0fad95"
     },
     "ethio_jazz-arrangement": {
       "file": "ethio_jazz-arrangement.v1.md",
@@ -815,35 +816,35 @@
       "sha256": "f294da3c2cecd61045b1de11d02c22ce2e7b6821f5d38e1291ecdc22fcb96668"
     },
     "eurobeat-arrangement": {
-      "file": "eurobeat-arrangement.v1.md",
-      "version": 1,
+      "file": "eurobeat-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "eurobeat",
         "italo_disco",
         "arrangement"
       ],
-      "sha256": "ae04c151b508051f47f129e44f93213c170d5363e1d7a0b5faabd30ec4139a00"
+      "sha256": "17e255fb29ecab4ad6c5925a5cb8837e7663f98c6fede597e85f1b862029025b"
     },
     "eurodance-arrangement": {
-      "file": "eurodance-arrangement.v2.md",
-      "version": 2,
+      "file": "eurodance-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "eurodance",
         "arrangement"
       ],
-      "sha256": "008ea304749d8360b73435adf59aef9f49da3cfae6f7ceeb6c4bbcfbf2ea4e16"
+      "sha256": "20a908c0855e6ecbe4a4ea2a9b628738f43d1dad518ef730c7e16741bd9b36e6"
     },
     "fado-arrangement": {
-      "file": "fado-arrangement.v1.md",
-      "version": 1,
+      "file": "fado-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "fado",
         "arrangement"
       ],
-      "sha256": "9d1af4e8a0f070528f1959c6cf305b534958ec3412e06327ead6e0b9e2b1ccb3"
+      "sha256": "758b608e4f3848b31898a2f0b765abf6fe9de7a7211cc0981e488dbe63c93bd9"
     },
     "faust-808": {
       "file": "faust-808.v1.md",
@@ -923,122 +924,122 @@
       "sha256": "19af4659cb20b35d46087186c79360622c75f6bc505bffaba946418212ee18e8"
     },
     "flamenco-arrangement": {
-      "file": "flamenco-arrangement.v2.md",
-      "version": 2,
+      "file": "flamenco-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "flamenco",
         "arrangement"
       ],
-      "sha256": "6948ccb5e4c39640ab18219be63a37d40974b1ada98026c120583dc7111cb361"
+      "sha256": "3a35636d86fd429e180ce0e27de81b290e033551b3acc53047c61adaf44a5056"
     },
     "footwork-arrangement": {
-      "file": "footwork-arrangement.v3.md",
-      "version": 3,
+      "file": "footwork-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "footwork",
         "jerseyclub",
         "arrangement"
       ],
-      "sha256": "276e4815ca9cbf721be29f68ba62f3faa33b921bbc73337f2fe45716cb83b93f"
+      "sha256": "22316a931ac0d7456d25b875d442c252c632d88bbfbb1425918d8bdc7abfa65b"
     },
     "forro-arrangement": {
-      "file": "forro-arrangement.v2.md",
-      "version": 2,
+      "file": "forro-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "forro",
         "arrangement"
       ],
-      "sha256": "a457f8d3f1a59791bee1b266ccdf5bf304151a15f5db5115a17d4e67695072b7"
+      "sha256": "c114bd367612c66fa0ccf2fea5fb85eab8cf00cfc58d2556d0409aa5a8b57237"
     },
     "free_jazz-arrangement": {
-      "file": "free_jazz-arrangement.v1.md",
-      "version": 1,
+      "file": "free_jazz-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "free_jazz",
         "jazz",
         "arrangement"
       ],
-      "sha256": "c9e6592a830a4e3256b0263776aeb437bddd7e904660cdc8aceaeff96a72fe86"
+      "sha256": "42564f9cffafd3021cf1ad959fbac4cc3efc9e81d06042ff9d9f6f0f6a9fd031"
     },
     "freestyle-arrangement": {
-      "file": "freestyle-arrangement.v1.md",
-      "version": 1,
+      "file": "freestyle-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "freestyle",
         "electro",
         "arrangement"
       ],
-      "sha256": "e03bbdbc0eb378b98525fc8175c9cadc7bc40fd12bef4fe29255934de29ff8e8"
+      "sha256": "cf6444a9958c036770291724e223f1c17ecda46215007b397005317848baa542"
     },
     "french_house-arrangement": {
-      "file": "french_house-arrangement.v2.md",
-      "version": 2,
+      "file": "french_house-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "french_house",
         "arrangement"
       ],
-      "sha256": "10b23e2776776685f67bd1b52999a999dff83ed525b789c999c857102da4b22e"
+      "sha256": "99ebdf282e685c824e0534bd6d8488e268c23a823c3c4a80671b1c57f2ab9ee3"
     },
     "fuji-arrangement": {
-      "file": "fuji-arrangement.v1.md",
-      "version": 1,
+      "file": "fuji-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "fuji",
         "arrangement"
       ],
-      "sha256": "c0649416011192eca6e8b620589cd094f90bca6a361d78faed77aa06a189a372"
+      "sha256": "b9223bc31cf758c1eba1f9734b16fba141023b7c912cd316af1ee00deb26e5f0"
     },
     "funk-arrangement": {
-      "file": "funk-arrangement.v11.md",
-      "version": 11,
+      "file": "funk-arrangement.v12.md",
+      "version": 12,
       "kind": "genre",
       "tags": [
         "funk",
         "arrangement"
       ],
-      "sha256": "2c5f5880b80912522d4971e8fe44959c48834afdf32b4780d9686c49e384591e"
+      "sha256": "6ed177dd5aa45682d4a9863b44693bae97acc3bd3383111034882762ef0285ec"
     },
     "future_bass-arrangement": {
-      "file": "future_bass-arrangement.v3.md",
-      "version": 3,
+      "file": "future_bass-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "future_bass",
         "arrangement"
       ],
-      "sha256": "c40783bd6a1da9ddaaa40a7f5bd42bdc10e3bb0225df0c9d68ad8a2b0c9c83f1"
+      "sha256": "d55a9dfa753162d478f0888fc86e76d67b4a1f511f223c9d40acbfb300863924"
     },
     "future_funk-arrangement": {
-      "file": "future_funk-arrangement.v1.md",
-      "version": 1,
+      "file": "future_funk-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "future_funk",
         "french_house",
         "arrangement"
       ],
-      "sha256": "41c348f69666d0ae49ba57f659451037d35fb0a11f01c752a74d9470b30d788e"
+      "sha256": "cb46644373f8faa6d7cd0a1565ff463cccacc3e23c21a6c93a49f49f043f979c"
     },
     "future_garage-arrangement": {
-      "file": "future_garage-arrangement.v4.md",
-      "version": 4,
+      "file": "future_garage-arrangement.v5.md",
+      "version": 5,
       "kind": "genre",
       "tags": [
         "future_garage",
         "arrangement"
       ],
-      "sha256": "1b0c54f4f882eab37ae288653735d207430ace071e5a9d871e84dee32fba0c48"
+      "sha256": "8e7eb33ee479e904828f11b832a34ee50fb37bdfbc2a8ac0ea1f4ac143693519"
     },
     "fx-usage": {
-      "file": "fx-usage.v6.md",
-      "version": 6,
+      "file": "fx-usage.v7.md",
+      "version": 7,
       "kind": "mixing",
       "tags": [
         "always",
@@ -1050,17 +1051,17 @@
         "rack",
         "physics"
       ],
-      "sha256": "b4f957509a5d0a080f3f04d3a5dbc8659441e47b5f4964eafd312cc2ac17a65b"
+      "sha256": "dec795bca3425d9783e8d8abff0a0cc8026a2ed1c3bb523cae851f64302a252a"
     },
     "gabber-arrangement": {
-      "file": "gabber-arrangement.v2.md",
-      "version": 2,
+      "file": "gabber-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "gabber",
         "arrangement"
       ],
-      "sha256": "27c4dab506e21cdcaf64dd59484983e33ac8ba252b415784e96d9e82d12f527d"
+      "sha256": "0a8ddc70a39014883837da4501bba4c3c0d263615efa12b95fe642dd668c563f"
     },
     "gamelan-arrangement": {
       "file": "gamelan-arrangement.v2.md",
@@ -1073,171 +1074,171 @@
       "sha256": "b01fd83c2d02c1978735098c334be9485041526195442990031a37e32aa5963f"
     },
     "gfunk-arrangement": {
-      "file": "gfunk-arrangement.v3.md",
-      "version": 3,
+      "file": "gfunk-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "gfunk",
         "arrangement"
       ],
-      "sha256": "914bf8f4117e5dabfa41d0308170c99f4ee74a93f80dd068c62b5f6e9a51dffe"
+      "sha256": "6c09c8031a682d3d87c69dc9042002c816f3f07e2b86ee179f43ce3299ea9c43"
     },
     "ghettotech-arrangement": {
-      "file": "ghettotech-arrangement.v2.md",
-      "version": 2,
+      "file": "ghettotech-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "ghettotech",
         "arrangement"
       ],
-      "sha256": "058214c389e91f4ea97cbe3cfb9f351e34fef0988f4cb15659f3be73969f4a35"
+      "sha256": "4ae6be63f0e290ec090d5e6f7993b6fb0ecc8f9a9b67134405740cede2e0f013"
     },
     "glitchcore-arrangement": {
-      "file": "glitchcore-arrangement.v1.md",
-      "version": 1,
+      "file": "glitchcore-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "glitchcore",
         "hyperpop",
         "arrangement"
       ],
-      "sha256": "ef4266a9e499f083f9845669be60dab0b2c9179320b80cc0ac5d70698ad6d922"
+      "sha256": "fbbcb61cb16debe31ef85e8840931f89b866451ff98e6fd5ca5a7c690a43127a"
     },
     "gnawa-arrangement": {
-      "file": "gnawa-arrangement.v2.md",
-      "version": 2,
+      "file": "gnawa-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "gnawa",
         "arrangement"
       ],
-      "sha256": "5258ae24573184666926f393694d05ceb91913951a99b540ee1f8d0fbe5b44a2"
+      "sha256": "2024dc4324692d05e3c0aaa48f29c4e389fd7a0a15c74a5f0ce894110f07c206"
     },
     "goa-arrangement": {
-      "file": "goa-arrangement.v6.md",
-      "version": 6,
+      "file": "goa-arrangement.v7.md",
+      "version": 7,
       "kind": "genre",
       "tags": [
         "goa",
         "psytrance",
         "arrangement"
       ],
-      "sha256": "aa3fcb77be1bd9c782116512b833be4afee405f4e6a9a0d5179260e42ee1fda4"
+      "sha256": "818e2a3280c43ef0e426b36812e489fd29007ecec005e3a47de3f650cd075b11"
     },
     "gospel-arrangement": {
-      "file": "gospel-arrangement.v11.md",
-      "version": 11,
+      "file": "gospel-arrangement.v12.md",
+      "version": 12,
       "kind": "genre",
       "tags": [
         "gospel",
         "arrangement"
       ],
-      "sha256": "abb36b1e60d84dc9a7506a4656086034e1f9cb79326cf87daf0a85d40f9e30cb"
+      "sha256": "a72474dffe40d430a00c5aa5b5746058e6bf21145420318d3a0d205e002ad30a"
     },
     "gqom-arrangement": {
-      "file": "gqom-arrangement.v4.md",
-      "version": 4,
+      "file": "gqom-arrangement.v5.md",
+      "version": 5,
       "kind": "genre",
       "tags": [
         "gqom",
         "arrangement"
       ],
-      "sha256": "87c213673493ac827af3f571224cea012768a55bab6102a3831c128f5413e296"
+      "sha256": "64aad7c9a47b8920bd38f866ec019f1121eb63b8107770cbf9ee621739545c54"
     },
     "grime-arrangement": {
-      "file": "grime-arrangement.v3.md",
-      "version": 3,
+      "file": "grime-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "grime",
         "ukgarage",
         "arrangement"
       ],
-      "sha256": "e372ee08ddc0f1c49ffcd4a1c19739d76d1408af754ddac33e44ccd4534289c0"
+      "sha256": "05cfbb77d01867c0b1c468dbdd153ee5c373242e1f510b05da11c178b6bece71"
     },
     "grunge-arrangement": {
-      "file": "grunge-arrangement.v2.md",
-      "version": 2,
+      "file": "grunge-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "grunge",
         "rock",
         "arrangement"
       ],
-      "sha256": "8ad9070dbcf37a464ef3c5206d1aa69cb4ba8b69f5f7d1975f91235373715cd1"
+      "sha256": "a80d013926bfa08502c26522eff95c6023c548c5a20632eb28062af8bfea6ee1"
     },
     "happy_hardcore-arrangement": {
-      "file": "happy_hardcore-arrangement.v2.md",
-      "version": 2,
+      "file": "happy_hardcore-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "happy_hardcore",
         "arrangement"
       ],
-      "sha256": "6a429fa05b79cd74ccf5ad7aeeb42fd921c7c5b64f8cb3d12a0b23441f7a92b4"
+      "sha256": "20e850c036d736681fac89e43e09e5e89b550ed402955db09aab8ef63a9830f2"
     },
     "hard_bop-arrangement": {
-      "file": "hard_bop-arrangement.v2.md",
-      "version": 2,
+      "file": "hard_bop-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "hard_bop",
         "jazz",
         "arrangement"
       ],
-      "sha256": "f6c37568b95462f6e5d0acbe12b1d0cae53be410873e1c51ea5d3a5e6b8c1189"
+      "sha256": "3caa7a46fc5bda50f9116054906ad8cc81082d2610776f8d3bdb4c02e84879d3"
     },
     "hard_techno-arrangement": {
-      "file": "hard_techno-arrangement.v2.md",
-      "version": 2,
+      "file": "hard_techno-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "hard_techno",
         "arrangement"
       ],
-      "sha256": "fddbbaafdb17da50cf4da0a3ff1ce73e69c060334cc1b853c9820f5e3bc3ccdb"
+      "sha256": "cdb3d7a1a6630eeee647f24dc6343ed840979b6a1e57d1f2eb49d768561062e9"
     },
     "hardstyle-arrangement": {
-      "file": "hardstyle-arrangement.v5.md",
-      "version": 5,
+      "file": "hardstyle-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "hardstyle",
         "trance",
         "arrangement"
       ],
-      "sha256": "c78bcd372fcd909cfead55ba4a476ee3ef46f73d8399b0e67c1865c5fbad7f55"
+      "sha256": "af45f3b96099ad2455223c44c2210dbd46676211059dcdfa3652ea70ad69beb7"
     },
     "hardwave-arrangement": {
-      "file": "hardwave-arrangement.v5.md",
-      "version": 5,
+      "file": "hardwave-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "hardwave",
         "arrangement"
       ],
-      "sha256": "500e839456ff639e68bd790a5cec1d170410298f04a58343aabe2d19fa5e8689"
+      "sha256": "9b971dd1c8144d9ffc7fd9f6317c2ca5dd780a935743872bf76a9a6392ca3384"
     },
     "hi_nrg-arrangement": {
-      "file": "hi_nrg-arrangement.v1.md",
-      "version": 1,
+      "file": "hi_nrg-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "hi_nrg",
         "disco",
         "arrangement"
       ],
-      "sha256": "dda9c2cc8ea8d57eb38aaa99e03f4185beb9df180eca6316876090da9f6e1c27"
+      "sha256": "44ca726666c06af2faf39a6d4650b50c4b02e4b349286b85547155b758262ced"
     },
     "highlife-arrangement": {
-      "file": "highlife-arrangement.v3.md",
-      "version": 3,
+      "file": "highlife-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "highlife",
         "arrangement"
       ],
-      "sha256": "7fbedb88493bf1c1982c9af5cb0abd66702fed5e4f4f1b1d435a1ac78a820158"
+      "sha256": "74943dac4bdf17d1fe97b93498a322b02f3e140480279d03c416501ddc39828f"
     },
     "hindustani-arrangement": {
       "file": "hindustani-arrangement.v1.md",
@@ -1250,44 +1251,44 @@
       "sha256": "55d7c1d17d956214b937cd76150ca92c91d74b5d39581a3a71b1f16a91aa7d35"
     },
     "hiphop-arrangement": {
-      "file": "hiphop-arrangement.v4.md",
-      "version": 4,
+      "file": "hiphop-arrangement.v5.md",
+      "version": 5,
       "kind": "genre",
       "tags": [
         "hiphop",
         "arrangement"
       ],
-      "sha256": "25c755fcb8a2cba7c2cd906dd90d9d7ff9c4e70ae7e03784c6e522bce351488b"
+      "sha256": "b6943658785bc25d96917dda0668c0c04f28f153c298599915a605147fa5df77"
     },
     "house-arrangement": {
-      "file": "house-arrangement.v14.md",
-      "version": 14,
+      "file": "house-arrangement.v15.md",
+      "version": 15,
       "kind": "genre",
       "tags": [
         "house",
         "arrangement"
       ],
-      "sha256": "eb76f0c9129d0ede2edd97b8f1d81549623f22696e2cda8fb57e99c1a71710c7"
+      "sha256": "b4a8a018ddfeac348defdc639d176bf1d3dc2aca0d75a8ee3b01a87df5f9e097"
     },
     "hyperpop-arrangement": {
-      "file": "hyperpop-arrangement.v2.md",
-      "version": 2,
+      "file": "hyperpop-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "hyperpop",
         "arrangement"
       ],
-      "sha256": "2d8a52936a765036564ccef0b6267ca87d1939db43375569f16d46445594cf53"
+      "sha256": "e20843588fcd14f56fab6feda78bc6e240ff85cbf770c8469ffed53cab975a85"
     },
     "idm-arrangement": {
-      "file": "idm-arrangement.v2.md",
-      "version": 2,
+      "file": "idm-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "idm",
         "arrangement"
       ],
-      "sha256": "e309ecd29effd41b8003d8761914030d464a8995e6800eb0d874169d0afe7f5c"
+      "sha256": "883c5efa1947caa7cd7982d455ff23df9333f689a3d7c58c0d877a998baa6cae"
     },
     "import-mix": {
       "file": "import-mix.v1.md",
@@ -1304,108 +1305,109 @@
       "sha256": "0ad4ccec4de8fba4d2ee1570566a778c3bbf4b66b123a597672f0bf348c68d34"
     },
     "indie_rock-arrangement": {
-      "file": "indie_rock-arrangement.v4.md",
-      "version": 4,
+      "file": "indie_rock-arrangement.v5.md",
+      "version": 5,
       "kind": "genre",
       "tags": [
         "indie_rock",
         "arrangement"
       ],
-      "sha256": "5cee9dcda532f3599df032db3bd601cf6695053a03946fd91d0a257cc422b63f"
+      "sha256": "b52a5da9d51dc7b9691efa08f955794738f719de932611249e5ae047f7432043"
     },
     "industrial-arrangement": {
-      "file": "industrial-arrangement.v2.md",
-      "version": 2,
+      "file": "industrial-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "industrial",
         "arrangement"
       ],
-      "sha256": "78fc45547d5b851db4251a7f93e5164cf05c7eaa28f968f88bad817a930ed32b"
+      "sha256": "9034ecc492ebc9ec16a1b2e7ea8827f5ec50ec60f6b83696ee7bdfaae5f05c2e"
     },
     "italo_disco-arrangement": {
-      "file": "italo_disco-arrangement.v10.md",
-      "version": 10,
+      "file": "italo_disco-arrangement.v11.md",
+      "version": 11,
       "kind": "genre",
       "tags": [
         "italo_disco",
         "arrangement"
       ],
-      "sha256": "76e917704c7bb1a9397bdf81b0ed92d20ac973dc4ac5f954eb4c031040f11e7b"
+      "sha256": "7bc810021a9fac43ce17d9f0d02a1946d794c842d61bc447400b28291ee88c85"
     },
     "jazz-arrangement": {
-      "file": "jazz-arrangement.v15.md",
-      "version": 15,
+      "file": "jazz-arrangement.v16.md",
+      "version": 16,
       "kind": "genre",
       "tags": [
         "jazz",
         "arrangement"
       ],
-      "sha256": "ee60b5fee58d6f1115edd31196a239a5e57d6c292d939d0d95d66b8d484ef09a"
+      "sha256": "a5e45cabde6c91c92702b924baf608f7fa9fc88f006b6b30d143ebe01ef0a4ae"
     },
     "jazzfusion-arrangement": {
-      "file": "jazzfusion-arrangement.v2.md",
-      "version": 2,
+      "file": "jazzfusion-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "jazzfusion",
         "arrangement"
       ],
-      "sha256": "aef46fe2121d982cedbf1bda8df0e44c44811b0a37ed61985196dc6f24b549c4"
+      "sha256": "552e64f845455daee9663de2dceeafdf00d765030fb8a7e137151bed15f247fa"
     },
     "jersey_drill-arrangement": {
-      "file": "jersey_drill-arrangement.v1.md",
-      "version": 1,
+      "file": "jersey_drill-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "jersey_drill",
         "drill",
         "jerseyclub",
+        "uk_drill",
         "arrangement"
       ],
-      "sha256": "eb53c966330f8022ed6a4c13dbf8e2b878857a9811a8b71970234bac3f877813"
+      "sha256": "c7be8740726296653eb4de5c9f7a647b1597cbcd54902a55f5d3b16063d4a2f7"
     },
     "jerseyclub-arrangement": {
-      "file": "jerseyclub-arrangement.v3.md",
-      "version": 3,
+      "file": "jerseyclub-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "jerseyclub",
         "house",
         "arrangement"
       ],
-      "sha256": "45508d2e66fc7f53f083ee715e743c7b3c3657d0f8bf98bf1302b3c5d829d2ad"
+      "sha256": "f6af307cf889663244d4f736a498ecd2407fcc3237396200535e9aa2155d2f79"
     },
     "jpop-arrangement": {
-      "file": "jpop-arrangement.v2.md",
-      "version": 2,
+      "file": "jpop-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "jpop",
         "arrangement"
       ],
-      "sha256": "b9782a31ddbba4ce4cd29993beacf07884a2b4f14e80a676d7fa581d86104b73"
+      "sha256": "23477d2c62b7dde12dfb504a49e46d802585bbada91053e26b02034717973f90"
     },
     "juju-arrangement": {
-      "file": "juju-arrangement.v1.md",
-      "version": 1,
+      "file": "juju-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "juju",
         "arrangement"
       ],
-      "sha256": "2783fb5e580eae9392ea5a0cd7e931d195bc3b1e3ce35fe8ff1bfdd5068ec2d6"
+      "sha256": "cccffe3a343d7223673350efd0fa3bbd39d23c08c18c4a78a6e7ffd6a834ad98"
     },
     "jungle-arrangement": {
-      "file": "jungle-arrangement.v2.md",
-      "version": 2,
+      "file": "jungle-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "jungle",
         "dnb",
         "arrangement"
       ],
-      "sha256": "fcf5beabcb4d07acff2d03e45c7a65a54257f0f03e0e84bef94e5e7eaa7ae0fb"
+      "sha256": "01e0b814e87d08a49e8f82765a0eb1440d5482b3b64bddd1b33ba216d67fc831"
     },
     "khaleeji-arrangement": {
       "file": "khaleeji-arrangement.v3.md",
@@ -1418,76 +1420,76 @@
       "sha256": "7689f7bf5a614a541809a57deb61e2f92c60674856a0c6b64266c44354159ab9"
     },
     "klezmer-arrangement": {
-      "file": "klezmer-arrangement.v2.md",
-      "version": 2,
+      "file": "klezmer-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "klezmer",
         "arrangement"
       ],
-      "sha256": "ddc91429417267b1a0612b363932cb479c879b03511e1793eca7d414d4fedb71"
+      "sha256": "1199236001bd4b33203efbdd5b9c5d86acd8a0fc652c01017c18976ff99208b2"
     },
     "kompa-arrangement": {
-      "file": "kompa-arrangement.v2.md",
-      "version": 2,
+      "file": "kompa-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "kompa",
         "arrangement"
       ],
-      "sha256": "a52e87290e5c4c9f7ff8714eaa75880d7a462b6d4048410662e4d1440056c3a6"
+      "sha256": "c0f7b8575767c0f3f151aa6c197bde4912d6c54b81e0113cbb989bab213dd47f"
     },
     "kpop-arrangement": {
-      "file": "kpop-arrangement.v3.md",
-      "version": 3,
+      "file": "kpop-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "kpop",
         "arrangement"
       ],
-      "sha256": "ced2ebf846ec3845ffbeb03a8d3e135a4b6fd1fb35956b41f022e1ca7bdef370"
+      "sha256": "1cd517095bbf812fa59dad007a5608e41a49b01c3e3b0b05810d5e7f93afbb43"
     },
     "krautrock-arrangement": {
-      "file": "krautrock-arrangement.v1.md",
-      "version": 1,
+      "file": "krautrock-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "krautrock",
         "rock",
         "arrangement"
       ],
-      "sha256": "af77c0210417e6dad803b10150c1ee43a411401858b22173a648d84d4a6e6144"
+      "sha256": "0961d447af8c8ab34a2228766f0261b69bfe66e1d3bc50b8a3b688618bc0160d"
     },
     "kuduro-arrangement": {
-      "file": "kuduro-arrangement.v3.md",
-      "version": 3,
+      "file": "kuduro-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "kuduro",
         "arrangement"
       ],
-      "sha256": "979aa374ef04e8b72061bcf33fdbb18a15ef613b744ac63019caf146e2efcee2"
+      "sha256": "98ab4aed6b86e4b0b9a274e8cdf20466f656aa76cbdb110ce3f8219fe048e345"
     },
     "kwaito-arrangement": {
-      "file": "kwaito-arrangement.v1.md",
-      "version": 1,
+      "file": "kwaito-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "kwaito",
         "house",
         "arrangement"
       ],
-      "sha256": "947a210827ee004c05586691688bae49f4728c9e75e8e362287357b93e176eda"
+      "sha256": "69aeb6569cb2e56f18e9468b61674aa6fff2fd8a653a5685f30effb59805a69c"
     },
     "latin_trap-arrangement": {
-      "file": "latin_trap-arrangement.v2.md",
-      "version": 2,
+      "file": "latin_trap-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "latin_trap",
         "arrangement"
       ],
-      "sha256": "52c5b5abb1e3f186632a8e7fadd14bb2fc1a103b850caf7e8cfe39bb5d90184f"
+      "sha256": "352f201e1d4fc00f1015a869623f556e5d5924917e7403adab4c57d7bd813de4"
     },
     "live-performance": {
       "file": "live-performance.v1.md",
@@ -1502,15 +1504,15 @@
       "sha256": "7a4f0c5f15e253b137141f5c7629b325ee058940e38f3f535907f063aee81576"
     },
     "lofi-arrangement": {
-      "file": "lofi-arrangement.v10.md",
-      "version": 10,
+      "file": "lofi-arrangement.v11.md",
+      "version": 11,
       "kind": "genre",
       "tags": [
         "lofi",
         "boombap",
         "arrangement"
       ],
-      "sha256": "dd6007185953d4c4dfa14351ac9d84660b1e11439237cd1704e776cad6103f0a"
+      "sha256": "25d3ba1bb948ed0f3b394d293348158a1647955cb862ba2118b0635e8368efe8"
     },
     "luk_thung-arrangement": {
       "file": "luk_thung-arrangement.v2.md",
@@ -1533,18 +1535,18 @@
       "sha256": "d9acc20ba5e17f5e7997348ab8b156ab86d6e0b861c54f1ddbbf5e2e86e68bef"
     },
     "mariachi-arrangement": {
-      "file": "mariachi-arrangement.v2.md",
-      "version": 2,
+      "file": "mariachi-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "mariachi",
         "arrangement"
       ],
-      "sha256": "404129db18aab4b2087154ed386141278d4e1c4dbbc57f093661f3523564fc0c"
+      "sha256": "34d5e444ebbc028510048cedf9323990ca8207efda2dc7eb8518f3efc2801b86"
     },
     "mastering": {
-      "file": "mastering.v1.md",
-      "version": 1,
+      "file": "mastering.v2.md",
+      "version": 2,
       "kind": "mastering",
       "tags": [
         "mastering",
@@ -1554,111 +1556,111 @@
         "imaging",
         "verdict"
       ],
-      "sha256": "2ab131986dc4d24c10179ac5f3ce84c645f0990f4deedd4127c9287874c4ee8e"
+      "sha256": "f8ef09164f7a097f1ef8a0ab4cb49a74bc19ce1676aace12f166cd6d729248ba"
     },
     "math_rock-arrangement": {
-      "file": "math_rock-arrangement.v2.md",
-      "version": 2,
+      "file": "math_rock-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "math_rock",
         "rock",
         "arrangement"
       ],
-      "sha256": "5560a3a313dfd126582c4ebd60e51cc577e49db9213ed7b13d9286607cbc262b"
+      "sha256": "e97fdac2e737b20c7625074f24aa145f51ede2292cc4f7ff8826706e5c0a20fb"
     },
     "mbaqanga-arrangement": {
-      "file": "mbaqanga-arrangement.v1.md",
-      "version": 1,
+      "file": "mbaqanga-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "mbaqanga",
         "arrangement"
       ],
-      "sha256": "c1fc6660edf5488c2a6a90736d8d0cdeca1fc89ad9e84fc11424dd1a5695c322"
+      "sha256": "63ea86ce839eeae35cf226f5abda87032e96a34c2949cf1462a0d9163ea88dfb"
     },
     "melodic_techno-arrangement": {
-      "file": "melodic_techno-arrangement.v2.md",
-      "version": 2,
+      "file": "melodic_techno-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "melodic_techno",
         "techno",
         "arrangement"
       ],
-      "sha256": "c952e02267c65446e0df2d06fa9db6ff9cf285a0530b5a72f9ff986dd3f55f72"
+      "sha256": "16467c104b8903903b0d87022f9bc7315dda717af15bb4f131aea7a689ee0cee"
     },
     "memphis_rap-arrangement": {
-      "file": "memphis_rap-arrangement.v2.md",
-      "version": 2,
+      "file": "memphis_rap-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "memphis_rap",
         "arrangement"
       ],
-      "sha256": "4bef2976a80c1490767ea58eba09f478d923e6b3b74342eea33d63dda3f5ac62"
+      "sha256": "106666848f225b9aeb83c55af9a19a0dc3e4abeb4bb714ec2250c018bf31463e"
     },
     "merengue-arrangement": {
-      "file": "merengue-arrangement.v5.md",
-      "version": 5,
+      "file": "merengue-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "merengue",
         "arrangement"
       ],
-      "sha256": "d10a2ddfe5fa2047d84bcaa633aca2889d37b186c92a0d7c89c703692c737b44"
+      "sha256": "cbc11af17c6126f6d93f065dd5068e7d7a59626a2f43e4297524e8cd590637ce"
     },
     "metal-arrangement": {
-      "file": "metal-arrangement.v6.md",
-      "version": 6,
+      "file": "metal-arrangement.v7.md",
+      "version": 7,
       "kind": "genre",
       "tags": [
         "metal",
         "arrangement"
       ],
-      "sha256": "131463513127082ddeab16d052f77a34f328f7f5e1d0c1a664307caf3fbb2b68"
+      "sha256": "4ffe7c0761b3c48cc669a33fb39e0c326e03f8e9d318ed0000376416edc11a19"
     },
     "metalcore-arrangement": {
-      "file": "metalcore-arrangement.v2.md",
-      "version": 2,
+      "file": "metalcore-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "metalcore",
         "metal",
         "arrangement"
       ],
-      "sha256": "17cd16496d63c2049f82f21a028d66f31c6802ed9fa82f510b8646713cb4bb48"
+      "sha256": "68ab80af7f6bd76571acd16144e4293afde1bf1e7b9a0e567e53e8bffa644ea1"
     },
     "miami_bass-arrangement": {
-      "file": "miami_bass-arrangement.v2.md",
-      "version": 2,
+      "file": "miami_bass-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "miami_bass",
         "arrangement"
       ],
-      "sha256": "8331e1f142e415e2029221a4caa5b2ccea7cb7c14d9905d446f3cea4ca0c8f5b"
+      "sha256": "90f7e259e79302a5e1452c96dd956b8172d7d2e46fb33536aa584371e8ae71b2"
     },
     "midwest_emo-arrangement": {
-      "file": "midwest_emo-arrangement.v2.md",
-      "version": 2,
+      "file": "midwest_emo-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "midwest_emo",
         "rock",
         "arrangement"
       ],
-      "sha256": "7c926c0f0a6394697f49878cc94701086890fcaa9b3cd5998c05bdbc1e9d449b"
+      "sha256": "64557c251382877220bfa041d9f4f74219e471eeb2ba3cdc5c8f0e755cd37f6c"
     },
     "minimal_techno-arrangement": {
-      "file": "minimal_techno-arrangement.v2.md",
-      "version": 2,
+      "file": "minimal_techno-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "minimal_techno",
         "arrangement"
       ],
-      "sha256": "4288de9e1e7b44df528681e4c2173fba42be7debe4f0742a50abafd46f91a0b4"
+      "sha256": "af8710526528a4c1f4ed621c493da4e194164a8f35968ecbc2fa7df73e738dc5"
     },
     "mix-eq": {
       "file": "mix-eq.v2.md",
@@ -1687,26 +1689,26 @@
       "sha256": "e2d309532369720dfa82fcad285703b266c53ea8424bc864eff8f773998f0bd1"
     },
     "modal_jazz-arrangement": {
-      "file": "modal_jazz-arrangement.v2.md",
-      "version": 2,
+      "file": "modal_jazz-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "modal_jazz",
         "jazz",
         "arrangement"
       ],
-      "sha256": "ecaad81f4715dc0842ab183b9fca0766f99dfd0562b08b7b3d6c7b0c656dcad9"
+      "sha256": "2c7aa84bb97436c1f5691b6eda2cadfcea47d3a1dcd81f239b69379fdc17cf5e"
     },
     "moombahton-arrangement": {
-      "file": "moombahton-arrangement.v3.md",
-      "version": 3,
+      "file": "moombahton-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "moombahton",
         "dembow",
         "arrangement"
       ],
-      "sha256": "47df829c8aef2ec244969c84f6d2e29cf2adb9318e814699167bc5c073b5693e"
+      "sha256": "a6a12f5e132b97f773be511f9bf9223e8bb395f8996ab2d527111ff435e858b3"
     },
     "mor_lam-arrangement": {
       "file": "mor_lam-arrangement.v2.md",
@@ -1719,39 +1721,39 @@
       "sha256": "27985f3875eac39b94aed357acb26813159bd1327c6b5ced61a2376fc826cd14"
     },
     "morna-arrangement": {
-      "file": "morna-arrangement.v1.md",
-      "version": 1,
+      "file": "morna-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "morna",
         "arrangement"
       ],
-      "sha256": "c16f45755d8afb6f3ca0adb05afbea8cd3d97fbbfc16eccbdcc08464b201b5ee"
+      "sha256": "ed731a644cbbacedaefca949eb23a6446b1d9c18b5cd5261eddfab9b51d09f1a"
     },
     "motown-arrangement": {
-      "file": "motown-arrangement.v1.md",
-      "version": 1,
+      "file": "motown-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "motown",
         "soul",
         "arrangement"
       ],
-      "sha256": "ba8b75fda7c79c5de2df032685d60a0406747866ba32fbc70928cb51b5534b25"
+      "sha256": "db8b3c79db200f506cd63b0b31cb876d7204af8d7e8553849b3ce73c77581f63"
     },
     "ndombolo-arrangement": {
-      "file": "ndombolo-arrangement.v1.md",
-      "version": 1,
+      "file": "ndombolo-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "ndombolo",
         "arrangement"
       ],
-      "sha256": "a015aad36a8ea56a473eb508e57eafbfa9f874c54188891c160044e4c5c3461c"
+      "sha256": "004bfc488fdcf6ee6ca3ab3d4c3294c67b1caf29a1ce6866221c1a566ce1bc2f"
     },
     "neo_soul-arrangement": {
-      "file": "neo_soul-arrangement.v2.md",
-      "version": 2,
+      "file": "neo_soul-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "neo_soul",
@@ -1759,48 +1761,48 @@
         "rnb",
         "arrangement"
       ],
-      "sha256": "4a88c72960449ac21d693ea0780c9c82fbf13a213385a5b1682cfd29521179de"
+      "sha256": "dbc66bb0caa88339c2fa72d6159ed51d18d68089fd5f469799251e3dc112734e"
     },
     "neurofunk-arrangement": {
-      "file": "neurofunk-arrangement.v2.md",
-      "version": 2,
+      "file": "neurofunk-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "neurofunk",
         "dnb",
         "arrangement"
       ],
-      "sha256": "f2a9d0f16b2d0b8879fc9a4baac8cdd2febdf737d4e1e715f3bbfffa6916c087"
+      "sha256": "45d0e30b71b80dfb98cc1dc348f6a293ad1a24904b3ec8c463092ba944ecbbf4"
     },
     "new_jack_swing-arrangement": {
-      "file": "new_jack_swing-arrangement.v2.md",
-      "version": 2,
+      "file": "new_jack_swing-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "new_jack_swing",
         "arrangement"
       ],
-      "sha256": "597f422016bc275e7ac9fe0b66388ad824ea198e500e4bf20bc93c4511ac6ce7"
+      "sha256": "dcb47ba61c37fd9338590bd9de0964ff344f6979e7dea6f152d0e78e4d032f5c"
     },
     "nightcore-arrangement": {
-      "file": "nightcore-arrangement.v2.md",
-      "version": 2,
+      "file": "nightcore-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "nightcore",
         "arrangement"
       ],
-      "sha256": "acf4764f53328ff707dce04ddd00bfda8019a23befde27d8a25f7ea01477c6fd"
+      "sha256": "b03fb4ca0a4fd776e7b98257e02e874f74372c073c352dbc3738e8504e46dff2"
     },
     "orchestral_cinematic-arrangement": {
-      "file": "orchestral_cinematic-arrangement.v11.md",
-      "version": 11,
+      "file": "orchestral_cinematic-arrangement.v12.md",
+      "version": 12,
       "kind": "genre",
       "tags": [
         "orchestral_cinematic",
         "arrangement"
       ],
-      "sha256": "1211ecf951a5c23350a9eeaa984f5a0c137bb314d08543f58e3d828867d0114c"
+      "sha256": "7561c37e95aa7ca6b76ca0d608fb0e2d905b2db9b875d6db3ba6eca47161e692"
     },
     "percussion-kits": {
       "file": "percussion-kits.v1.md",
@@ -1821,79 +1823,80 @@
       "sha256": "ecce5e0cc88db07b2d28e97ec4d4d8105fe0ed33a8827e84d5d4e258aac78032"
     },
     "phonk-arrangement": {
-      "file": "phonk-arrangement.v8.md",
-      "version": 8,
+      "file": "phonk-arrangement.v9.md",
+      "version": 9,
       "kind": "genre",
       "tags": [
         "phonk",
         "trap",
         "arrangement"
       ],
-      "sha256": "dc0f4b9f6c43b773b8b113b0d9bf6d8f68e299a35f89fe402b6281bc79848278"
+      "sha256": "60e9417577081aa5effdebcea29099aade9aa6adafd8522ff0b7db39ce498f66"
     },
     "plugg-arrangement": {
-      "file": "plugg-arrangement.v1.md",
-      "version": 1,
+      "file": "plugg-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "plugg",
         "trap",
         "arrangement"
       ],
-      "sha256": "27667d97eba04ae11907df2614018711114618244c9ea20050b97159016035ff"
+      "sha256": "e9248d6dd0adf3c112943df38c8505269729ab923f855f57b79f112a9cd57052"
     },
     "pluggnb-arrangement": {
-      "file": "pluggnb-arrangement.v1.md",
-      "version": 1,
+      "file": "pluggnb-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "pluggnb",
         "plugg",
+        "cloud_rap",
         "arrangement"
       ],
-      "sha256": "c135a5ff529a7792e9d176ba88bf23fc1c788ebea78dcac1b26c1993dd3d9902"
+      "sha256": "24eddbd4cbc6f607a70a1c3f46c742e40237336d79968189b0c9a907e7ed311f"
     },
     "pop-arrangement": {
-      "file": "pop-arrangement.v2.md",
-      "version": 2,
+      "file": "pop-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "pop",
         "arrangement"
       ],
-      "sha256": "63c6c33c882ad66c1a63b842a76f4a0d0e92247ac1fde494f37db0552044b183"
+      "sha256": "08c4dc3ac964dfe1ffa6272787106cc5aa60ca9cf4210eec5396dadf8b7c8fcc"
     },
     "post_metal-arrangement": {
-      "file": "post_metal-arrangement.v2.md",
-      "version": 2,
+      "file": "post_metal-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "post_metal",
         "metal",
         "arrangement"
       ],
-      "sha256": "55f0248fe5e4d156ba8c3dc53069481bb5cc609cb908a8baa7e4ccc2e45cf047"
+      "sha256": "c0d09799cf5aab933a732f335a7da6404f491b2674ecc03352cda471150080ad"
     },
     "post_punk-arrangement": {
-      "file": "post_punk-arrangement.v2.md",
-      "version": 2,
+      "file": "post_punk-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "post_punk",
         "arrangement"
       ],
-      "sha256": "8591512b6d404642892b7c7d29ef732643cd18d2597ff857ee7b15f52e3ae431"
+      "sha256": "7019cf8f70578a98e455c538f0145dac38cca38d4bd4c1e18067ae96aa465fdd"
     },
     "post_rock-arrangement": {
-      "file": "post_rock-arrangement.v1.md",
-      "version": 1,
+      "file": "post_rock-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "post_rock",
         "rock",
         "arrangement"
       ],
-      "sha256": "c0b5614ba61187c1fd9ddfc53144bf14f6551058a19768641e6cba5d330e96b4"
+      "sha256": "7320b9f306ae26ae4503478a0bf80a703429b3b332baab9efd3cf287675733c7"
     },
     "producer-workflow": {
       "file": "producer-workflow.v2.md",
@@ -1915,24 +1918,24 @@
       "sha256": "221afb5808aa0777b0b55ec558211fe5cdd28b42b19a20741c855daf3e89f89f"
     },
     "progressive_house-arrangement": {
-      "file": "progressive_house-arrangement.v3.md",
-      "version": 3,
+      "file": "progressive_house-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "progressive_house",
         "arrangement"
       ],
-      "sha256": "e78a141eb485171931d90e2f695733abf02280d8e317b1cd9a0488fe5d802799"
+      "sha256": "c2d6ea94887f81be931e2e844d96e6446163a109064c2281ffd8f24cb641a5d7"
     },
     "psybient-arrangement": {
-      "file": "psybient-arrangement.v1.md",
-      "version": 1,
+      "file": "psybient-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "psybient",
         "arrangement"
       ],
-      "sha256": "c239572b69b60eab789e8c7fa5262bf706835c7fdb6c4c7aa6e9e817128cffac"
+      "sha256": "f898911a591a210ef0920b2b0990fef15458b3f4f271d5045b8e3e9a345c44a8"
     },
     "psychill-arrangement": {
       "file": "psychill-arrangement.v1.md",
@@ -1945,25 +1948,25 @@
       "sha256": "dda573514c2cb473f59234c5144948e78b026f9b4208b2d35d15d3fb1430f099"
     },
     "psytrance-arrangement": {
-      "file": "psytrance-arrangement.v7.md",
-      "version": 7,
+      "file": "psytrance-arrangement.v8.md",
+      "version": 8,
       "kind": "genre",
       "tags": [
         "psytrance",
         "techno",
         "arrangement"
       ],
-      "sha256": "a11b1c3ba179fa9f2ba0c24148ba2c220b023351803b4a511ce028b9af48e3cb"
+      "sha256": "0f7652595079ec147be1e216f56c6ed8f9de06f0b0fc4094b2d0207e28c180ba"
     },
     "punk-arrangement": {
-      "file": "punk-arrangement.v3.md",
-      "version": 3,
+      "file": "punk-arrangement.v4.md",
+      "version": 4,
       "kind": "genre",
       "tags": [
         "punk",
         "arrangement"
       ],
-      "sha256": "54c1d3bf13e5d32872bcfb9ce445faa732f816677403fc621b82445f8a058b13"
+      "sha256": "c38a8ec788d687d58b4bfef5af3446e9d67142b027b72422d2a05b1daf52bcdf"
     },
     "qawwali-arrangement": {
       "file": "qawwali-arrangement.v1.md",
@@ -1976,15 +1979,15 @@
       "sha256": "f1988bf8c73ce4a6b7ed71ac2d6c12f9b009dea5de1a5a4e64ce1f539cc9f193"
     },
     "rage-arrangement": {
-      "file": "rage-arrangement.v1.md",
-      "version": 1,
+      "file": "rage-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "rage",
         "trap",
         "arrangement"
       ],
-      "sha256": "ccf03c7f4a78c35052395924bc3a9630a7c89496fa28a5da23c7d9c1278b6710"
+      "sha256": "b895f8faebd0ed4b0df0d41550fb86ef7502868198de8467310f2415f98d408c"
     },
     "rai-arrangement": {
       "file": "rai-arrangement.v1.md",
@@ -1997,84 +2000,84 @@
       "sha256": "785479199a50e3e4ccaddf21a3c8f096d00c4a3267c9ee4a9bf5f707065dc821"
     },
     "rebetiko-arrangement": {
-      "file": "rebetiko-arrangement.v1.md",
-      "version": 1,
+      "file": "rebetiko-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "rebetiko",
         "arrangement"
       ],
-      "sha256": "a32846091dab09ce85a3ceabbd826112b7d68f37bbcdeb319b30a2c448169d56"
+      "sha256": "05da7eba6e830c054faa352c1cda6dee9d0c1d4d5d0024af3e725e122705d2b9"
     },
     "reggae-arrangement": {
-      "file": "reggae-arrangement.v5.md",
-      "version": 5,
+      "file": "reggae-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "reggae",
         "arrangement"
       ],
-      "sha256": "9868536689a69c51716da4a9638b42a8973474a4e47cb48b82f3c842b7ecaad5"
+      "sha256": "6298d832bfe6fdb1e269f357680685393645016cd4f0072375c7f5517bf08485"
     },
     "reggaeton-arrangement": {
-      "file": "reggaeton-arrangement.v7.md",
-      "version": 7,
+      "file": "reggaeton-arrangement.v8.md",
+      "version": 8,
       "kind": "genre",
       "tags": [
         "reggaeton",
         "arrangement"
       ],
-      "sha256": "0e6d2e923f0e4deefa36405b1af2e6a219cb039a335b6482102e573f363d09f6"
+      "sha256": "6bab19fa9dd878c46796e3c5952a1f6a654aa6bf80dd81fc430907102e1aa9fe"
     },
     "rnb-arrangement": {
-      "file": "rnb-arrangement.v4.md",
-      "version": 4,
+      "file": "rnb-arrangement.v5.md",
+      "version": 5,
       "kind": "genre",
       "tags": [
         "rnb",
         "arrangement"
       ],
-      "sha256": "5f8a2214105d9582d7490e287178d2b68aea6ada21e1cee1a9d3261011a518e6"
+      "sha256": "c22bb0c056189f51f355a362bb05d2e3f8f3f994784a61bd601a14967143a903"
     },
     "rock-arrangement": {
-      "file": "rock-arrangement.v5.md",
-      "version": 5,
+      "file": "rock-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "rock",
         "arrangement"
       ],
-      "sha256": "c185376ef12c7e83adb13c72b29a5df74c9930c35b591e0415739c06a2958e3c"
+      "sha256": "050c808afc788aa6b1ed17f7ecb47a2e00f03ae6465e456eabf4ec161d034d8e"
     },
     "rocksteady-arrangement": {
-      "file": "rocksteady-arrangement.v2.md",
-      "version": 2,
+      "file": "rocksteady-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "rocksteady",
         "arrangement"
       ],
-      "sha256": "f0d89e295931f18ca8176b9eb62cd7b18c732a88e832a75eaed818d65dd67ad2"
+      "sha256": "bdd1fe6572e2707806f1967878b18b65176ca4f550b659047ca7a83978b5ce23"
     },
     "salsa-arrangement": {
-      "file": "salsa-arrangement.v7.md",
-      "version": 7,
+      "file": "salsa-arrangement.v8.md",
+      "version": 8,
       "kind": "genre",
       "tags": [
         "salsa",
         "arrangement"
       ],
-      "sha256": "81baffe72c40beb0d473fcbb21f9fff738a5afc507bfa9ce1afe05106fa320fb"
+      "sha256": "3610a41ea7a4ee5aeb083502cec390fb98106d24ceaed234589185c10e9493c6"
     },
     "samba-arrangement": {
-      "file": "samba-arrangement.v2.md",
-      "version": 2,
+      "file": "samba-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "samba",
         "arrangement"
       ],
-      "sha256": "2b28d76190d2a05ccee8338b9efe6ad4384549af070b3d7817175fb172e62584"
+      "sha256": "d8d8b13e082b518589f9178cb21855923716d884606e84f545244dfbb792eb8a"
     },
     "sega-arrangement": {
       "file": "sega-arrangement.v2.md",
@@ -2087,65 +2090,66 @@
       "sha256": "4e26c266175d144b85ed427610f4fa736189da3ef762886f7ae7d090637e92a8"
     },
     "sexy_drill-arrangement": {
-      "file": "sexy_drill-arrangement.v2.md",
-      "version": 2,
+      "file": "sexy_drill-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "sexy_drill",
+        "ny_drill",
         "arrangement"
       ],
-      "sha256": "e50cde8e811fc9b2588707fc76ee90bbc1326883335f7ba029d75786c0f5a2b4"
+      "sha256": "ce828cc14ca86874d38f07499b75bbeeffd634258b55dc507d7929b68888130c"
     },
     "shoegaze-arrangement": {
-      "file": "shoegaze-arrangement.v9.md",
-      "version": 9,
+      "file": "shoegaze-arrangement.v10.md",
+      "version": 10,
       "kind": "genre",
       "tags": [
         "shoegaze",
         "arrangement"
       ],
-      "sha256": "3f28c4c046b3505050239845d3b3c9f0d2492bcae73cd0aceeedaac0eb477ea5"
+      "sha256": "6fb978bb2c8450327015ead031a87f426bfc79e907c891bebc924ea5fac0efea"
     },
     "sigilkore-arrangement": {
-      "file": "sigilkore-arrangement.v2.md",
-      "version": 2,
+      "file": "sigilkore-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "sigilkore",
         "hyperpop",
         "arrangement"
       ],
-      "sha256": "9311eb3f2dadf73b329f0f0dab602c2bdc594ae51476e67778e8f28fa7d6935b"
+      "sha256": "c588f91ffe4894fce449c4f5997326088eb9be873c80fc7b8b8b29f7e1e2623b"
     },
     "singeli-arrangement": {
-      "file": "singeli-arrangement.v2.md",
-      "version": 2,
+      "file": "singeli-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "singeli",
         "arrangement"
       ],
-      "sha256": "7069d4dbc7117e23ff63394b243052a38b68bef720d537025457e1ef35b3a696"
+      "sha256": "a1202b76f4fe2427277d582249cb381e5dba36acf8ac560f6ed58d16baf8c100"
     },
     "ska-arrangement": {
-      "file": "ska-arrangement.v8.md",
-      "version": 8,
+      "file": "ska-arrangement.v9.md",
+      "version": 9,
       "kind": "genre",
       "tags": [
         "ska",
         "arrangement"
       ],
-      "sha256": "20b1b52f7cebf860be2dea1d8f112b2e727e37652e5b01d079574e23b400b9e3"
+      "sha256": "2b41f5007cfc90f800b4e5b75e2c619682556e2673ada5d43838a083358b88cb"
     },
     "soca-arrangement": {
-      "file": "soca-arrangement.v2.md",
-      "version": 2,
+      "file": "soca-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "soca",
         "arrangement"
       ],
-      "sha256": "6845bce8745d401f4ad4d4e1b1540bf21055ebb4c249e14edad00d7f95a9831c"
+      "sha256": "54211866aa408ba857d5a6cd2175413342ad1b180932b310766277f8e19f2df7"
     },
     "solo-orchestral": {
       "file": "solo-orchestral.v1.md",
@@ -2166,28 +2170,28 @@
       "sha256": "781761dad09bc4f4a779d8f6bcce853b5bb39850e18c8ba82f94d090f397e730"
     },
     "soukous-arrangement": {
-      "file": "soukous-arrangement.v1.md",
-      "version": 1,
+      "file": "soukous-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "soukous",
         "arrangement"
       ],
-      "sha256": "d9627c1bf23aade47d0b9dbb5c27006d48c75a776866487c6455730492664b4b"
+      "sha256": "4508b110cf744d4274a91ee2429a5b193d637c5c9dad452437ddd67a443f34d4"
     },
     "soul-arrangement": {
-      "file": "soul-arrangement.v8.md",
-      "version": 8,
+      "file": "soul-arrangement.v9.md",
+      "version": 9,
       "kind": "genre",
       "tags": [
         "soul",
         "arrangement"
       ],
-      "sha256": "0479333cd778e211e455ecb8efd6132cf8a45659dfe8c790cdeb1210734f3dec"
+      "sha256": "0e117d150eb3bab90d0269a8c3713aab8242a2191e6d8f1d6992326fecd94316"
     },
     "sound-palette": {
-      "file": "sound-palette.v6.md",
-      "version": 6,
+      "file": "sound-palette.v9.md",
+      "version": 9,
       "kind": "sound-design",
       "tags": [
         "always",
@@ -2196,7 +2200,7 @@
         "vst",
         "layering"
       ],
-      "sha256": "58702fdee825d593164c26f878e663dd08e9c6b05779c4b30ff4cca9c13dc5f0"
+      "sha256": "0712350bbd9315601080a64437e0e299654c28e326edc2c7ae9603f2489aed01"
     },
     "spectral-capture": {
       "file": "spectral-capture.v1.md",
@@ -2213,47 +2217,47 @@
       "sha256": "8e4b8717997689d99a1ab026b3ac5ae8cea52bb6cbed57695fcaf8e52b449d50"
     },
     "speed_garage-arrangement": {
-      "file": "speed_garage-arrangement.v5.md",
-      "version": 5,
+      "file": "speed_garage-arrangement.v6.md",
+      "version": 6,
       "kind": "genre",
       "tags": [
         "speed_garage",
         "arrangement"
       ],
-      "sha256": "c47ec1a6910b8f2c08546ada377f82dd54b644bdf086b48c06fd9aa7d54c96fd"
+      "sha256": "7e16960581df86fad22f8798a6158213a7d73f6d7761551849b2e49953a071e6"
     },
     "spiritual_jazz-arrangement": {
-      "file": "spiritual_jazz-arrangement.v2.md",
-      "version": 2,
+      "file": "spiritual_jazz-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "spiritual_jazz",
         "jazz",
         "arrangement"
       ],
-      "sha256": "0b3bfc1e71d53b8045f3d2cfd91048b0a7f61ccf9db5e9b06d9ab1b3b9980caa"
+      "sha256": "5b18ade6917fb9efefc46febe14eac01008c8622aa301512ef3993ae3de1b113"
     },
     "stoner_rock-arrangement": {
-      "file": "stoner_rock-arrangement.v2.md",
-      "version": 2,
+      "file": "stoner_rock-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "stoner_rock",
         "rock",
         "arrangement"
       ],
-      "sha256": "392f8628e5c1fe30dfbd410f960f2f1b81f0479e8664c28dd6931b97f28e7f00"
+      "sha256": "d338d95d9eac88790085f0370b241569589e5bb9e74e0f205ee34ae94070ee46"
     },
     "surf_rock-arrangement": {
-      "file": "surf_rock-arrangement.v1.md",
-      "version": 1,
+      "file": "surf_rock-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "surf_rock",
         "rock",
         "arrangement"
       ],
-      "sha256": "c945f0d1c2eb305bd51a2b7120d0684d96ce356b432f3118638ba38063eb5746"
+      "sha256": "03534b9bfcd9957596b0903a36b6b40f503b23463e0a6644c1cc5ef4de3d2d61"
     },
     "surgical-edits": {
       "file": "surgical-edits.v1.md",
@@ -2269,14 +2273,14 @@
       "sha256": "7c129aadab5bccc33d4835c8cdba12b336849b01f33ae08c77fb1c8da45c7b73"
     },
     "swing_bigband-arrangement": {
-      "file": "swing_bigband-arrangement.v8.md",
-      "version": 8,
+      "file": "swing_bigband-arrangement.v9.md",
+      "version": 9,
       "kind": "genre",
       "tags": [
         "swing_bigband",
         "arrangement"
       ],
-      "sha256": "d0a40cac9e2a0b1d7f057673ea41b5d3bcc77b9882b5e1a3dee2164ab230ecdc"
+      "sha256": "034ea3133d673a11e1ee6c3f6a195b774158039eceb7bf21a6edacd64881fa6b"
     },
     "synth-engines": {
       "file": "synth-engines.v1.md",
@@ -2309,64 +2313,71 @@
       "sha256": "34c657f84b0a91d71a7a25fab739d48188a0b9f6ccd1419179d6ce516eb863c4"
     },
     "synthpop-arrangement": {
-      "file": "synthpop-arrangement.v8.md",
-      "version": 8,
+      "file": "synthpop-arrangement.v9.md",
+      "version": 9,
       "kind": "genre",
       "tags": [
         "synthpop",
         "arrangement"
       ],
-      "sha256": "6f6b10565a967da195207e306307f7dac5daafd7f595d880f213dbccd5fa04e2"
+      "sha256": "b20f020a205039e4a0d4861eb4ea05f4487f1c7a53365d25830ec88118b2117b"
     },
     "synthwave-arrangement": {
-      "file": "synthwave-arrangement.v11.md",
-      "version": 11,
+      "file": "synthwave-arrangement.v12.md",
+      "version": 12,
       "kind": "genre",
       "tags": [
         "synthwave",
         "arrangement"
       ],
-      "sha256": "866f81308fb0392c28e1c9269a47f61da2663b556353579c5240acd2a73551d7"
+      "sha256": "4896472deddb8c1fc6dc1dceb7603fd0a4fdfb7c8111cd2994a7bb59b89e7b07"
     },
     "tango-arrangement": {
-      "file": "tango-arrangement.v2.md",
-      "version": 2,
+      "file": "tango-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "tango",
         "arrangement"
       ],
-      "sha256": "ab5c1e73df09b45943d8b42b0659ee96fbc3979d4de9aa3417083284ae523dff"
+      "sha256": "eb3da0ce10a9099c4c7740f7c989d7222502f624668b158a726b12ec739cacf2"
     },
     "tech_house-arrangement": {
-      "file": "tech_house-arrangement.v2.md",
-      "version": 2,
+      "file": "tech_house-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "tech_house",
         "arrangement"
       ],
-      "sha256": "bdc24520b64e23ac05a5ad115c2e86327f0eb51abeb84e4e95525cc7b4ffb1aa"
+      "sha256": "25f78385e072993373a035d66213786808a95ef214909ab544b73ba6de1f4674"
     },
     "techno-arrangement": {
-      "file": "techno-arrangement.v11.md",
-      "version": 11,
+      "file": "techno-arrangement.v12.md",
+      "version": 12,
       "kind": "genre",
       "tags": [
         "techno",
         "house",
         "arrangement"
       ],
-      "sha256": "afd9765944a4097cb69b5c7584a2eb924b6747ab851bc39c3e82db7cc476c9fd"
+      "sha256": "8876ffa23cad3f3982aea2a6e62e9115031e6d6112fea40bc30ab49017759a88"
+    },
+    "timbre-words": {
+      "file": "timbre-words.v1.md",
+      "version": 1,
+      "kind": "",
+      "tags": [],
+      "sha256": "8eee4598b761c8300c5ae6051b9c8c2b155fb04b6e11cabb9c7ee83b5c2c01ae"
     },
     "tool-guide-tail": {
       "file": "tool-guide-tail.md",
-      "version": 6,
+      "version": 8,
       "kind": "",
       "tags": [
         "expanded"
       ],
-      "sha256": "8876778a0be0cc177a9d7430a6b9ec0a73e2ac03b32407deae666f45acdafa6b"
+      "sha256": "219d12cbc42114a5e83c8af2af5299344dc2d2fe7ab384fbfdf0e872fa00d47c"
     },
     "tool-guide": {
       "file": "tool-guide.md",
@@ -2378,66 +2389,66 @@
       "sha256": "790a10dc815e6da34d30c7d3a5e6b001f72430288442ee73892e13fa42fae512"
     },
     "trance-arrangement": {
-      "file": "trance-arrangement.v15.md",
-      "version": 15,
+      "file": "trance-arrangement.v16.md",
+      "version": 16,
       "kind": "genre",
       "tags": [
         "trance",
         "techno",
         "arrangement"
       ],
-      "sha256": "36342836085da12ca8049de6f255cd43a2d13e9a7f86485c8b2f416d36077ea4"
+      "sha256": "9ae8cd22c66b897624b658ae2c8b10deb642cd8783c479665f492d8aac62c5a3"
     },
     "trap-arrangement": {
-      "file": "trap-arrangement.v10.md",
-      "version": 10,
+      "file": "trap-arrangement.v11.md",
+      "version": 11,
       "kind": "genre",
       "tags": [
         "trap",
         "arrangement"
       ],
-      "sha256": "b65e50470fecb96f79eacb6db05e7cab67ff204bb8e29fc79c4c3e8dbdb3a646"
+      "sha256": "0d6fe61ff4eb3b878eee0440088017e593456ca735e95baca722cb23154d24e0"
     },
     "triphop-arrangement": {
-      "file": "triphop-arrangement.v4.md",
-      "version": 4,
+      "file": "triphop-arrangement.v5.md",
+      "version": 5,
       "kind": "genre",
       "tags": [
         "triphop",
         "arrangement"
       ],
-      "sha256": "3b160ee91aee029a1866d74bfee66aedf1ae8632dd34c624ccc1b4c90b940c8a"
+      "sha256": "cac6ebc2bb84f26c0121d72be759bbe4081b252b2d9ef45dceca2bb999144ca5"
     },
     "uk_funky-arrangement": {
-      "file": "uk_funky-arrangement.v2.md",
-      "version": 2,
+      "file": "uk_funky-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "uk_funky",
         "arrangement"
       ],
-      "sha256": "e2a04f16bc98943b87e4d8020a9f55eb3dd96eb43310618ed50c932774c04239"
+      "sha256": "3bf02fdca35136d0cdd93c037a0e12c0a29c00f6a831bb3ef484860a9a28d027"
     },
     "ukgarage-arrangement": {
-      "file": "ukgarage-arrangement.v9.md",
-      "version": 9,
+      "file": "ukgarage-arrangement.v10.md",
+      "version": 10,
       "kind": "genre",
       "tags": [
         "ukgarage",
         "house",
         "arrangement"
       ],
-      "sha256": "cae80e4884e695a4822dd0bd6e7813db7ef5ebfba3e26511bf643fd10de509c9"
+      "sha256": "f42c2063b7f131b77ae1efa4977a40d9f3b138d07d7fdf9eb31fd2a93a2f8a64"
     },
     "vaporwave-arrangement": {
-      "file": "vaporwave-arrangement.v2.md",
-      "version": 2,
+      "file": "vaporwave-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "vaporwave",
         "arrangement"
       ],
-      "sha256": "3cdcd9f5032b916cb94e54cdb2338b4919623c2fe16a593566010739071c3a21"
+      "sha256": "5740a0e8fd0231a6b083a04a3f50e88ee92f3770d292fa24222416f7a0a754da"
     },
     "vocal-topline": {
       "file": "vocal-topline.v3.md",
@@ -2468,34 +2479,34 @@
       "sha256": "48d5be0ea7325abe52a454e49a6e23045900c1bbe85ec2efaa691443d7b538aa"
     },
     "wave-arrangement": {
-      "file": "wave-arrangement.v1.md",
-      "version": 1,
+      "file": "wave-arrangement.v2.md",
+      "version": 2,
       "kind": "genre",
       "tags": [
         "wave",
         "arrangement"
       ],
-      "sha256": "18e4a6d56ea86186a5dabc57ecf35ad2fb381a6a6d702a229c939ba77ab222bb"
+      "sha256": "a11fc98bcb4ea6fe2fca2674901654abd42bb77ea30c0b6a4908ae00a03abbcf"
     },
     "witch_house-arrangement": {
-      "file": "witch_house-arrangement.v2.md",
-      "version": 2,
+      "file": "witch_house-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "witch_house",
         "arrangement"
       ],
-      "sha256": "6ceb7b95e12832da1aab3f87d111fa161e11be8fe5fd51ac73fa6a8100915328"
+      "sha256": "e184b430def2e6ca4c0a2f474fc42143e9d8cdede037388c50676e8154016080"
     },
     "zouk-arrangement": {
-      "file": "zouk-arrangement.v2.md",
-      "version": 2,
+      "file": "zouk-arrangement.v3.md",
+      "version": 3,
       "kind": "genre",
       "tags": [
         "zouk",
         "arrangement"
       ],
-      "sha256": "7f7c75f2daff083414154273aa7168ecc33db1ab7c11a78d4cb752bc8a6889c6"
+      "sha256": "473f6ed3ae3e70641d599a8dcc83d2fa99dbbdef3e1d4001c4beb8a933df4483"
     }
   }
 }

@@ -1,15 +1,15 @@
 {
  "name": "duduk",
  "kind": "voice",
- "dsp_sha": "55efac1e71d31971",
- "m1_md5": "cec426b253528867",
+ "dsp_sha": "4aa5de2d1de9d8fe",
+ "m1_md5": "729344d89e73e14e",
  "machine": "chezy-LOQ-15IAX9E",
- "date": "2026-07-07",
+ "date": "2026-08-02",
  "law": "E2 (docs/THE_PHYSICS.md)",
- "peak_dbfs": -0.49,
+ "peak_dbfs": -3.58,
  "clipped_samples": 0,
  "attack_ms": 50.0,
- "sustain_rms_db": -5.52,
+ "sustain_rms_db": -8.62,
  "sustain_centroid_hz": 927,
  "harmonics_top": [
   [
@@ -47,8 +47,34 @@
  ],
  "decay_to_m60_s": 2.2,
  "noise_tail_dbfs": -200.0,
+ "headroom": {
+  "registers": {
+   "33": {
+    "peak_dbfs": -3.82,
+    "clipped": 0
+   },
+   "60": {
+    "peak_dbfs": -3.58,
+    "clipped": 0
+   },
+   "81": {
+    "peak_dbfs": -2.28,
+    "clipped": 0
+   }
+  },
+  "overlap": {
+   "peak_dbfs": -3.58,
+   "clipped": 0
+  },
+  "retrigger": {
+   "peak_dbfs": -3.67,
+   "clipped": 0
+  },
+  "clipped_total": 0
+ },
  "verdicts": {
   "headroom_pass_vel1": true,
+  "headroom_pass_registers": true,
   "audible": true
  }
 }

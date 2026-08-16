@@ -13,17 +13,34 @@ public:
     // action = THE ACTION STREAM: one structured agent tool-call, streamed the
     // instant its tool_use block lands — a DAW component (family glyph + summary
     // + target track), never prose. meta = [family, tool, track, colourHex].
-    enum class Kind { user, agent, tool, action, status, error, proposal, analysis, perception, report, live, variants };
+    enum class Kind { user, agent, tool, action, status, error, proposal, analysis, perception, report, live, variants, divider };
+    // THE SELECTION ENGINE (Chezy 2026-07-16: "I need to select every single bit
+    // of text just like in every other app"): every textual message carries its
+    // own display layout — wrapped lines of styled segments with REAL glyph
+    // geometry — so the mouse can address characters, not cards. measure() builds
+    // it; paint() draws FROM it (one source of truth: highlight and glyphs can
+    // never disagree); the click-to-copy era is over.
+    struct Seg { juce::String t; juce::Font f; juce::Colour c; float x = 0, w = 0; };
+    struct DispLine { float y = 0, h = 14.0f; int src = 0; std::vector<Seg> segs; };
     struct Msg { Kind kind; juce::String text; juce::StringArray meta; float h = 20.0f;
                  bool expanded = false; bool wasStream = false; bool wasThink = false;
+                 // P65 RUN FOLDS: runId stamped lazily (user asks open runs); folded
+                 // members paint nothing; a Kind::divider row summarizes the run.
+                 int runId = 0; bool folded = false; juce::int64 at = 0;
                  std::vector<float> peaks;
+                 // the display layout (selection truth): lines + the flat text they show
+                 std::vector<DispLine> lay; juce::String dispText;
+                 float layW = 0.0f, layH = 0.0f;          // natural width / total text height
+                 float txX = 0.0f, txY = 0.0f, yTop = 0.0f;   // text origin + card top (set by paint)
                  // THE CHAT IS A DAW: a live component rides the transcript (Kind::live).
                  // The panel owns its lifetime + flow position; the host keeps the raw
                  // pointer to retarget/freeze it and hears onLiveGone when pruned.
                  std::unique_ptr<juce::Component> live; int liveH = 0; };
     std::function<void()> onAudition, onAccept, onReject;   // proposal-card buttons
     std::function<void()> onPlayTake;                       // #17: EARS card ▶ = hear what it measured
+    std::function<void()> onRetry;                          // P64: error card ↻ — host resends or explains
     std::function<void (const juce::String&)> onSuggest;    // empty-state starter chips -> prompt box
+    std::function<void (int)> onDoor;   // THE DOORS (rebrand 31 §1a): 0=bring a song, 1=MAKE, 2=finish
     // #21c BLIND ROUND: variants card. meta stride 4 = [label, wav, lufs, peak]
     // per take; text empty while open, the picked LABEL once decided (card dims,
     // pick chips retire). Play passes the wav path, pick passes the label.
@@ -54,7 +71,126 @@ public:
         startTimerHz (24);             // animates the composing dots + underline shimmer while busy
     }
 
+    // THE FINAL IS NOT A TWIN (2026-08-02 "responses ARE STILL DOUBLED"):
+    // the run-end "agent done: <text>" used to land as a second full card
+    // beside the streamed one whenever the sidecar's dedup missed (long
+    // replies, caps, whitespace). The sidecar is fixed at the source; this
+    // is the UI belt - cap-blind prefix law, mirror of tools/chat_truth.py.
+    void addFinal (const juce::String& body)
+    {
+        const auto norm = [] (juce::String s)
+        { return s.replace ("\n", " ").replace ("  ", " ").trim(); };
+        const auto f = norm (body);
+        for (int back = 0; back < juce::jmin (8, (int) msgs.size()); ++back)
+        {
+            auto& m = msgs[msgs.size() - 1 - (size_t) back];
+            if (m.kind == Kind::user) break;
+            if (m.kind != Kind::agent || m.wasThink) continue;
+            const auto c = norm (m.text);
+            if (f.isNotEmpty() && c.isNotEmpty())
+            {
+                const auto& shorter = f.length() <= c.length() ? f : c;
+                const auto& longer  = f.length() <= c.length() ? c : f;
+                const bool same = f == c
+                    || (shorter.length() >= 600
+                        && longer.startsWith (shorter.substring (0, 600)))
+                    || (shorter.length() >= 80 && longer.startsWith (shorter));
+                if (same) { add (Kind::status, "producer done."); return; }
+            }
+            break;   // only the nearest settled reply guards
+        }
+        add (Kind::agent, body);
+    }
+
     void add (Kind k, juce::String text, juce::StringArray meta = {})
+    {
+        if (agentBusy) lastEventMs = juce::Time::getMillisecondCounter();   // P63: any event calms "quiet"
+        addInner (k, std::move (text), std::move (meta));
+        if (! msgs.empty() && msgs.back().at == 0)
+            msgs.back().at = juce::Time::currentTimeMillis();
+        if (k == Kind::user)
+        {   // P65: a fresh ask ages the transcript — old runs fold behind dividers
+            refreshRunFolds();
+            relayout();
+        }
+    }
+    // P65 SESSION DIVIDERS: a RUN = one user ask and everything until the next.
+    // The last 3 runs stay open; older ones fold into one honest line each
+    // ("18:42 \"make the drop harder\" - 12 actions"). Click = expand in place;
+    // an expanded divider PINS its run open (the next sweep respects the hand).
+    // Runs carrying LIVE cards never fold (their components are real - memory
+    // honesty by avoidance). Ids are stamped lazily from the transcript itself,
+    // so every add path (replay included) stays covered with zero push-site law.
+    int foldKeepRuns = 3;
+    void refreshRunFolds()
+    {
+        int run = 0;
+        for (auto& m : msgs)
+        {
+            if (m.kind == Kind::user) ++run;
+            if (m.kind != Kind::divider) m.runId = run;
+        }
+        if (run <= foldKeepRuns) return;
+        bool changed = false;
+        for (int id = 1; id <= run - foldKeepRuns; ++id)
+        {
+            bool hasLive = false, hasDivider = false, anyOpen = false, pinned = false;
+            size_t first = msgs.size();
+            for (size_t i = 0; i < msgs.size(); ++i)
+            {
+                auto& m = msgs[i];
+                if (m.runId != id) continue;
+                if (m.kind == Kind::divider) { hasDivider = true; pinned = pinned || m.expanded; continue; }
+                if (m.live != nullptr) hasLive = true;
+                if (! m.folded) anyOpen = true;
+                if (first == msgs.size()) first = i;
+            }
+            if (first == msgs.size() || hasLive || pinned || ! anyOpen) continue;
+            juce::String ask;
+            int actions = 0;
+            bool hadErr = false;
+            juce::int64 t0 = 0;
+            for (auto& m : msgs)
+                if (m.runId == id && m.kind != Kind::divider)
+                {
+                    if (m.kind == Kind::user && ask.isEmpty()) { ask = m.text; t0 = m.at; }
+                    if (m.kind == Kind::action || m.kind == Kind::tool) ++actions;
+                    if (m.kind == Kind::error) hadErr = true;
+                    m.folded = true;
+                }
+            changed = true;
+            if (! hasDivider)
+            {
+                Msg d;
+                d.kind = Kind::divider;
+                d.runId = id;
+                d.text = (t0 > 0 ? juce::Time (t0).formatted ("%H:%M ") : juce::String())
+                       + "\"" + ask.substring (0, 46) + "\"" + (ask.length() > 46 ? "..." : "")
+                       + " - " + juce::String (actions) + " action" + (actions == 1 ? "" : "s")
+                       + (hadErr ? " - errored" : "");
+                d.meta = { hadErr ? "warn" : "dim" };
+                msgs.insert (msgs.begin() + (long) first, std::move (d));
+            }
+        }
+        if (changed) content.clearSelection();   // inserts shifted the indices
+    }
+    void toggleRun (int id)
+    {   // expand/collapse in place; expanding one leaves the others folded
+        bool nowOpen = false;
+        for (auto& m : msgs)
+            if (m.kind == Kind::divider && m.runId == id)
+            { m.expanded = ! m.expanded; nowOpen = m.expanded; break; }
+        for (auto& m : msgs)
+            if (m.kind != Kind::divider && m.runId == id)
+                m.folded = ! nowOpen;
+        content.clearSelection();
+        relayout();
+    }
+    int foldedForRig() const
+    { int n = 0; for (auto& m : msgs) n += m.folded ? 1 : 0; return n; }
+    int dividersForRig() const
+    { int n = 0; for (auto& m : msgs) n += m.kind == Kind::divider ? 1 : 0; return n; }
+    void addInner (Kind k, juce::String text, juce::StringArray meta = {})
     {
         // strings arrive from many sources (agent JSON, C literals) — normalise the
         // usual UTF-8 punctuation so a stray codepage can never mojibake the chat
@@ -146,6 +282,7 @@ public:
             if (m.live != nullptr && onLiveGone) onLiveGone (m.live.get());
         msgs.clear();
         streamOpen = false;
+        content.clearSelection();          // dead indices must not haunt the next thread
         relayout();
     }
 
@@ -161,6 +298,38 @@ public:
                    .replace (juce::String::fromUTF8 ("\xe2\x80\x93"), "-")
                    .trim();
         if (text.isEmpty()) return;
+        {   // P63: the pulse readout feeds on the deltas themselves
+            const auto nowMs = juce::Time::getMillisecondCounter();
+            lastEventMs = nowMs;
+            if (! thinking)
+            {
+                const int len = text.length();
+                if (lastDeltaMs != 0 && nowMs > lastDeltaMs && len > lastStreamLen)
+                {
+                    const double inst = (len - lastStreamLen) / 4.0
+                                        / juce::jmax (0.05, (nowMs - lastDeltaMs) / 1000.0);
+                    const double a = juce::jlimit (0.05, 0.5, (nowMs - lastDeltaMs) / 3000.0);
+                    tokEma = tokEma <= 0.0 ? inst : tokEma + a * (inst - tokEma);
+                }
+                lastDeltaMs = nowMs;
+                lastStreamLen = len;
+            }
+        }
+        // THE TWIN LAW (Chezy 2026-07-16: PLAN + finals doubled): a delta whose
+        // text the NEAREST settled agent card already says is an emitter's
+        // trailing flush racing the block-complete reply — an echo, never new
+        // typing. Dropping it can never lose words: every block-complete reply
+        // also lands via add(); this guard only costs echo cards.
+        if (! streamOpen)
+            for (int back = 0; back < juce::jmin (4, (int) msgs.size()); ++back)
+            {
+                auto& m = msgs[msgs.size() - 1 - (size_t) back];
+                if (m.kind != Kind::agent) continue;
+                if (! m.wasStream && (m.text == text || m.text.startsWith (text)
+                                      || (m.text.length() >= 1000 && text.startsWith (m.text))))
+                    return;
+                break;   // only the nearest agent card guards
+            }
         if (streamOpen && ! msgs.empty() && msgs.back().kind == Kind::agent
             && msgs.back().wasStream)
         {
@@ -176,11 +345,15 @@ public:
         }
         // a thinking pulse between tool pills REOPENS its card instead of
         // littering one per turn (fable redacts thinking - the pulse is a
-        // climbing counter, one card per run is the whole story)
+        // climbing counter, one card per run is the whole story). ONE CARD
+        // LAW (2026-08-02 "the thinking is ugly"): the old 6-row look-back
+        // lost the card behind tool pills and minted stacked twins - walk
+        // back to the run boundary (the last USER row), never across it.
         if (thinking)
-            for (int back = 0; back < juce::jmin (6, (int) msgs.size()); ++back)
+            for (int back = 0; back < juce::jmin (64, (int) msgs.size()); ++back)
             {
                 auto& m = msgs[msgs.size() - 1 - (size_t) back];
+                if (m.kind == Kind::user) break;   // a mind never crosses asks
                 if (! m.wasThink) continue;
                 const float old = m.h;
                 m.text = text;
@@ -323,6 +496,24 @@ public:
     juce::String headerInfo;            // right side of the panel header ("139 skills - KG online")
     bool agentBusy = false;             // pulses the status dot
     bool agentDead = false;             // sidecar gone: red dot + auto-restart note
+    // P63 THE PULSE READOUT (UI_SPEC_100): the liveness pill learns RATE — a
+    // chars/4-per-second EMA over the delta stream ("~42 tok/s"), "..." while
+    // only thinking pulses arrive, and an honest warn "quiet Ns" after 30s of
+    // NO events at all. Feeds ride the existing stream — no new protocol.
+    double tokEma = 0.0;
+    juce::uint32 lastDeltaMs = 0, lastEventMs = 0;
+    int lastStreamLen = 0;
+    bool busyWas = false;
+    juce::String pulseReadout() const
+    {
+        if (! agentBusy || agentDead) return {};
+        const auto nowMs = juce::Time::getMillisecondCounter();
+        if (lastEventMs != 0 && nowMs - lastEventMs > 30000)
+            return "quiet " + juce::String ((int) ((nowMs - lastEventMs) / 1000)) + "s";
+        if (lastDeltaMs != 0 && nowMs - lastDeltaMs < 4000 && tokEma > 0.5)
+            return "~" + juce::String ((int) std::round (tokEma)) + " tok/s";
+        return "...";
+    }
     // THE PAGE IS THE CHAT (Chezy 2026-07-08): in agent mode the panel sheds its
     // body - no fill, no border, no header strip. The transcript floats straight
     // on the console; liveness becomes a floating glass pill (state as material).
@@ -347,6 +538,19 @@ public:
         g.fillRoundedRectangle (r, 12.0f);
         g.setColour (juce::Colours::white.withAlpha (0.05f));
         g.drawRoundedRectangle (r.reduced (0.5f), 12.0f, 1.0f);
+        // THE VOID WEARS THE MARK: short conversations bottom-anchor and leave
+        // the upper column bare — the spark breathes there as dormant material
+        // (never text, never a banner). Retires the moment the transcript fills.
+        if (content.topOffset > 140.0f && vp.getViewPositionY() <= 0)
+        {
+            const float s = juce::jmin (120.0f, content.topOffset * 0.45f);
+            const float sy = 40.0f + (content.topOffset - s) * 0.42f;
+            theme::spark (g, { r.getCentreX() - s * 0.5f, sy, s, s },
+                          theme::agent.withAlpha (0.055f));
+            theme::spark (g, { r.getCentreX() - s * 0.16f, sy + s * 0.30f,
+                               s * 0.4f, s * 0.4f },
+                          theme::accent.withAlpha (0.045f));
+        }
         // header: agent identity strip
         auto h = getLocalBounds().removeFromTop (32).toFloat();
         g.setColour (theme::panelHi.withAlpha (0.6f));
@@ -392,6 +596,14 @@ public:
                 g.setColour (theme::warn.withAlpha (i == ph ? 0.95f : 0.30f));
                 g.fillEllipse (h.getRight() - 38.0f + 9.0f * (float) i, h.getCentreY() - 1.5f, 4.0f, 4.0f);
             }
+            if (const auto rate = pulseReadout(); rate.isNotEmpty())
+            {   // P63: the pulse speaks its rate beside the word
+                g.setColour ((rate.startsWith ("quiet") ? theme::warn
+                                                        : theme::textMute).withAlpha (0.85f));
+                g.setFont (theme::mono (8.5f));
+                g.drawText (rate, h.toNearestInt().removeFromRight (240).withTrimmedRight (104),
+                            juce::Justification::centredRight);
+            }
         }
         else
         {
@@ -412,19 +624,23 @@ public:
                                  juce::Colour (0xff0a0b12).withAlpha (0.0f),  top.getBottomLeft(), false });
             g.fillRect (top);
         }
+        drawCosmoScore (g);   // the working-state MATERIAL: levitating notation
         if (! agentBusy && ! agentDead) return;
         // THE LIVENESS PILL: a floating glass chip, top-centre of the column -
         // the frameless page's only status material (never a banner strip)
         const auto tint = agentDead ? theme::bad : theme::warn;
         const juce::String word = agentDead ? "OFFLINE - restarting" : "composing";
+        const auto rate = agentDead ? juce::String() : pulseReadout();   // P63
+        const float rw = rate.isEmpty() ? 0.0f
+                                        : theme::measure (theme::mono (8.5f), rate) + 12.0f;
         const float tw = theme::measure (theme::ui (10.0f, juce::Font::bold), word);
-        const float pw = tw + (agentDead ? 34.0f : 60.0f);
+        const float pw = tw + (agentDead ? 34.0f : 60.0f) + rw;
         juce::Rectangle<float> pill ((float) getWidth() * 0.5f - pw * 0.5f, 6.0f, pw, 22.0f);
         g.setColour (juce::Colour (0xff0c0e15).withAlpha (0.82f));
         g.fillRoundedRectangle (pill, 11.0f);
         g.setColour (juce::Colours::white.withAlpha (0.035f));
         g.fillRoundedRectangle (pill, 11.0f);
-        g.setColour (tint.withAlpha (0.45f));
+        g.setColour (tint.withAlpha (0.248f));
         g.drawRoundedRectangle (pill.reduced (0.5f), 11.0f, 1.0f);
         theme::spark (g, { pill.getX() + 8.0f, pill.getCentreY() - 5.0f, 10.0f, 10.0f },
                       theme::agent.withAlpha (0.9f));
@@ -432,6 +648,14 @@ public:
         g.setFont (theme::ui (10.0f, juce::Font::bold));
         g.drawText (word, pill.withTrimmedLeft (23.0f).toNearestInt(),
                     juce::Justification::centredLeft);
+        if (rate.isNotEmpty())
+        {   // P63: the rate rides between the word and the dots
+            g.setColour ((rate.startsWith ("quiet") ? theme::warn
+                                                    : theme::textMute).withAlpha (0.9f));
+            g.setFont (theme::mono (8.5f));
+            g.drawText (rate, pill.toNearestInt().withTrimmedRight (40),
+                        juce::Justification::centredRight);
+        }
         if (! agentDead)
         {
             const int ph = (int) (juce::Time::getMillisecondCounter() / 250) % 3;
@@ -445,6 +669,125 @@ public:
     }
 
 private:
+    // ============================ THE COSMO SCORE ============================
+    // (Chezy 2026-08-02: "a levitating and cosmo morphing music score notation
+    // while the agent is working"). Real Bravura/SMuFL glyphs levitate over the
+    // transcript's low air while the agent composes: a breathing staff ribbon,
+    // note glyphs that drift, bob and MORPH between durations, cosmic dust with
+    // parallax, the tint sliding violet->blue. Pure paint, driven by the 24Hz
+    // busy timer, region-bounded, zero cost at rest (cosmoMix gates).
+    float cosmoMix = 0.0f;
+    juce::uint32 cosmoT0 = juce::Time::getMillisecondCounter();
+
+    static juce::Typeface::Ptr cosmoFace()
+    {
+       #if SOTADAW_EMBEDDED_FONTS
+        static const auto tf = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::Bravura_otf, (size_t) BinaryData::Bravura_otfSize);
+        return tf;
+       #else
+        return nullptr;
+       #endif
+    }
+
+    void drawCosmoScore (juce::Graphics& g)
+    {
+        if (cosmoMix <= 0.01f) return;
+        const float w = (float) getWidth();
+        const float bandH = 108.0f;
+        const float y0 = (float) getHeight() - bandH;
+        if (w < 160.0f || y0 < 40.0f) return;
+        const double t = (double) (juce::Time::getMillisecondCounter() - cosmoT0) / 1000.0;
+        const float mix = cosmoMix;
+        // the tint breathes violet -> deep blue and back (the cosmo drift)
+        const float hueW = 0.5f + 0.5f * std::sin ((float) t * 0.23f);
+        const auto tint = theme::agent.interpolatedWith (juce::Colour (0xff58b7ff), hueW * 0.55f);
+        juce::Graphics::ScopedSaveState save (g);
+        g.reduceClipRegion (juce::Rectangle<int> (0, (int) y0, (int) w, (int) bandH));
+        // ---- cosmic dust: two parallax depths, deterministic per index
+        for (int i = 0; i < 26; ++i)
+        {
+            const float ph = (float) i * 2.399963f;                 // golden angle
+            const float depth = (i % 2 == 0) ? 0.55f : 1.0f;        // far / near
+            const float dx = std::fmod (ph * 97.0f + (float) t * (6.0f * depth), w + 24.0f) - 12.0f;
+            const float dy = y0 + 14.0f + 80.0f * (0.5f + 0.5f * std::sin (ph * 3.1f + (float) t * (0.20f + 0.07f * depth)));
+            const float tw = 0.5f + 0.5f * std::sin ((float) t * (1.1f + 0.13f * (float) (i % 5)) + ph);
+            g.setColour (tint.withAlpha (mix * (0.04f + 0.10f * tw) * depth));
+            const float r = depth > 0.9f ? 1.6f : 1.0f;
+            g.fillEllipse (dx, dy, r, r);
+        }
+        // ---- the staff ribbon: five lines that undulate as ONE surface
+        const float cy = y0 + bandH * 0.52f;
+        for (int ln = -2; ln <= 2; ++ln)
+        {
+            juce::Path p;
+            const float gap = 5.2f;
+            bool first = true;
+            for (float x = -8.0f; x <= w + 8.0f; x += 14.0f)
+            {
+                const float wave = 7.0f * std::sin (x * 0.011f + (float) t * 0.7f)
+                                 + 3.0f * std::sin (x * 0.023f - (float) t * 0.43f);
+                const float yy = cy + (float) ln * gap + wave
+                               + (float) ln * 1.3f * std::sin (x * 0.007f + (float) t * 0.31f);
+                if (first) { p.startNewSubPath (x, yy); first = false; }
+                else         p.lineTo (x, yy);
+            }
+            g.setColour (tint.withAlpha (mix * (ln == 0 ? 0.16f : 0.10f)));
+            g.strokePath (p, juce::PathStrokeType (ln == 0 ? 1.1f : 0.8f));
+        }
+        // ---- the levitating glyphs: drift, bob, sway, and MORPH duration
+        const auto tf = cosmoFace();
+        // SMuFL (Bravura): gClef E050, metronome-note quarter ECA5 / 8th ECA7 /
+        // 16th ECA9 / half ECA3, rests E4E5/E4E6, sharp E262, head E0A4
+        static const juce::juce_wchar A[9] = { 0xE050, 0xECA5, 0xECA7, 0xECA9,
+                                               0xE4E5, 0xECA5, 0xE262, 0xECA7, 0xE0A4 };
+        static const juce::juce_wchar B[9] = { 0xE050, 0xECA7, 0xECA9, 0xECA3,
+                                               0xE4E6, 0xECA9, 0xE262, 0xECA5, 0xECA7 };
+        for (int i = 0; i < 9; ++i)
+        {
+            const float ph = (float) i * 0.777f;
+            const float speed = 9.0f + 3.5f * (float) (i % 3);
+            const float px = std::fmod (ph * 151.0f + (float) t * speed, w + 90.0f) - 45.0f;
+            const float bob = 16.0f * std::sin ((float) t * (0.5f + 0.09f * (float) i) + ph * 2.1f);
+            const float py = cy + bob + 9.0f * std::sin (px * 0.012f + ph);
+            const float sway = 0.16f * std::sin ((float) t * 0.8f + ph * 3.0f);
+            const float sz = (i == 0 ? 34.0f : 21.0f + 2.4f * (float) (i % 4));
+            // morph: A-form crossfades into B-form and back, per-glyph phase
+            const float morph = 0.5f + 0.5f * std::sin ((float) t * (0.6f + 0.05f * (float) i) + ph * 1.7f);
+            const float glow = 0.5f + 0.5f * std::sin ((float) t * 1.3f + ph * 5.0f);
+            juce::Graphics::ScopedSaveState s2 (g);
+            g.addTransform (juce::AffineTransform::rotation (sway, px, py));
+            if (tf != nullptr)
+            {
+                const juce::Font mf (juce::FontOptions (tf).withHeight (sz));
+                g.setFont (mf);
+                const auto ga = juce::String::charToString (A[i]);
+                const auto gb = juce::String::charToString (B[i]);
+                // soft halo under the glyph = the levitation light
+                g.setColour (tint.withAlpha (mix * 0.10f * glow));
+                g.fillEllipse (px - sz * 0.42f, py + sz * 0.18f, sz * 0.84f, sz * 0.20f);
+                g.setColour (tint.withAlpha (mix * (0.24f + 0.30f * glow) * (1.0f - morph)));
+                g.drawText (ga, juce::Rectangle<float> (px - sz, py - sz, sz * 2.0f, sz * 2.0f)
+                                   .toNearestInt(), juce::Justification::centred);
+                g.setColour (tint.withAlpha (mix * (0.24f + 0.30f * glow) * morph));
+                g.drawText (gb, juce::Rectangle<float> (px - sz, py - sz, sz * 2.0f, sz * 2.0f)
+                                   .toNearestInt(), juce::Justification::centred);
+            }
+            else   // fallback shapes law: no face, still music (heads + stems)
+            {
+                g.setColour (tint.withAlpha (mix * (0.22f + 0.25f * glow)));
+                g.fillEllipse (px - 3.4f, py - 2.6f, 6.8f, 5.2f);
+                g.drawLine (px + 3.2f, py, px + 3.2f, py - 14.0f, 1.1f);
+            }
+        }
+        // the band dissolves upward into the transcript - depth, never a box
+        g.setGradientFill ({ juce::Colour (0xff0a0b12).withAlpha (0.0f),
+                             { 0.0f, y0 + bandH * 0.4f },
+                             juce::Colour (0xff0a0b12).withAlpha (mix * 0.20f),
+                             { 0.0f, y0 }, false });
+        g.fillRect (juce::Rectangle<float> (0.0f, y0, w, bandH * 0.5f));
+    }
+
     void pruneThinkTail()   // thinking cards are scaffolding: they leave when the reply lands
     {
         bool removed = false;
@@ -463,11 +806,31 @@ private:
         for (auto it = msgs.begin(); it != msgs.begin() + 100; ++it)
             if (it->live != nullptr && onLiveGone) onLiveGone (it->live.get());
         msgs.erase (msgs.begin(), msgs.begin() + 100);
+        content.clearSelection();          // indices shifted under the selection
         relayout();
     }
 
     void timerCallback() override
     {
+        if (agentBusy && ! busyWas)
+        {   // P63: a fresh run zeroes the pulse (stale silence must not cry wolf)
+            tokEma = 0.0; lastDeltaMs = 0; lastStreamLen = 0;
+            lastEventMs = juce::Time::getMillisecondCounter();
+        }
+        busyWas = agentBusy;
+        // THE COSMO SCORE eases in while the agent works and dissolves when it
+        // rests — repaint stays BOUNDED to the band (lag-campaign law: no
+        // full-window storms; zero cost at rest once the fade lands)
+        {
+            const float cTgt = (agentBusy && ! agentDead) ? 1.0f : 0.0f;
+            if (cosmoMix != cTgt || cosmoMix > 0.004f)
+            {
+                cosmoMix += (cTgt - cosmoMix) * 0.10f;
+                if (cosmoMix < 0.004f && cTgt <= 0.0f) cosmoMix = 0.0f;
+                if (cosmoMix > 0.0f)
+                    repaint (0, juce::jmax (0, getHeight() - 118), getWidth(), 118);
+            }
+        }
         // busy animates (shimmer + dots) at full rate; dead is a STATIC banner — a
         // 2 Hz touch is enough to catch the host flipping the flag without a repaint
         if (agentBusy || (agentDead && ++deadTick % 12 == 0)) repaint (0, 0, getWidth(), 32);
@@ -482,44 +845,347 @@ private:
 
     struct Content : public juce::Component
     {
+        Content() { setWantsKeyboardFocus (true); }   // ctrl+C must reach this surface
+
         ChatPanel* owner = nullptr;
         float topOffset = 0.0f;         // bottom-anchor: few messages sit by the composer, not in a void
         struct Hit { juce::Rectangle<float> r; int action; };
         std::vector<Hit> hits;
-        int flashIdx = -1;              // click-to-copy feedback
+        int flashIdx = -1;              // copy feedback (context menu / ctrl+C)
         juce::uint32 flashAt = 0;
+        juce::String flashWord { "copied" };
         int hoverAction = -1;           // buttons/chips light under the mouse
+
+        // ---- THE SELECTION (Chezy 2026-07-16: select text like every other app) ----
+        struct SelPt { int msg = -1; int chr = 0; };
+        SelPt selA, selB;               // anchor + head, in display-char space
+        bool selecting = false, selDragged = false;
+
+        static bool selLess (const SelPt& a, const SelPt& b)
+        { return a.msg != b.msg ? a.msg < b.msg : a.chr < b.chr; }
+        bool hasSelection() const
+        { return selA.msg >= 0 && selB.msg >= 0
+                 && ! (selA.msg == selB.msg && selA.chr == selB.chr); }
+        void clearSelection()
+        {
+            if (selA.msg < 0 && selB.msg < 0) return;
+            selA = SelPt(); selB = SelPt();
+            repaint();
+        }
+
+        static int lineLength (const DispLine& dl)
+        {
+            int n = 0;
+            for (auto& s : dl.segs) n += s.t.length();
+            return n;
+        }
+        static int charInLine (const DispLine& dl, float lx)
+        {
+            int base = 0;
+            for (auto& s : dl.segs)
+            {
+                if (lx < s.x) return base;
+                if (lx <= s.x + s.w)
+                {   // binary-search the boundary, then the midpoint rule picks a side
+                    int lo = 0, hi = s.t.length();
+                    while (lo < hi)
+                    {
+                        const int mid = (lo + hi + 1) / 2;
+                        if (s.x + theme::measure (s.f, s.t.substring (0, mid)) <= lx) lo = mid;
+                        else hi = mid - 1;
+                    }
+                    if (lo < s.t.length())
+                    {
+                        const float w0 = theme::measure (s.f, s.t.substring (0, lo));
+                        const float w1 = theme::measure (s.f, s.t.substring (0, lo + 1));
+                        if (lx - (s.x + w0) > (w1 - w0) * 0.5f) ++lo;
+                    }
+                    return base + lo;
+                }
+                base += s.t.length();
+            }
+            return base;
+        }
+        static float xAtChar (const DispLine& dl, int k)
+        {
+            int base = 0;
+            for (auto& s : dl.segs)
+            {
+                if (k <= base + s.t.length())
+                    return s.x + theme::measure (s.f, s.t.substring (0, k - base));
+                base += s.t.length();
+            }
+            return dl.segs.empty() ? 0.0f : dl.segs.back().x + dl.segs.back().w;
+        }
+        int charAt (const Msg& m, juce::Point<float> pos) const
+        {
+            const float ly = pos.y - m.txY, lx = pos.x - m.txX;
+            int tail = 0;
+            for (auto& dl : m.lay)
+            {
+                if (ly < dl.y) return dl.src;
+                if (ly < dl.y + dl.h) return dl.src + charInLine (dl, lx);
+                tail = dl.src + lineLength (dl);
+            }
+            return tail;
+        }
+        SelPt posToSel (juce::Point<float> pos) const
+        {
+            const auto& ms = owner->msgs;
+            int prev = -1;
+            for (int i = 0; i < (int) ms.size(); ++i)
+            {
+                const auto& m = ms[(size_t) i];
+                if (m.lay.empty()) continue;
+                if (pos.y < m.yTop) return { i, 0 };
+                if (pos.y < m.yTop + m.h) return { i, charAt (m, pos) };
+                prev = i;
+            }
+            if (prev >= 0) return { prev, ms[(size_t) prev].dispText.length() };
+            return {};
+        }
+        int msgIndexAt (float yy) const
+        {
+            const auto& ms = owner->msgs;
+            for (int i = 0; i < (int) ms.size(); ++i)
+                if (yy >= ms[(size_t) i].yTop && yy < ms[(size_t) i].yTop + ms[(size_t) i].h)
+                    return i;
+            return -1;
+        }
+        bool overText (juce::Point<float> pos) const
+        {
+            const int i = msgIndexAt (pos.y);
+            if (i < 0) return false;
+            const auto& m = owner->msgs[(size_t) i];
+            for (auto& dl : m.lay)
+            {
+                if (pos.y - m.txY < dl.y || pos.y - m.txY >= dl.y + dl.h) continue;
+                if (dl.segs.empty()) return false;
+                const float x0 = m.txX + dl.segs.front().x;
+                const float x1 = m.txX + dl.segs.back().x + dl.segs.back().w;
+                return pos.x >= x0 - 4.0f && pos.x <= x1 + 6.0f;
+            }
+            return false;
+        }
+
+        juce::String selectionText() const
+        {
+            if (! hasSelection()) return {};
+            auto a = selA, b = selB;
+            if (selLess (b, a)) std::swap (a, b);
+            juce::String out;
+            const auto& ms = owner->msgs;
+            bool first = true;
+            for (int i = juce::jmax (0, a.msg); i <= b.msg && i < (int) ms.size(); ++i)
+            {
+                const auto& m = ms[(size_t) i];
+                if (m.lay.empty()) continue;
+                const int c0 = i == a.msg ? juce::jlimit (0, m.dispText.length(), a.chr) : 0;
+                const int c1 = i == b.msg ? juce::jlimit (0, m.dispText.length(), b.chr)
+                                          : m.dispText.length();
+                if (! first) out << "\n\n";            // a message boundary reads as a blank line
+                first = false;
+                out << m.dispText.substring (c0, c1);
+            }
+            return out;
+        }
+        bool copySelection()
+        {
+            const auto t = selectionText();
+            if (t.isEmpty()) return false;
+            juce::SystemClipboard::copyTextToClipboard (t);
+            flashIdx = -2; flashWord = "copied";
+            flashAt = juce::Time::getMillisecondCounter();
+            repaint();
+            return true;
+        }
+        void selectAll()
+        {
+            const auto& ms = owner->msgs;
+            int f = -1, l = -1;
+            for (int i = 0; i < (int) ms.size(); ++i)
+                if (! ms[(size_t) i].lay.empty()) { if (f < 0) f = i; l = i; }
+            if (f < 0) return;
+            selA = { f, 0 };
+            selB = { l, ms[(size_t) l].dispText.length() };
+            repaint();
+        }
+        void selectMsg (int i)
+        {
+            if (i < 0 || i >= (int) owner->msgs.size() || owner->msgs[(size_t) i].lay.empty()) return;
+            selA = { i, 0 };
+            selB = { i, owner->msgs[(size_t) i].dispText.length() };
+            repaint();
+        }
+        void selectWordAt (SelPt p)
+        {
+            if (p.msg < 0 || p.msg >= (int) owner->msgs.size()) return;
+            const auto& t = owner->msgs[(size_t) p.msg].dispText;
+            if (t.isEmpty()) return;
+            int s = juce::jlimit (0, t.length(), p.chr), e = s;
+            const auto wordy = [] (juce::juce_wchar ch)
+            { return ch != ' ' && ch != '\n' && ch != '\t'; };
+            while (s > 0 && wordy (t[s - 1])) --s;
+            while (e < t.length() && wordy (t[e])) ++e;
+            if (s == e) return;
+            selA = { p.msg, s };
+            selB = { p.msg, e };
+            repaint();
+        }
+        // the highlight, drawn UNDER a message's glyphs from the same layout truth
+        void paintSelection (juce::Graphics& g, const Msg& m, int idx) const
+        {
+            if (! hasSelection() || m.lay.empty()) return;
+            auto a = selA, b = selB;
+            if (selLess (b, a)) std::swap (a, b);
+            if (idx < a.msg || idx > b.msg) return;
+            const int c0 = idx == a.msg ? a.chr : 0;
+            const int c1 = idx == b.msg ? b.chr : m.dispText.length() + 1;
+            g.setColour (theme::accent.withAlpha (0.30f));
+            for (auto& dl : m.lay)
+            {
+                const int len = lineLength (dl);
+                const int lo = juce::jmax (0, c0 - dl.src);
+                const int hi = juce::jmin (len, c1 - dl.src);
+                const bool spansLine = c0 <= dl.src && c1 > dl.src + len;
+                if (hi < lo || (hi == lo && ! spansLine)) continue;
+                float x0 = xAtChar (dl, lo), x1 = xAtChar (dl, hi);
+                if (c1 > dl.src + len && &dl != &m.lay.back()) x1 += 5.0f;   // the newline nub
+                if (x1 - x0 < 0.5f) x1 = x0 + 2.0f;
+                g.fillRoundedRectangle (m.txX + x0 - 1.0f, m.txY + dl.y,
+                                        x1 - x0 + 2.0f, dl.h, 2.0f);
+            }
+        }
+        // glyphs from the same layout the selection addresses — they cannot drift
+        void drawLay (juce::Graphics& g, const Msg& m) const
+        {
+            for (auto& dl : m.lay)
+                for (auto& s : dl.segs)
+                {
+                    g.setFont (s.f);
+                    g.setColour (s.c);
+                    g.drawText (s.t, juce::Rectangle<float> (m.txX + s.x, m.txY + dl.y,
+                                                             s.w + 3.0f, dl.h),
+                                juce::Justification::centredLeft, false);
+                }
+        }
 
         void mouseMove (const juce::MouseEvent& e) override
         {
             int h = -1;
             for (auto& hh : hits)
-                if ((hh.action < 100 || hh.action >= 500) && hh.r.contains (e.position)) { h = hh.action; break; }
+                if (hh.r.contains (e.position)) { h = hh.action; break; }
             if (h != hoverAction) { hoverAction = h; repaint(); }
+            setMouseCursor (h != -1 ? juce::MouseCursor::PointingHandCursor
+                            : overText (e.position) ? juce::MouseCursor::IBeamCursor
+                                                    : juce::MouseCursor::NormalCursor);
         }
         void mouseExit (const juce::MouseEvent&) override
         {
             if (hoverAction != -1) { hoverAction = -1; repaint(); }
+            setMouseCursor (juce::MouseCursor::NormalCursor);
         }
 
-        void mouseUp (const juce::MouseEvent& e) override
+        void mouseDown (const juce::MouseEvent& e) override
         {
-            if (e.mods.isPopupMenu())   // right-click: the whole conversation as text
+            grabKeyboardFocus();
+            if (e.mods.isPopupMenu()) { showContextMenu (e); return; }
+            selecting = false;
+            selDragged = false;
+            for (auto& hh : hits)
+                if (hh.r.contains (e.position)) return;   // a button press is never a drag-select
+            const int clicks = e.getNumberOfClicks();
+            const auto sp = posToSel (e.position);
+            if (clicks >= 3)      { if (sp.msg >= 0) selectMsg (sp.msg); }
+            else if (clicks == 2) selectWordAt (sp);
+            else
+            {
+                clearSelection();
+                if (sp.msg >= 0) { selA = selB = sp; selecting = true; }
+            }
+        }
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (! selecting) return;
+            selDragged = true;
+            selB = posToSel (e.position);
+            auto& v = owner->vp;                // long selections pull the page along
+            const auto rel = v.getLocalPoint (this, e.getPosition());
+            v.autoMove = true;                  // an assisted scroll is OURS, not a user pin
+            v.autoScroll (rel.x, rel.y, 24, 12);
+            v.autoMove = false;
+            repaint();
+        }
+
+        bool keyPressed (const juce::KeyPress& k) override
+        {
+            if (k == juce::KeyPress ('c', juce::ModifierKeys::commandModifier, 0))
+                return copySelection();
+            if (k == juce::KeyPress ('a', juce::ModifierKeys::commandModifier, 0))
+            { selectAll(); return true; }
+            if (k == juce::KeyPress (juce::KeyPress::escapeKey) && hasSelection())
+            { clearSelection(); return true; }
+            return false;
+        }
+
+        void showContextMenu (const juce::MouseEvent& e)
+        {
+            const int mi = msgIndexAt (e.position.y);
+            juce::PopupMenu menu;
+            menu.addItem (1, "Copy selection", hasSelection());
+            menu.addItem (2, "Copy message",
+                          mi >= 0 && (owner->msgs[(size_t) mi].dispText.isNotEmpty()
+                                      || owner->msgs[(size_t) mi].text.isNotEmpty()));
+            menu.addItem (3, "Select message", mi >= 0 && ! owner->msgs[(size_t) mi].lay.empty());
+            menu.addItem (4, "Select all");
+            menu.addSeparator();
+            menu.addItem (5, "Copy whole conversation");
+            juce::Component::SafePointer<Content> safe (this);
+            menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (
+                                    { e.getScreenX(), e.getScreenY(), 1, 1 }),
+                                [safe, mi] (int r)
+                                { if (safe != nullptr && r != 0) safe->menuAction (r, mi); });
+        }
+        void menuAction (int r, int mi)
+        {
+            if (r == 1) copySelection();
+            else if (r == 2 && mi >= 0 && mi < (int) owner->msgs.size())
+            {
+                const auto& m = owner->msgs[(size_t) mi];
+                juce::SystemClipboard::copyTextToClipboard (
+                    m.dispText.isNotEmpty() ? m.dispText : m.text);
+                flashIdx = mi; flashWord = "copied";
+                flashAt = juce::Time::getMillisecondCounter();
+                repaint();
+            }
+            else if (r == 3) selectMsg (mi);
+            else if (r == 4) selectAll();
+            else if (r == 5)
             {
                 juce::String all;
                 for (auto& m : owner->msgs)
                 {
                     if (m.kind == Kind::live) continue;   // components aren't text
+                    if (m.kind == Kind::divider) continue;   // P65: derived lines never copy
                     all << (m.kind == Kind::user ? "you: " : m.kind == Kind::tool ? "  tool: "
                             : m.kind == Kind::action ? "  act: "
-                            : m.kind == Kind::error ? "ERROR: " : m.kind == Kind::proposal ? "PROPOSAL: " : "agent: ")
+                            : m.kind == Kind::error ? "ERROR: " : m.kind == Kind::proposal ? "TAKE: " : "producer: ")
                         << m.text << "\n";
                 }
                 juce::SystemClipboard::copyTextToClipboard (all);
-                flashIdx = -2; flashAt = juce::Time::getMillisecondCounter();
+                flashIdx = -2; flashWord = "conversation copied";
+                flashAt = juce::Time::getMillisecondCounter();
                 repaint();
-                return;
             }
+        }
+
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            if (e.mods.isPopupMenu()) return;
+            const bool wasDrag = selecting && selDragged && hasSelection();
+            selecting = false;
+            selDragged = false;
+            if (wasDrag) { repaint(); return; }           // the drag WAS the gesture
             for (auto& h : hits)
                 if (h.r.contains (e.getPosition().toFloat()))
                 {
@@ -527,6 +1193,7 @@ private:
                     if (h.action == 1 && owner->onAccept)   owner->onAccept();
                     if (h.action == 2 && owner->onReject)   owner->onReject();
                     if (h.action == 3 && owner->onPlayTake) owner->onPlayTake();   // #17 ▶
+                    if (h.action == 4 && owner->onRetry)    owner->onRetry();      // P64 ↻
                     if (h.action >= 20 && h.action < 48)   // #21c blind round: ▶ take / PICK
                         for (auto it = owner->msgs.rbegin(); it != owner->msgs.rend(); ++it)
                             if (it->kind == Kind::variants)
@@ -543,23 +1210,21 @@ private:
                                 }
                                 break;
                             }
-                    static const char* starters[] = { "make the drop hit harder and darker",
-                                                      "hum a topline over the lead",
-                                                      "tighten the mix - kick and bass are fighting",
-                                                      "double the hook an octave up, quieter" };
-                    if (h.action >= 10 && h.action < 14 && owner->onSuggest)
+                    static const char* starters[] = { "hum a topline over the lead",
+                                                      "tighten the mix - kick and bass are fighting" };
+                    if (h.action >= 10 && h.action < 12 && owner->onSuggest)
                         owner->onSuggest (starters[h.action - 10]);
+                    if (h.action >= 15 && h.action < 18 && owner->onDoor)
+                        owner->onDoor (h.action - 15);   // THE DOORS act, they never just type
+                    if (h.action >= 600 && h.action < 800)   // P65: divider = the run's door
+                    {
+                        owner->toggleRun (h.action - 600);
+                        return;
+                    }
                     if (h.action >= 500)   // fold/unfold a long reply
                     {
                         owner->toggleExpand (h.action - 500);
                         return;
-                    }
-                    if (h.action >= 100)   // click a message = COPY it (chat text isn't web text)
-                    {
-                        juce::SystemClipboard::copyTextToClipboard (owner->msgs[(size_t) (h.action - 100)].text);
-                        flashIdx = h.action - 100;
-                        flashAt = juce::Time::getMillisecondCounter();
-                        repaint();
                     }
                     return;
                 }
@@ -584,17 +1249,17 @@ private:
                 // ride the VISIBLE top (content y=2 scrolls offscreen on long threads)
                 // and wear pill material — never naked text over a live row
                 const auto tf = theme::ui (10.5f, juce::Font::bold);
-                const float tw2 = theme::measure (tf, "conversation copied") + 26.0f;
+                const float tw2 = theme::measure (tf, flashWord) + 26.0f;
                 juce::Rectangle<float> pill ((float) getWidth() * 0.5f - tw2 * 0.5f,
                                              (float) owner->vp.getViewPositionY() + 4.0f,
                                              tw2, 18.0f);
                 g.setColour (theme::inset.withAlpha (0.94f));
                 g.fillRoundedRectangle (pill, 9.0f);
-                g.setColour (theme::good.withAlpha (0.55f));
+                g.setColour (theme::good.withAlpha (0.303f));
                 g.drawRoundedRectangle (pill.reduced (0.5f), 9.0f, 1.0f);
                 g.setColour (theme::good.withAlpha (0.95f));
                 g.setFont (tf);
-                g.drawText ("conversation copied", pill.toNearestInt(), juce::Justification::centred);
+                g.drawText (flashWord, pill.toNearestInt(), juce::Justification::centred);
             }
             const int w = getWidth();
             // THE COACH IS AN EMPTY-STATE, NOT A SPACE-FILLER (Chezy live 2026-07-10:
@@ -602,7 +1267,13 @@ private:
             // live conversation — chips landed on real rows and their hit-rects stayed
             // CLICKABLE over messages). State gates the coach: it exists only while
             // the transcript is empty; geometry only sizes it.
-            if (owner->msgs.empty() && topOffset > 90.0f)
+            // THE COACH GATES ON THE CONVERSATION, NOT THE FEED (2026-08-07: the
+            // boot greeting made msgs.empty() forever-false — the coach and its
+            // doors were dead code on every real boot). Virgin = no USER ask yet.
+            bool coachVirgin = true;
+            for (auto& m : owner->msgs)
+                if (m.kind == Kind::user) { coachVirgin = false; break; }
+            if (coachVirgin && topOffset > 90.0f)
             {
                 const float cx = (float) w * 0.5f, cy = topOffset * 0.5f;
                 g.setColour (theme::agent.withAlpha (0.05f));                  // aura rings
@@ -617,31 +1288,72 @@ private:
                 g.setFont (theme::ui (10.0f));
                 g.drawText ("drag a track, groove, or preset here to give it context", 0, (int) cy + 32, w, 14,
                             juce::Justification::centred);
-                if (topOffset > 320.0f)   // chips only when ALL FOUR fit: their bottom
-                {                         // (topOffset/2 + 180) must clear the viewport
-                                          // (~topOffset + 20 when empty) -> t >= 320
-                    static const char* starters[] = { "make the drop hit harder and darker",
-                                                      "hum a topline over the lead",
-                                                      "tighten the mix - kick and bass are fighting",
-                                                      "double the hook an octave up, quieter" };
-                    float sy = cy + 60.0f;
+                float sy = cy + 60.0f;
+                // VERTICAL FLIP (2026-08-07: Chezy's 838-logical window gives a
+                // ~298px void — one pixel under the old 300 gate, doors vanished
+                // on HIS machine while tall cameras sailed): short voids get
+                // COMPACT title-only doors instead of nothing. Degrade, never vanish.
+                const bool tallCoach = topOffset > 380.0f;
+                const float doorH = tallCoach ? 34.0f : 22.0f;
+                const float doorStride = tallCoach ? 40.0f : 28.0f;
+                if (topOffset > 250.0f)
+                {   // THE DOORS (rebrand 31 §1a): the coach leads with FEATURE
+                    // doors — buried rails surfaced as first-class verbs that
+                    // ACT on click; the ask chips below only teach the talkback.
+                    struct Door { const char* title; const char* sub; };
+                    static const Door doors[] = {
+                        { "BRING A SONG", "drop any mp3 or wav - it lands as an editable session" },
+                        { "MAKE A TRACK", "one click - a full take lands free, instant, offline" },
+                        { "FINISH THIS",  "arrange, mix and master what is already here" },
+                    };
+                    for (int i = 0; i < 3; ++i)
+                    {
+                        const bool hov = hoverAction == 15 + i;
+                        const float dw = juce::jmin (300.0f, (float) w - 24.0f);
+                        juce::Rectangle<float> door ((float) w * 0.5f - dw * 0.5f, sy, dw, doorH);
+                        // pass 2: the doors wear the design's OWN machined-glass
+                        // card (deep seat + sheen + rim) — accent lives in a spine
+                        // and the hover light, never a wireframe outline
+                        theme::card (g, door,
+                                     hov ? theme::panelHi.interpolatedWith (theme::accent, 0.16f)
+                                         : theme::panelHi,
+                                     10.0f, hov ? 1.25f : 0.85f);
+                        g.setColour (theme::accent.withAlpha (hov ? 0.95f : 0.60f));
+                        g.fillRoundedRectangle (door.getX() + 1.5f, door.getCentreY() - 7.0f,
+                                                2.5f, 14.0f, 1.2f);
+                        const auto di = door.toNearestInt();
+                        g.setColour (hov ? theme::text : theme::text.withAlpha (0.85f));
+                        g.setFont (theme::caps (8.0f));
+                        if (tallCoach)
+                        {
+                            g.drawText (doors[i].title, di.getX(), di.getY() + 4, di.getWidth(), 12,
+                                        juce::Justification::centred);
+                            g.setColour (theme::textMute.withAlpha (0.85f));
+                            g.setFont (theme::ui (9.5f));
+                            g.drawText (doors[i].sub, di.getX(), di.getY() + 18, di.getWidth(), 11,
+                                        juce::Justification::centred);
+                        }
+                        else   // compact: the title carries the door alone
+                            g.drawText (doors[i].title, di, juce::Justification::centred);
+                        hits.push_back ({ door, 15 + i });
+                        sy += doorStride;
+                    }
+                }
+                if (topOffset > 460.0f)   // the ask chips need their own clearance
+                {
+                    static const char* starters[] = { "hum a topline over the lead",
+                                                      "tighten the mix - kick and bass are fighting" };
+                    sy += 6.0f;
                     g.setFont (theme::ui (11.0f));
-                    for (int i = 0; i < 4; ++i)
+                    for (int i = 0; i < 2; ++i)
                     {
                         const bool hov = hoverAction == 10 + i;
                         const auto tw = theme::measure (theme::ui (11.0f), starters[i]) + 30.0f;
                         juce::Rectangle<float> chip ((float) w * 0.5f - tw * 0.5f, sy, tw, 24.0f);
-                        if (hov)
-                        {
-                            g.setGradientFill (theme::brand (chip, 0.18f));
-                            g.fillRoundedRectangle (chip, 12.0f);
-                        }
-                        else
-                        {
-                            g.setColour (theme::accent.withAlpha (0.07f));
-                            g.fillRoundedRectangle (chip, 12.0f);
-                        }
-                        g.setColour (theme::accent.withAlpha (hov ? 0.65f : 0.35f));
+                        // glass pills: tinted body, quiet rim, bright ink
+                        g.setColour (theme::accent.withAlpha (hov ? 0.16f : 0.09f));
+                        g.fillRoundedRectangle (chip, 12.0f);
+                        g.setColour (theme::accent.withAlpha (hov ? 0.40f : 0.22f));
                         g.drawRoundedRectangle (chip.reduced (0.5f), 12.0f, 1.0f);
                         g.setColour (hov ? theme::text : theme::textDim);
                         g.drawText (starters[i], chip.toNearestInt(), juce::Justification::centred);
@@ -654,6 +1366,23 @@ private:
             for (auto& m : owner->msgs)
             {
                 const float cardW = w - 20.0f;
+                m.yTop = y;                     // the selection's y-map rides the paint walk
+                if (m.folded) continue;         // P65: folded members paint nothing
+                if (m.kind == Kind::divider)
+                {   // P65: the folded run's one-line summary (click = expand in place)
+                    const bool dWarn = m.meta.contains ("warn");
+                    juce::Rectangle<float> row (14.0f, y + 3.0f, (float) w - 28.0f, m.h - 6.0f);
+                    g.setColour (theme::inset.withAlpha (0.55f));
+                    g.fillRoundedRectangle (row, 9.0f);
+                    g.setColour ((dWarn ? theme::warn : theme::textMute).withAlpha (0.78f));
+                    g.setFont (theme::caps (7.5f));
+                    g.drawText (juce::String (m.expanded ? "v  " : ">  ") + m.text,
+                                row.toNearestInt().reduced (10, 0),
+                                juce::Justification::centredLeft);
+                    hits.push_back ({ row, 600 + m.runId });
+                    y += m.h;
+                    continue;
+                }
                 if (m.kind == Kind::live)
                 {
                     // the card paints itself (a child in the flow); the panel gives it
@@ -669,13 +1398,9 @@ private:
                 }
                 if (m.kind == Kind::proposal)
                 {
-                    juce::AttributedString as;
-                    as.append (m.text, theme::ui (12.0f), theme::text);
-                    juce::TextLayout tl;
-                    tl.createLayout (as, cardW - 28.0f);
                     juce::Rectangle<float> card (10.0f, y, cardW, m.h - 10.0f);
                     theme::card (g, card, theme::panelHi, 9.0f);
-                    g.setColour (theme::good.withAlpha (0.55f));
+                    g.setColour (theme::good.withAlpha (0.303f));
                     g.drawRoundedRectangle (card.reduced (0.5f), 9.0f, 1.2f);
                     // header band
                     auto band = card.withHeight (24.0f);
@@ -687,7 +1412,7 @@ private:
                     g.setColour (theme::good);
                     g.fillEllipse (band.getX() + 10.0f, band.getCentreY() - 3.0f, 6.0f, 6.0f);
                     g.setFont (theme::ui (10.0f, juce::Font::bold));
-                    g.drawText ("PROPOSAL", band.reduced (24, 0).toNearestInt(), juce::Justification::centredLeft);
+                    g.drawText ("TAKE", band.reduced (24, 0).toNearestInt(), juce::Justification::centredLeft);
                     g.setColour (theme::textMute);
                     g.setFont (theme::ui (9.5f));
                     g.drawText ("ghost notes on the canvas - audition, then decide",
@@ -730,10 +1455,18 @@ private:
                         }
                         textTop += 30.0f;
                     }
-                    tl.draw (g, card.reduced (14.0f, 8.0f).withTrimmedTop (textTop).withTrimmedBottom (38.0f));
+                    {   // body text from the selection layout (one truth with the highlight)
+                        auto ta = card.reduced (14.0f, 8.0f).withTrimmedTop (textTop)
+                                      .withTrimmedBottom (38.0f);
+                        m.txX = ta.getX(); m.txY = ta.getY();
+                        juce::Graphics::ScopedSaveState ss (g);
+                        g.reduceClipRegion (ta.getSmallestIntegerContainer());
+                        paintSelection (g, m, (int) (&m - &owner->msgs[0]));
+                        drawLay (g, m);
+                    }
                     // action row: Audition (outline) / Accept (filled) / Reject (outline)
                     auto btnRow = card.removeFromBottom (40.0f).reduced (10.0f, 6.0f);
-                    const char* labels[] = { "Audition", "Accept", "Reject" };
+                    const char* labels[] = { "Audition", "KEEP", "PASS" };
                     const juce::Colour cols[] = { theme::accent, theme::good, theme::bad };
                     for (int b = 0; b < 3; ++b)
                     {
@@ -761,7 +1494,6 @@ private:
                         g.drawText (labels[b], chip, juce::Justification::centred);
                         hits.push_back ({ chip, b });
                     }
-                    hits.push_back ({ card, 100 + (int) (&m - &owner->msgs[0]) });
                     drawCopied (g, card, (int) (&m - &owner->msgs[0]));
                     y += m.h;
                     continue;
@@ -773,7 +1505,7 @@ private:
                     theme::card (g, card, theme::panelHi, 9.0f);
                     const bool clean = m.meta.size() > 2 && m.meta[2].getIntValue() == 0;
                     const auto edge = clean ? theme::good : theme::bad;
-                    g.setColour (edge.withAlpha (0.45f));
+                    g.setColour (edge.withAlpha (0.248f));
                     g.drawRoundedRectangle (card.reduced (0.5f), 9.0f, 1.0f);
                     g.setColour (edge);
                     g.setFont (theme::ui (9.5f, juce::Font::bold));
@@ -817,7 +1549,6 @@ private:
                         g.fillPath (tri);
                         hits.push_back ({ pb, 3 });
                     }
-                    hits.push_back ({ card, 100 + (int) (&m - &owner->msgs[0]) });
                     drawCopied (g, card, (int) (&m - &owner->msgs[0]));
                     y += m.h;
                     continue;
@@ -833,7 +1564,7 @@ private:
                     juce::Rectangle<float> card (10.0f, y, cardW, m.h - 8.0f);
                     theme::card (g, card, theme::panelHi, 9.0f);
                     const auto edge = picked ? theme::textMute : theme::accent;
-                    g.setColour (edge.withAlpha (0.45f));
+                    g.setColour (edge.withAlpha (0.248f));
                     g.drawRoundedRectangle (card.reduced (0.5f), 9.0f, 1.0f);
                     g.setColour (edge);
                     g.setFont (theme::ui (9.5f, juce::Font::bold));
@@ -898,15 +1629,18 @@ private:
                     // Mono rows, heat-tinted low->high (warm sub, cool air) — an image made of type.
                     juce::Rectangle<float> card (10.0f, y, cardW, m.h - 8.0f);
                     theme::card (g, card, theme::inset, 9.0f);
-                    g.setColour (theme::agent.withAlpha (0.5f));
+                    g.setColour (theme::agent.withAlpha (0.275f));
                     g.drawRoundedRectangle (card.reduced (0.5f), 9.0f, 1.0f);
                     g.setColour (theme::agent);
                     g.setFont (theme::ui (10.5f, juce::Font::bold));
-                    g.drawText ("THE AGENT HEARS", card.reduced (12.0f, 6.0f).toNearestInt(),
+                    g.drawText ("THE PRODUCER HEARS", card.reduced (12.0f, 6.0f).toNearestInt(),
                                 juce::Justification::topLeft);
                     auto lines = juce::StringArray::fromLines (m.text);
                     // BIGGER + ADAPTIVE: the tensor fills the card width (see tensorRowH)
                     const float rowH = tensorRowH (cardW, m.text);
+                    m.txX = card.getX() + 13.0f;
+                    m.txY = card.getY() + 24.0f;
+                    paintSelection (g, m, (int) (&m - &owner->msgs[0]));
                     float ly = card.getY() + 24.0f;
                     g.setFont (theme::mono (rowH - 2.5f));
                     for (int i = 0; i < lines.size(); ++i)
@@ -920,7 +1654,6 @@ private:
                                     juce::Justification::centredLeft);
                         ly += rowH;
                     }
-                    hits.push_back ({ card, 100 + (int) (&m - &owner->msgs[0]) });
                     drawCopied (g, card, (int) (&m - &owner->msgs[0]));
                     y += m.h;
                     continue;
@@ -931,7 +1664,7 @@ private:
                     // they were squashing into one clipped status line (pure console-feel).
                     juce::Rectangle<float> card (10.0f, y, cardW, m.h - 8.0f);
                     theme::card (g, card, theme::inset, 9.0f);
-                    g.setColour (theme::accentB.withAlpha (0.4f));
+                    g.setColour (theme::accentB.withAlpha (0.22f));
                     g.drawRoundedRectangle (card.reduced (0.5f), 9.0f, 1.0f);
                     auto lines = juce::StringArray::fromLines (m.text);
                     juce::String head = lines.isEmpty() ? juce::String ("REPORT") : lines[0];
@@ -940,6 +1673,9 @@ private:
                     g.setColour (theme::accentB);
                     g.setFont (theme::ui (9.5f, juce::Font::bold));
                     g.drawText (head, card.reduced (12.0f, 5.0f).toNearestInt(), juce::Justification::topLeft);
+                    m.txX = card.getX() + 12.0f;
+                    m.txY = card.getY() + 20.0f;
+                    paintSelection (g, m, (int) (&m - &owner->msgs[0]));
                     float ly = card.getY() + 20.0f;
                     g.setFont (theme::mono (10.0f));
                     for (int i = 0; i < lines.size(); ++i)
@@ -952,7 +1688,6 @@ private:
                                     juce::Justification::centredLeft);
                         ly += 13.0f;
                     }
-                    hits.push_back ({ card, 100 + (int) (&m - &owner->msgs[0]) });
                     drawCopied (g, card, (int) (&m - &owner->msgs[0]));
                     y += m.h;
                     continue;
@@ -986,7 +1721,7 @@ private:
                         juce::Rectangle<float> chip ((w - tw2) * 0.5f, y + 1.0f, tw2, m.h - 3.0f);
                         g.setColour (vc.withAlpha (0.10f));
                         g.fillRoundedRectangle (chip, 7.0f);
-                        g.setColour (vc.withAlpha (0.45f));
+                        g.setColour (vc.withAlpha (0.248f));
                         g.drawRoundedRectangle (chip.reduced (0.5f), 7.0f, 1.0f);
                         const float gx = chip.getX() + 8.0f, gy = chip.getCentreY();
                         g.setColour (vc);
@@ -1004,6 +1739,9 @@ private:
                             g.drawLine (gx, gy - 2.8f, gx + 5.6f, gy + 2.8f, 1.5f);
                             g.drawLine (gx, gy + 2.8f, gx + 5.6f, gy - 2.8f, 1.5f);
                         }
+                        m.txX = chip.getX() + 18.0f;
+                        m.txY = y;
+                        paintSelection (g, m, idx);
                         g.setColour (theme::textDim.brighter (0.1f));
                         g.setFont (f2);
                         g.drawText (m.text, chip.withTrimmedLeft (18.0f).toNearestInt(),
@@ -1011,6 +1749,9 @@ private:
                     }
                     else
                     {
+                        m.txX = 10.0f + juce::jmax (0.0f, (cardW - m.layW) * 0.5f);
+                        m.txY = y;
+                        paintSelection (g, m, idx);
                         g.setColour (theme::textMute.withAlpha (prevStatus || nextStatus ? 0.6f : 0.9f));
                         g.setFont (theme::ui (9.5f));
                         g.drawText (m.text, 10, (int) y, (int) cardW, (int) m.h, juce::Justification::centred);
@@ -1024,10 +1765,13 @@ private:
                     g.drawVerticalLine (16, y - 2.0f, y + m.h);
                     g.setColour (theme::inset);
                     g.fillRoundedRectangle (pill, 9.0f);
-                    g.setColour (theme::agent.withAlpha (0.35f));
+                    g.setColour (theme::agent.withAlpha (0.193f));
                     g.drawRoundedRectangle (pill.reduced (0.5f), 9.0f, 1.0f);
                     g.setColour (theme::agent);
                     g.fillEllipse (pill.getX() + 9.0f, pill.getCentreY() - 2.5f, 5.0f, 5.0f);
+                    m.txX = pill.getX() + 21.0f;
+                    m.txY = y;
+                    paintSelection (g, m, (int) (&m - &owner->msgs[0]));
                     g.setColour (theme::textDim);
                     g.setFont (theme::mono (10.5f));
                     g.drawText (m.text, pill.withTrimmedLeft (21.0f).withTrimmedRight (10.0f).toNearestInt(),
@@ -1054,7 +1798,7 @@ private:
                     g.fillRoundedRectangle (card, 6.0f);
                     g.setColour (fc.withAlpha (0.10f));
                     g.fillRoundedRectangle (card, 6.0f);
-                    g.setColour (fc.withAlpha (0.38f));
+                    g.setColour (fc.withAlpha (0.209f));
                     g.drawRoundedRectangle (card.reduced (0.5f), 6.0f, 1.0f);
                     auto tile = juce::Rectangle<float> (card.getX() + 4.0f, card.getCentreY() - 7.0f, 14.0f, 14.0f);
                     g.setColour (fc.withAlpha (0.16f));                // the family tile
@@ -1091,15 +1835,11 @@ private:
                     const bool user = m.kind == Kind::user;
                     const bool err = m.kind == Kind::error;
                     const int idx = (int) (&m - &owner->msgs[0]);
-                    juce::AttributedString as;
-                    buildBody (as, m.text, err ? theme::warn.brighter (0.1f) : theme::text);
-                    juce::TextLayout tl;
-                    tl.createLayout (as, cardW * 0.87f - 26.0f);
-                    const bool collapsible = tl.getHeight() > collapseTextH + 40.0f;
+                    const bool collapsible = m.layH > collapseTextH + 40.0f;
                     const bool clipped = collapsible && ! m.expanded;
-                    const float shownH = clipped ? collapseTextH : tl.getHeight();
+                    const float shownH = clipped ? collapseTextH : m.layH;
                     const float ch = shownH + 16.0f + (collapsible ? 18.0f : 0.0f);
-                    const float bw = juce::jmin (cardW * 0.87f, tl.getWidth() + 28.0f);
+                    const float bw = juce::jmin (cardW * 0.87f, m.layW + 28.0f);
                     juce::Rectangle<float> card (user ? w - 10.0f - bw : 24.0f, y, bw, ch);
                     if (user)
                     {
@@ -1110,7 +1850,7 @@ private:
                         g.fillRoundedRectangle (card, 10.0f);
                         g.setColour (juce::Colours::white.withAlpha (0.10f));   // glass top-light
                         g.drawHorizontalLine ((int) card.getY() + 1, card.getX() + 8.0f, card.getRight() - 8.0f);
-                        g.setColour (theme::accent.withAlpha (0.45f));
+                        g.setColour (theme::accent.withAlpha (0.248f));
                         g.drawRoundedRectangle (card.reduced (0.5f), 10.0f, 1.0f);
                     }
                     else if (err)
@@ -1118,6 +1858,21 @@ private:
                         theme::card (g, card, theme::bad.withAlpha (0.13f), 10.0f, 0.0f);
                         g.setColour (theme::bad.withAlpha (0.85f));
                         g.fillRoundedRectangle (card.getX(), card.getY() + 3.0f, 3.0f, card.getHeight() - 6.0f, 1.5f);
+                        if (m.meta.contains ("retryable"))
+                        {   // P64: weather, not brokenness — the same ask, one click
+                            const bool busy = owner->agentBusy;
+                            const auto f = theme::caps (7.5f);
+                            const float rw2 = theme::measure (f, "RETRY") + 22.0f;
+                            juce::Rectangle<float> chip (card.getRight() - rw2 - 8.0f,
+                                                         card.getY() + 5.0f, rw2, 15.0f);
+                            g.setColour (theme::accent.withAlpha (busy ? 0.10f : 0.22f));
+                            g.fillRoundedRectangle (chip, 7.5f);
+                            g.setColour (theme::accent.withAlpha (busy ? 0.30f : 0.85f));
+                            g.drawRoundedRectangle (chip.reduced (0.5f), 7.5f, 1.0f);
+                            g.setFont (f);
+                            g.drawText ("RETRY", chip.toNearestInt(), juce::Justification::centred);
+                            hits.push_back ({ chip, 4 });
+                        }
                     }
                     else if (m.text.trimStart().startsWith ("PLAN:"))
                     {
@@ -1143,10 +1898,13 @@ private:
                         theme::spark (g, { 8.0f, y + 5.0f, 8.0f, 8.0f }, theme::agent);
                     }
                     auto textArea = card.reduced (13.0f, 8.0f).withHeight (shownH);
+                    m.txX = textArea.getX();
+                    m.txY = textArea.getY();
                     {
                         juce::Graphics::ScopedSaveState ss (g);
                         g.reduceClipRegion (textArea.getSmallestIntegerContainer());
-                        tl.draw (g, textArea.withHeight (tl.getHeight()));
+                        paintSelection (g, m, idx);
+                        drawLay (g, m);
                     }
                     if (clipped)   // fade the cut so it reads as "more below", never a chop
                     {
@@ -1160,7 +1918,7 @@ private:
                     if (collapsible)   // the reveal chip: fold and unfold the essay
                     {
                         const juce::String lbl = clipped
-                            ? "show all " + juce::String (tl.getNumLines()) + " lines" : "collapse";
+                            ? "show all " + juce::String ((int) m.lay.size()) + " lines" : "collapse";
                         const auto f = theme::ui (9.5f, juce::Font::bold);
                         const float cwid = theme::measure (f, lbl) + 32.0f;
                         juce::Rectangle<float> chip (card.getCentreX() - cwid * 0.5f,
@@ -1182,7 +1940,6 @@ private:
                         g.strokePath (cv, { 1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
                         hits.push_back ({ chip, 500 + idx });
                     }
-                    hits.push_back ({ card, 100 + idx });
                     drawCopied (g, card, idx);
                 }
                 y += m.h;
@@ -1190,24 +1947,29 @@ private:
         }
     };
 
+    // ---- THE TEXT ENGINE (selection-grade) ----------------------------------
     // The agent writes essays — headings, bullets and table rows get typographic
-    // treatment so a long reply reads as a document, not a wall. Shared by
-    // measure() and paint() so heights always match the pixels.
-    // INLINE MARKDOWN (CC4-I4 firing 104): agents SPEAK markdown — raw asterisks and
-    // backticks in the bubbles were the single loudest 'Windows 98' tell. Parses
-    // **bold** and `code` (code = mono, brand-tinted) inside any line.
-    static void appendInline (juce::AttributedString& as, const juce::String& ln,
-                              const juce::Font& f, juce::Colour base, const juce::String& nl)
+    // treatment so a long reply reads as a document, not a wall. The engine emits
+    // wrapped DispLines of styled Segs (real geometry) instead of a TextLayout:
+    // measure() builds them, paint() draws them, the selection addresses them —
+    // one truth, so the highlight can never drift off the glyphs.
+    struct Run { juce::String t; juce::Font f; juce::Colour c; };
+
+    // INLINE MARKDOWN (CC4-I4 firing 104): agents SPEAK markdown — raw asterisks
+    // and backticks in the bubbles were the single loudest 'Windows 98' tell.
+    // Parses **bold** and `code` (code = mono, brand-tinted) inside any line.
+    static void inlineRuns (std::vector<Run>& out, const juce::String& ln,
+                            const juce::Font& f, juce::Colour base)
     {
         int i = 0;
         const auto flush = [&] (const juce::String& seg, bool bold, bool code)
         {
             if (seg.isEmpty()) return;
-            if (code)      as.append (seg, theme::mono (f.getHeight() - 2.0f, juce::Font::bold),
-                                       theme::accentB);
-            else if (bold) as.append (seg, theme::ui (f.getHeight(), juce::Font::bold),   // theme bold face
-                                       base.brighter (0.22f));                            // (f.boldened() no-ops
-            else           as.append (seg, f, base);                                      //  without a bold variant)
+            if (code)      out.push_back ({ seg, theme::mono (f.getHeight() - 2.0f, juce::Font::bold),
+                                            theme::accentB });
+            else if (bold) out.push_back ({ seg, theme::ui (f.getHeight(), juce::Font::bold),   // theme bold face
+                                            base.brighter (0.22f) });                           // (f.boldened() no-ops
+            else           out.push_back ({ seg, f, base });                                    //  without a bold variant)
         };
         juce::String plain;
         while (i < ln.length())
@@ -1234,38 +1996,134 @@ private:
             }
             plain += ln[i++];
         }
-        flush (plain + nl, false, false);
+        flush (plain, false, false);
     }
 
-    static void buildBody (juce::AttributedString& as, const juce::String& text, juce::Colour base)
+    // one SOURCE line -> styled runs (headings, bullets, numbered lists, tables)
+    static std::vector<Run> lineRuns (const juce::String& ln, juce::Colour base)
     {
-        auto lines = juce::StringArray::fromLines (text);
+        std::vector<Run> runs;
+        const int pipes = ln.length() - ln.removeCharacters ("|").length();
+        const auto body = ln.trimStart();
+        const bool numbered = body.length() > 2 && juce::CharacterFunctions::isDigit (body[0])
+                              && (body[1] == '.' || (juce::CharacterFunctions::isDigit (body[1]) && body[2] == '.'));
+        if (ln.startsWith ("# ") || ln.startsWith ("## ") || ln.startsWith ("### "))
+            inlineRuns (runs, ln.fromFirstOccurrenceOf (" ", false, false).trim(),
+                        theme::ui (12.5f, juce::Font::bold), base.brighter (0.18f));
+        else if (body.startsWith ("- ") || body.startsWith ("* "))
+            inlineRuns (runs, juce::String::fromUTF8 ("\xe2\x80\xa2 ") + body.substring (2),
+                        theme::ui (12.0f), base.withMultipliedAlpha (0.92f));
+        else if (numbered)
+        {
+            runs.push_back ({ body.upToFirstOccurrenceOf (".", true, false) + " ",
+                              theme::ui (12.0f, juce::Font::bold), theme::accent.withAlpha (0.9f) });
+            inlineRuns (runs, body.fromFirstOccurrenceOf (".", false, false).trimStart(),
+                        theme::ui (12.0f), base);
+        }
+        else if (pipes >= 2)                          // table row: mono, dimmer, denser
+            runs.push_back ({ ln, theme::mono (9.5f), base.withMultipliedAlpha (0.78f) });
+        else
+            inlineRuns (runs, ln, theme::ui (12.5f), base);
+        return runs;
+    }
+
+    // greedy word-wrap of styled runs into display lines. Soft wraps do NOT mint
+    // newlines in dispText (copy gives logical lines, like a browser); hard source
+    // breaks do. plain=true skips markdown (proposal bodies are prose).
+    static void layoutText (Msg& m, const juce::String& text, juce::Colour base,
+                            float maxW, bool plain = false)
+    {
+        m.lay.clear(); m.dispText.clear();
+        m.layW = 0.0f; m.layH = 0.0f;
+        maxW = juce::jmax (24.0f, maxW);
+        auto srcLines = juce::StringArray::fromLines (text);
+        float y = 0.0f;
+        for (int li = 0; li < srcLines.size(); ++li)
+        {
+            std::vector<Run> runs;
+            if (plain) runs.push_back ({ srcLines[li], theme::ui (12.0f), base });
+            else       runs = lineRuns (srcLines[li], base);
+            DispLine cur; cur.y = y; cur.src = m.dispText.length();
+            float x = 0.0f, lineH = (plain ? 12.0f : 12.5f) + 3.2f;
+            const auto commitLine = [&] ()
+            {
+                cur.h = lineH;
+                for (auto& s : cur.segs) m.dispText << s.t;
+                m.layW = juce::jmax (m.layW, x);
+                y += cur.h;
+                m.lay.push_back (std::move (cur));
+                cur = {}; cur.y = y; cur.src = m.dispText.length();
+                x = 0.0f; lineH = (plain ? 12.0f : 12.5f) + 3.2f;
+            };
+            const auto append = [&] (const juce::String& tok, const juce::Font& f,
+                                     juce::Colour c, float tw)
+            {
+                if (! cur.segs.empty() && cur.segs.back().f == f && cur.segs.back().c == c)
+                { cur.segs.back().t << tok; cur.segs.back().w += tw; }
+                else
+                    cur.segs.push_back ({ tok, f, c, x, tw });
+                x += tw;
+                lineH = juce::jmax (lineH, f.getHeight() + 3.2f);
+            };
+            for (auto& r : runs)
+            {
+                int i = 0;
+                const int n = r.t.length();
+                while (i < n)
+                {   // token = a word plus its trailing spaces (spaces bind backwards)
+                    int e = i;
+                    while (e < n && r.t[e] != ' ') ++e;
+                    while (e < n && r.t[e] == ' ') ++e;
+                    juce::String tok = r.t.substring (i, e);
+                    i = e;
+                    float tw = theme::measure (r.f, tok);
+                    if (x > 0.0f && x + tw > maxW) commitLine();
+                    while (tw > maxW && tok.length() > 1)
+                    {   // an unbreakable monster: hard-chop to the pane
+                        int keep = 1;
+                        while (keep < tok.length()
+                               && theme::measure (r.f, tok.substring (0, keep + 1)) <= maxW)
+                            ++keep;
+                        append (tok.substring (0, keep), r.f, r.c,
+                                theme::measure (r.f, tok.substring (0, keep)));
+                        commitLine();
+                        tok = tok.substring (keep);
+                        tw = theme::measure (r.f, tok);
+                    }
+                    append (tok, r.f, r.c, tw);
+                }
+            }
+            commitLine();
+            if (li + 1 < srcLines.size()) m.dispText << "\n";
+        }
+        m.layH = y;
+    }
+
+    // fixed-pitch line lists (reports, tensors, single-line kinds) — same truth,
+    // no wrapping (their painters clip; the copy still carries the whole line)
+    template <typename ColourFor>
+    static void layLines (Msg& m, const juce::StringArray& lines, const juce::Font& f,
+                          float y0, float pitch, ColourFor&& colFor)
+    {
+        m.lay.clear(); m.dispText.clear();
+        m.layW = 0.0f;
+        float y = y0;
         for (int i = 0; i < lines.size(); ++i)
         {
-            const auto& ln = lines[i];
-            const juce::String nl = i == lines.size() - 1 ? "" : "\n";
-            const int pipes = ln.length() - ln.removeCharacters ("|").length();
-            const auto body = ln.trimStart();
-            const bool numbered = body.length() > 2 && juce::CharacterFunctions::isDigit (body[0])
-                                  && (body[1] == '.' || (juce::CharacterFunctions::isDigit (body[1]) && body[2] == '.'));
-            if (ln.startsWith ("# ") || ln.startsWith ("## ") || ln.startsWith ("### "))
-                appendInline (as, ln.fromFirstOccurrenceOf (" ", false, false).trim(),
-                              theme::ui (12.5f, juce::Font::bold), base.brighter (0.18f), nl);
-            else if (body.startsWith ("- ") || body.startsWith ("* "))
-                appendInline (as, juce::String::fromUTF8 ("\xe2\x80\xa2 ") + body.substring (2),
-                              theme::ui (12.0f), base.withMultipliedAlpha (0.92f), nl);
-            else if (numbered)
+            DispLine dl; dl.y = y; dl.h = pitch; dl.src = m.dispText.length();
+            if (lines[i].isNotEmpty())
             {
-                as.append (body.upToFirstOccurrenceOf (".", true, false) + " ",
-                           theme::ui (12.0f, juce::Font::bold), theme::accent.withAlpha (0.9f));
-                appendInline (as, body.fromFirstOccurrenceOf (".", false, false).trimStart(),
-                              theme::ui (12.0f), base, nl);
+                Seg s; s.t = lines[i]; s.f = f; s.c = colFor (i, lines[i]);
+                s.x = 0.0f; s.w = theme::measure (f, s.t);
+                m.layW = juce::jmax (m.layW, s.w);
+                dl.segs.push_back (std::move (s));
             }
-            else if (pipes >= 2)                          // table row: mono, dimmer, denser
-                as.append (ln + nl, theme::mono (9.5f), base.withMultipliedAlpha (0.78f));
-            else
-                appendInline (as, ln, theme::ui (12.5f), base, nl);
+            m.dispText << lines[i];
+            if (i + 1 < lines.size()) m.dispText << "\n";
+            m.lay.push_back (std::move (dl));
+            y += pitch;
         }
+        m.layH = y - y0;
     }
 
     // ---- THE ACTION STREAM's family language (colour + drawn glyph, no fonts) ----
@@ -1369,34 +2227,87 @@ private:
 
     void measure (Msg& m, int w)
     {
+        m.lay.clear(); m.dispText.clear(); m.layW = 0.0f; m.layH = 0.0f;
+        if (m.folded) { m.h = 0.0f; return; }            // P65: folded runs cost nothing
+        if (m.wasThink && m.kind == Kind::agent)
+        {   // THE MIND IS A WHISPER (2026-08-02): reasoning renders as ONE
+            // slim dim italic line - never a stacked wall of raw pulses. The
+            // cosmo score carries the "working" feeling; this line carries
+            // the tail of the thought.
+            m.h = 18.0f;
+            auto one = m.text.replaceCharacter ('\n', ' ');
+            layLines (m, juce::StringArray { one },
+                      theme::ui (9.5f, juce::Font::italic), 14.0f, 13.0f,
+                      [] (int, const juce::String&)
+                      { return theme::agent.withAlpha (0.55f); });
+            return;
+        }
+        if (m.kind == Kind::divider)
+        {   // P65: one fixed-height honest line per folded run
+            m.h = 24.0f;
+            m.dispText = m.text;
+            m.layW = (float) w; m.layH = 14.0f;
+            return;
+        }
         if (m.kind == Kind::live)        m.h = (float) m.liveH + 16.0f;
-        else if (m.kind == Kind::status)      m.h = 15.0f;   // tight: runs recede
+        else if (m.kind == Kind::status)
+        {
+            m.h = 15.0f;   // tight: runs recede
+            const bool verdict = m.text.startsWith ("you ACCEPTED") || m.text.startsWith ("you REJECTED");
+            layLines (m, juce::StringArray { m.text },
+                      verdict ? theme::ui (9.0f, juce::Font::bold) : theme::ui (9.5f),
+                      0.0f, m.h, [] (int, const juce::String&) { return theme::textDim; });
+        }
         else if (m.kind == Kind::analysis) m.h = 66.0f;
         else if (m.kind == Kind::variants) m.h = 38.0f + 26.0f * (float) (m.meta.size() / 4);
         else if (m.kind == Kind::report)
-            m.h = 32.0f + 13.0f * (float) juce::StringArray::fromLines (m.text).size();
+        {
+            auto lines = juce::StringArray::fromLines (m.text);
+            m.h = 32.0f + 13.0f * (float) lines.size();
+            if (! lines.isEmpty() && lines[0].startsWith ("[") && lines[0].contains ("]"))
+                lines.set (0, lines[0].fromFirstOccurrenceOf ("] ", false, false));
+            layLines (m, lines, theme::mono (10.0f), 20.0f, 13.0f,
+                      [] (int, const juce::String& row)
+                      {
+                          return row.contains ("PASS") || row.contains ("CLEAN")
+                                     ? theme::good.withAlpha (0.9f)
+                                 : row.contains ("FAIL") || row.contains ("[X1]") ? theme::warn
+                                 : theme::textDim;
+                      });
+        }
         else if (m.kind == Kind::perception)
-            m.h = 34.0f + tensorRowH ((float) w - 20.0f, m.text)
-                        * (float) juce::StringArray::fromLines (m.text).size();
-        else if (m.kind == Kind::tool)   m.h = 25.0f;
+        {
+            const float rowH = tensorRowH ((float) w - 20.0f, m.text);
+            auto lines = juce::StringArray::fromLines (m.text);
+            m.h = 34.0f + rowH * (float) lines.size();
+            const int n = lines.size();
+            layLines (m, lines, theme::mono (rowH - 2.5f), 24.0f, rowH,
+                      [n] (int i, const juce::String&)
+                      {
+                          const float t = n > 2 ? (float) (i - 1) / (float) juce::jmax (1, n - 2) : 0.0f;
+                          return i == 0 ? theme::textMute
+                                        : juce::Colour::fromHSV (0.58f - 0.55f * (1.0f - t), 0.55f, 0.95f, 0.9f);
+                      });
+        }
+        else if (m.kind == Kind::tool)
+        {
+            m.h = 25.0f;
+            layLines (m, juce::StringArray { m.text }, theme::mono (10.5f), 1.0f, 17.0f,
+                      [] (int, const juce::String&) { return theme::textDim; });
+        }
         else if (m.kind == Kind::action) m.h = 28.0f;
         else if (m.kind == Kind::proposal)
         {
             const float wave = m.peaks.empty() ? 0.0f : 30.0f;
-            juce::AttributedString as;
-            as.append (m.text, theme::ui (12.0f), theme::text);
-            juce::TextLayout tl;
-            tl.createLayout (as, (w - 20.0f) - 28.0f);
-            m.h = tl.getHeight() + 24.0f + 40.0f + 16.0f + 10.0f + (m.meta.isEmpty() ? 0.0f : 22.0f) + wave;
+            layoutText (m, m.text, theme::text, (float) (w - 20) - 28.0f, true);
+            m.h = m.layH + 24.0f + 40.0f + 16.0f + 10.0f + (m.meta.isEmpty() ? 0.0f : 22.0f) + wave;
         }
         else
         {
-            juce::AttributedString as;
-            buildBody (as, m.text, theme::text);
-            juce::TextLayout tl;
-            tl.createLayout (as, (w - 20.0f) * 0.87f - 26.0f);
-            const bool collapsible = tl.getHeight() > collapseTextH + 40.0f;
-            const float shown = (collapsible && ! m.expanded) ? collapseTextH : tl.getHeight();
+            const auto base = m.kind == Kind::error ? theme::warn.brighter (0.1f) : theme::text;
+            layoutText (m, m.text, base, (float) (w - 20) * 0.87f - 26.0f);
+            const bool collapsible = m.layH > collapseTextH + 40.0f;
+            const float shown = (collapsible && ! m.expanded) ? collapseTextH : m.layH;
             m.h = shown + 16.0f + 8.0f + (collapsible ? 18.0f : 0.0f);
         }
     }

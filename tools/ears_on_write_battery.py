@@ -64,8 +64,13 @@ def main():
                  "notes": [N(i * 0.5, 0.4, 35 + (i % 2) * 3, 0.5 + 0.04 * (i % 5)) for i in range(16)]},
                 {"name": "keys", "source": {"kind": "faust", "id": "rhodes"}, "gainDb": -10,
                  "notes": [N(i * 2.0 + 0.02 * (i % 3), 1.8, 55 + [0, 3, 7, 10][i % 4], 0.5 + 0.05 * (i % 6)) for i in range(16)]}]}
+    # THE PARAM COURT (2026-07-24) upgraded this seam from NAG to CURE: the
+    # write path now HEALS the alias with a receipt instead of flagging X2 —
+    # the trap never reaches the file. Standing dirt in UNTOUCHED files still
+    # nags (param_court_battery D2 holds that line).
     r = write("_ears_b", trap)
-    ok("[X2]" in r and "level" in r, f"B: fx_trim 'gain' zone-trap caught as hard ({r.splitlines()[-1][:90]})")
+    ok("sanitized:" in r and "param 'gain' -> 'level'" in r and "[X2]" not in r,
+       f"B: fx_trim 'gain' HEALS at the write seam with a receipt ({r.splitlines()[-1][:90]})")
 
     # A3) deprecated limiter type = hard
     lim = dict(trap)
@@ -116,12 +121,12 @@ def main():
     ok("DOCTOR:" not in r, "T2: a clean gain nudge stays SILENT (no critique spam)")
     r = daw_mcp.TOOLS["update_track"][0]({"song": "_ears_t", "track": "bass", "pan": 0.0,
                                           "gainDb": -5.5})
-    ok("DOCTOR:" in r and "[X2]" in r,
-       "T2b: a STANDING trap keeps nagging on every touch until fixed (bass carries fx_trim 'gain')")
+    ok("[X2]" not in r,
+       "T2b: no standing trap left to nag — the write-path court healed gain->level at birth")
     r = daw_mcp.TOOLS["set_track_fx"][0]({"song": "_ears_t", "track": "keys",
                                           "fx": [{"id": "fx_trim", "params": {"gain": 2.0}}]})
-    ok("DOCTOR:" in r and "[X2]" in r and "level" in r,
-       "T3: set_track_fx catches the fx_trim 'gain' zone-trap")
+    ok("param court healed" in r and "'gain' -> 'level'" in r and "[X2]" not in r,
+       "T3: set_track_fx HEALS the fx_trim 'gain' alias and SPEAKS the rename")
     r = daw_mcp.TOOLS["set_track_fx"][0]({"song": "_ears_t", "track": "keys",
                                           "fx": [{"id": "fx_delay", "params": {"mix": 0.2}}]})
     ok("DOCTOR:" not in r, "T4: a clean fx chain stays SILENT")
@@ -133,7 +138,8 @@ def main():
     r = daw_mcp.TOOLS["set_buses"][0]({"song": "_ears_t",
                                        "buses": [{"id": "verb", "gainDb": 0,
                                                   "fx": [{"id": "fx_trim", "params": {"gain": 2.0}}]}]})
-    ok("DOCTOR:" in r and "[X2]" in r and "level" in r, "T6: fx_trim 'gain' trap on a BUS fires X2")
+    ok("param court healed" in r and "'gain' -> 'level'" in r and "[X2]" not in r,
+       "T6: the BUS seam heals fx_trim 'gain' and speaks the rename")
     scrub("_ears_t")
 
     # X3: parked dark master filter (the 'barely audible' class); sweeps exempt
@@ -159,8 +165,13 @@ def main():
     r = daw_mcp.TOOLS["set_track_fx"][0]({"song": "_ears_x", "track": "keys",
                                           "fx": [{"id": "fx_delay",
                                                   "params": {"wet": 0.3, "time": 0.4}}]})
-    ok("DOCTOR:" in r and "[X2]" in r and "wet" in r,
-       f"T8: unknown param 'wet' on fx_delay fires generalized X2 ({r.splitlines()[-1][:80]})")
+    ok("param court healed" in r and "'wet' -> 'mix'" in r and "[X2]" not in r,
+       f"T8: 'wet' on fx_delay is an OBVIOUS-INTENT alias — healed + spoken ({r.splitlines()[-1][:80]})")
+    r = daw_mcp.TOOLS["set_track_fx"][0]({"song": "_ears_x", "track": "keys",
+                                          "fx": [{"id": "fx_filter",
+                                                  "params": {"mode": "hp", "cutoff": 900}}]})
+    ok("no zone" in r and "fx_hipass" in r,
+       f"T8c: a truly-unknown param FAILS CLOSED with a teaching line ({r.splitlines()[0][:80]})")
     r = daw_mcp.TOOLS["set_track_fx"][0]({"song": "_ears_x", "track": "keys",
                                           "fx": [{"id": "fx_ms_eq",
                                                   "params": {"side_low": -2.0, "width": 1.2}}]})

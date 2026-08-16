@@ -175,7 +175,7 @@ class PhaseDistortion : public dsp {
 		float fSlow5 = 1.0f / std::max<float>(1.0f, fConst0 * float(fHslider2));
 		float fSlow6 = float(fHslider3);
 		float fSlow7 = fConst4 * float(fHslider4);
-		float fSlow8 = float(fHslider5);
+		float fSlow8 = 0.78f * float(fHslider5);
 		for (int i0 = 0; i0 < count; i0 = i0 + 1) {
 			iVec0[0] = 1;
 			fVec1[0] = fSlow0;

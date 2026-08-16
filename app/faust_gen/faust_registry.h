@@ -17,6 +17,10 @@ namespace fg_acid303 {
 #include "acid303.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_acid303_slide {
+#include "acid303_slide.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_acid_devilfish {
 #include "acid_devilfish.hpp"
 }
@@ -31,6 +35,10 @@ namespace fg_bagpipes {
 #undef FAUSTCLASS
 namespace fg_bandoneon {
 #include "bandoneon.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_banjo {
+#include "banjo.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_bass_warm {
@@ -93,6 +101,10 @@ namespace fg_crash_noise {
 #include "crash_noise.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_darbuka {
+#include "darbuka.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_dhol {
 #include "dhol.hpp"
 }
@@ -117,6 +129,10 @@ namespace fg_flute_lead {
 #include "flute_lead.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_fm2op {
+#include "fm2op.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_fm4_keys {
 #include "fm4_keys.hpp"
 }
@@ -133,8 +149,20 @@ namespace fg_fuzz_guitar {
 #include "fuzz_guitar.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_fx_bass_grit {
+#include "fx_bass_grit.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_fx_bell {
+#include "fx_bell.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_fx_brickwall {
 #include "fx_brickwall.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_fx_chorus {
+#include "fx_chorus.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_fx_comp {
@@ -157,6 +185,10 @@ namespace fg_fx_djfilter {
 #include "fx_djfilter.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_fx_dubdelay {
+#include "fx_dubdelay.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_fx_filter {
 #include "fx_filter.hpp"
 }
@@ -169,12 +201,24 @@ namespace fg_fx_gate {
 #include "fx_gate.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_fx_hipass {
+#include "fx_hipass.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_fx_match_eq {
+#include "fx_match_eq.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_fx_ms_eq {
 #include "fx_ms_eq.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_fx_multiband {
 #include "fx_multiband.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_fx_polarity {
+#include "fx_polarity.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_fx_pump {
@@ -197,6 +241,10 @@ namespace fg_fx_transient {
 #include "fx_transient.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_fx_tremolo {
+#include "fx_tremolo.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_fx_trim {
 #include "fx_trim.hpp"
 }
@@ -215,6 +263,10 @@ namespace fg_gamelan_gong {
 #undef FAUSTCLASS
 namespace fg_gamelan_saron {
 #include "gamelan_saron.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_guira {
+#include "guira.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_guitar_grit {
@@ -285,6 +337,10 @@ namespace fg_kick_punch_tight {
 #include "kick_punch_tight.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_lead_legato {
+#include "lead_legato.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_log_drum {
 #include "log_drum.hpp"
 }
@@ -297,6 +353,10 @@ namespace fg_master_limiter {
 #include "master_limiter.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_mbira {
+#include "mbira.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_ney {
 #include "ney.hpp"
 }
@@ -307,6 +367,10 @@ namespace fg_organ_soul {
 #undef FAUSTCLASS
 namespace fg_oud {
 #include "oud.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_pad_evolve {
+#include "pad_evolve.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_pad_motion {
@@ -327,6 +391,10 @@ namespace fg_pluck2 {
 #undef FAUSTCLASS
 namespace fg_pluck {
 #include "pluck.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_pm_string {
+#include "pm_string.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_reese {
@@ -355,6 +423,10 @@ namespace fg_sax_reed {
 #undef FAUSTCLASS
 namespace fg_sax_section {
 #include "sax_section.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_saz {
+#include "saz.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_shaker {
@@ -405,6 +477,10 @@ namespace fg_supersaw_fat {
 #include "supersaw_fat.hpp"
 }
 #undef FAUSTCLASS
+namespace fg_supersaw_jp {
+#include "supersaw_jp.hpp"
+}
+#undef FAUSTCLASS
 namespace fg_tanpura_drone {
 #include "tanpura_drone.hpp"
 }
@@ -415,6 +491,18 @@ namespace fg_test_sine {
 #undef FAUSTCLASS
 namespace fg_timpani {
 #include "timpani.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_trumpet_lead {
+#include "trumpet_lead.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_tuba {
+#include "tuba.hpp"
+}
+#undef FAUSTCLASS
+namespace fg_tumbi {
+#include "tumbi.hpp"
 }
 #undef FAUSTCLASS
 namespace fg_upright_bass {
@@ -446,10 +534,12 @@ inline ::dsp* createFaustDsp (const std::string& name)
 {
     if (name == "accordion") return new fg_accordion::Accordion();
     if (name == "acid303") return new fg_acid303::Acid303();
+    if (name == "acid303_slide") return new fg_acid303_slide::Acid303Slide();
     if (name == "acid_devilfish") return new fg_acid_devilfish::AcidDevilfish();
     if (name == "additive_harm") return new fg_additive_harm::AdditiveHarm();
     if (name == "bagpipes") return new fg_bagpipes::Bagpipes();
     if (name == "bandoneon") return new fg_bandoneon::Bandoneon();
+    if (name == "banjo") return new fg_banjo::Banjo();
     if (name == "bass_warm") return new fg_bass_warm::BassWarm();
     if (name == "blast_kick") return new fg_blast_kick::BlastKick();
     if (name == "brass_stab") return new fg_brass_stab::BrassStab();
@@ -465,37 +555,48 @@ inline ::dsp* createFaustDsp (const std::string& name)
     if (name == "conga") return new fg_conga::Conga();
     if (name == "cowbell") return new fg_cowbell::Cowbell();
     if (name == "crash_noise") return new fg_crash_noise::CrashNoise();
+    if (name == "darbuka") return new fg_darbuka::Darbuka();
     if (name == "dhol") return new fg_dhol::Dhol();
     if (name == "duduk") return new fg_duduk::Duduk();
     if (name == "ep_bright") return new fg_ep_bright::EpBright();
     if (name == "erhu") return new fg_erhu::Erhu();
     if (name == "fiddle") return new fg_fiddle::Fiddle();
     if (name == "flute_lead") return new fg_flute_lead::FluteLead();
+    if (name == "fm2op") return new fg_fm2op::Fm2op();
     if (name == "fm4_keys") return new fg_fm4_keys::Fm4Keys();
     if (name == "fmbell") return new fg_fmbell::Fmbell();
     if (name == "formant_vox") return new fg_formant_vox::FormantVox();
     if (name == "fuzz_guitar") return new fg_fuzz_guitar::FuzzGuitar();
+    if (name == "fx_bass_grit") return new fg_fx_bass_grit::FxBassGrit();
+    if (name == "fx_bell") return new fg_fx_bell::FxBell();
     if (name == "fx_brickwall") return new fg_fx_brickwall::FxBrickwall();
+    if (name == "fx_chorus") return new fg_fx_chorus::FxChorus();
     if (name == "fx_comp") return new fg_fx_comp::FxComp();
     if (name == "fx_crush") return new fg_fx_crush::FxCrush();
     if (name == "fx_deess") return new fg_fx_deess::FxDeess();
     if (name == "fx_delay") return new fg_fx_delay::FxDelay();
     if (name == "fx_djfilter") return new fg_fx_djfilter::FxDjfilter();
+    if (name == "fx_dubdelay") return new fg_fx_dubdelay::FxDubdelay();
     if (name == "fx_filter") return new fg_fx_filter::FxFilter();
     if (name == "fx_flanger") return new fg_fx_flanger::FxFlanger();
     if (name == "fx_gate") return new fg_fx_gate::FxGate();
+    if (name == "fx_hipass") return new fg_fx_hipass::FxHipass();
+    if (name == "fx_match_eq") return new fg_fx_match_eq::FxMatchEq();
     if (name == "fx_ms_eq") return new fg_fx_ms_eq::FxMsEq();
     if (name == "fx_multiband") return new fg_fx_multiband::FxMultiband();
+    if (name == "fx_polarity") return new fg_fx_polarity::FxPolarity();
     if (name == "fx_pump") return new fg_fx_pump::FxPump();
     if (name == "fx_reverb") return new fg_fx_reverb::FxReverb();
     if (name == "fx_saturate") return new fg_fx_saturate::FxSaturate();
     if (name == "fx_softclip") return new fg_fx_softclip::FxSoftclip();
     if (name == "fx_transient") return new fg_fx_transient::FxTransient();
+    if (name == "fx_tremolo") return new fg_fx_tremolo::FxTremolo();
     if (name == "fx_trim") return new fg_fx_trim::FxTrim();
     if (name == "fx_truepeak") return new fg_fx_truepeak::FxTruepeak();
     if (name == "fx_widen") return new fg_fx_widen::FxWiden();
     if (name == "gamelan_gong") return new fg_gamelan_gong::GamelanGong();
     if (name == "gamelan_saron") return new fg_gamelan_saron::GamelanSaron();
+    if (name == "guira") return new fg_guira::Guira();
     if (name == "guitar_grit") return new fg_guitar_grit::GuitarGrit();
     if (name == "hammond_organ") return new fg_hammond_organ::HammondOrgan();
     if (name == "hardkick") return new fg_hardkick::Hardkick();
@@ -513,17 +614,21 @@ inline ::dsp* createFaustDsp (const std::string& name)
     if (name == "kick_psy") return new fg_kick_psy::KickPsy();
     if (name == "kick_punch") return new fg_kick_punch::KickPunch();
     if (name == "kick_punch_tight") return new fg_kick_punch_tight::KickPunchTight();
+    if (name == "lead_legato") return new fg_lead_legato::LeadLegato();
     if (name == "log_drum") return new fg_log_drum::LogDrum();
     if (name == "marimba") return new fg_marimba::Marimba();
     if (name == "master_limiter") return new fg_master_limiter::MasterLimiter();
+    if (name == "mbira") return new fg_mbira::Mbira();
     if (name == "ney") return new fg_ney::Ney();
     if (name == "organ_soul") return new fg_organ_soul::OrganSoul();
     if (name == "oud") return new fg_oud::Oud();
+    if (name == "pad_evolve") return new fg_pad_evolve::PadEvolve();
     if (name == "pad_motion") return new fg_pad_motion::PadMotion();
     if (name == "pan_flute") return new fg_pan_flute::PanFlute();
     if (name == "phase_distortion") return new fg_phase_distortion::PhaseDistortion();
     if (name == "pluck2") return new fg_pluck2::Pluck2();
     if (name == "pluck") return new fg_pluck::Pluck();
+    if (name == "pm_string") return new fg_pm_string::PmString();
     if (name == "reese") return new fg_reese::Reese();
     if (name == "rev_crash") return new fg_rev_crash::RevCrash();
     if (name == "rhodes") return new fg_rhodes::Rhodes();
@@ -531,6 +636,7 @@ inline ::dsp* createFaustDsp (const std::string& name)
     if (name == "riser") return new fg_riser::Riser();
     if (name == "sax_reed") return new fg_sax_reed::SaxReed();
     if (name == "sax_section") return new fg_sax_section::SaxSection();
+    if (name == "saz") return new fg_saz::Saz();
     if (name == "shaker") return new fg_shaker::Shaker();
     if (name == "shakuhachi") return new fg_shakuhachi::Shakuhachi();
     if (name == "sine_siren") return new fg_sine_siren::SineSiren();
@@ -543,9 +649,13 @@ inline ::dsp* createFaustDsp (const std::string& name)
     if (name == "subdrop") return new fg_subdrop::Subdrop();
     if (name == "supersaw") return new fg_supersaw::Supersaw();
     if (name == "supersaw_fat") return new fg_supersaw_fat::SupersawFat();
+    if (name == "supersaw_jp") return new fg_supersaw_jp::SupersawJp();
     if (name == "tanpura_drone") return new fg_tanpura_drone::TanpuraDrone();
     if (name == "test_sine") return new fg_test_sine::TestSine();
     if (name == "timpani") return new fg_timpani::Timpani();
+    if (name == "trumpet_lead") return new fg_trumpet_lead::TrumpetLead();
+    if (name == "tuba") return new fg_tuba::Tuba();
+    if (name == "tumbi") return new fg_tumbi::Tumbi();
     if (name == "upright_bass") return new fg_upright_bass::UprightBass();
     if (name == "vibraphone") return new fg_vibraphone::Vibraphone();
     if (name == "vox_pad") return new fg_vox_pad::VoxPad();
@@ -560,10 +670,12 @@ inline const std::vector<std::string>& faustDspNames()
     static const std::vector<std::string> names {
     "accordion",
     "acid303",
+    "acid303_slide",
     "acid_devilfish",
     "additive_harm",
     "bagpipes",
     "bandoneon",
+    "banjo",
     "bass_warm",
     "blast_kick",
     "brass_stab",
@@ -579,37 +691,48 @@ inline const std::vector<std::string>& faustDspNames()
     "conga",
     "cowbell",
     "crash_noise",
+    "darbuka",
     "dhol",
     "duduk",
     "ep_bright",
     "erhu",
     "fiddle",
     "flute_lead",
+    "fm2op",
     "fm4_keys",
     "fmbell",
     "formant_vox",
     "fuzz_guitar",
+    "fx_bass_grit",
+    "fx_bell",
     "fx_brickwall",
+    "fx_chorus",
     "fx_comp",
     "fx_crush",
     "fx_deess",
     "fx_delay",
     "fx_djfilter",
+    "fx_dubdelay",
     "fx_filter",
     "fx_flanger",
     "fx_gate",
+    "fx_hipass",
+    "fx_match_eq",
     "fx_ms_eq",
     "fx_multiband",
+    "fx_polarity",
     "fx_pump",
     "fx_reverb",
     "fx_saturate",
     "fx_softclip",
     "fx_transient",
+    "fx_tremolo",
     "fx_trim",
     "fx_truepeak",
     "fx_widen",
     "gamelan_gong",
     "gamelan_saron",
+    "guira",
     "guitar_grit",
     "hammond_organ",
     "hardkick",
@@ -627,17 +750,21 @@ inline const std::vector<std::string>& faustDspNames()
     "kick_psy",
     "kick_punch",
     "kick_punch_tight",
+    "lead_legato",
     "log_drum",
     "marimba",
     "master_limiter",
+    "mbira",
     "ney",
     "organ_soul",
     "oud",
+    "pad_evolve",
     "pad_motion",
     "pan_flute",
     "phase_distortion",
     "pluck2",
     "pluck",
+    "pm_string",
     "reese",
     "rev_crash",
     "rhodes",
@@ -645,6 +772,7 @@ inline const std::vector<std::string>& faustDspNames()
     "riser",
     "sax_reed",
     "sax_section",
+    "saz",
     "shaker",
     "shakuhachi",
     "sine_siren",
@@ -657,9 +785,13 @@ inline const std::vector<std::string>& faustDspNames()
     "subdrop",
     "supersaw",
     "supersaw_fat",
+    "supersaw_jp",
     "tanpura_drone",
     "test_sine",
     "timpani",
+    "trumpet_lead",
+    "tuba",
+    "tumbi",
     "upright_bass",
     "vibraphone",
     "vox_pad",

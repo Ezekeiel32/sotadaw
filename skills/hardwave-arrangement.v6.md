@@ -1,0 +1,33 @@
+---
+name: hardwave-arrangement
+version: 6
+kind: genre
+tags: [hardwave, arrangement]
+compiled_from: knowledge-graph (tools/skill_compiler.py; provenance per fact below)
+hard_constraints:
+  - BPM 140-160; set the song key (suggested: F minor).
+  - Mix: clipped_samples == 0, LUFS -9..-6, band order low>mid>lowmid.
+  - HARDWAVE LEAD is non-negotiable: hardwave: mournful detuned supersaw lead melodies over trap-pattern drums, enormous reverb/space; emotional minor toplines at halftime feel
+  - SEND REVERB is non-negotiable: reverb on a BUS at mix 1.0, balance via send level; kick/808 DRY
+  - HALF TIME 140 is non-negotiable: dubstep pocket: 140bpm, snare ONLY on 3, kick sparse 1(+syncop), everything huge
+---
+# Hardwave arrangement (graph-compiled)
+
+## The pocket — hardwave_halftime
+hardwave loop DNA (wave18)  *(source: curated:claude/2026-07-06 (wave38 world/anthem canon; freygish+bigroom-vamp+levels-anthem cited f148; afro_pocket i-VII = canon-prior, cite pending))*
+
+## Techniques (weight order — the top ones DEFINE the genre)
+- **hardwave lead** (w0.95): hardwave: mournful detuned supersaw lead melodies over trap-pattern drums, enormous reverb/space; emotional minor toplines at halftime feel *(curated:claude/2026-07-03-w11)*
+- **send reverb** (w0.8): reverb on a BUS at mix 1.0, balance via send level; kick/808 DRY *(skill:fx-usage@v1)*
+- **half time 140** (w0.8): dubstep pocket: 140bpm, snare ONLY on 3, kick sparse 1(+syncop), everything huge *(curated:claude/2026-07-03)*
+- **sliding 808** (w0.6): 808 pitch slides between roots (overlapping notes) *(skill:drill-arrangement@v1)*
+
+## Sound recipes (this palette, these moves)
+- **odin modular lead**: Odin2 (263 named params: Osc1-3 wavetable/analog/FM, dual filters, 3 envs) as the big lead/pad synth: source {kind:'vst3', id:'Odin2'} + params by name ('Osc1 Wavetble Position', 'Filter1 Freq'...) — design leads for trance/hardwave/dubstep beyond the faust palette
+- **keys dark zones**: keys_dark knobs: cutoff 200-3000 + sweep 0-6000 (filter env range), sub 0-1 (octave-down weight), detune/vibrato 0-0.02. Trap bell-keys = cutoff 1500 sub 0.8; automate cutoff for section builds.
+
+## The groove (timing DNA — apply it, don't fake it)
+- PREFER apply_groove(track='drums'-like tracks, name='trap_grid', amount 0.8-1.0) OVER the global swing object: swing{} is a uniform shuffle, the named profile carries this genre's per-slot micro-timing AND ghost-velocity shape. Write on-grid notes first, then apply. *(curated:claude/2026-07-09 (trap IS the quantize grid: zero offsets, hat-roll velocity waves, ghosted e/a))*
+
+## Verify (the ears will check)
+After render: analyze_wav must show clipped_samples 0, LUFS in -9..-6, band order low>mid>lowmid. If a filter build was used, centroid_by_quarter must RISE into the drop.

@@ -35,12 +35,17 @@ public:
         double totalBeats = 16, loopA = -1, loopB = -1;
         std::vector<Band> bands;
         std::vector<Sec>  secs;
+        std::vector<double> barStarts;   // METER-TRUE: beat of each bar edge
+                                         // (size bars+1; empty = eternal 4/4)
         juce::int64 sig = 0;       // owner-computed change signature
     };
 
     std::function<void (double)>        onView;    // drag -> new viewStart (beats)
     std::function<void (double)>        onLocate;  // double-click -> transport beat
     std::function<void (double, float)> onZoom;    // wheel -> (anchorBeat, delta)
+    // VAGUE SELECTION NAV (Chezy 2026-07-17): sweep a range OUTSIDE the pane ->
+    // the world zooms to it on release. (startBeats, spanBeats)
+    std::function<void (double, double)> onViewSelect;
 
     Navigator() { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
 
@@ -105,6 +110,18 @@ public:
             g.setColour (juce::Colours::white.withAlpha (0.10f));
             g.fillRect ((int) xOf (hoverBeat), 0, 1, b.getHeight());
         }
+        // the vague selection, live: sweep it — release = the world zooms to it
+        if (selecting)
+        {
+            const float x0 = xOf (juce::jmin (selA, selB));
+            const float x1 = xOf (juce::jmax (selA, selB));
+            juce::Rectangle<float> band (x0, 1.0f, juce::jmax (2.0f, x1 - x0),
+                                         (float) b.getHeight() - 2.0f);
+            g.setColour (theme::accentB.withAlpha (0.16f));
+            g.fillRoundedRectangle (band, 3.0f);
+            g.setColour (theme::accentB.withAlpha (0.468f));
+            g.drawRoundedRectangle (band, 3.0f, 1.2f);
+        }
         // playhead beam
         if (playhead >= 0)
         {
@@ -121,17 +138,47 @@ public:
         if (e.mods.isPopupMenu()) return;
         const double beat = beatAt ((float) e.x);
         const bool inPane = viewBeats > 0.01 && beat >= viewStart && beat <= viewStart + viewBeats;
-        grabOffset = inPane ? beat - viewStart : viewBeats * 0.5;
-        dragging = true;
-        if (! inPane && onView != nullptr) onView (beat - grabOffset);   // jump the pane to the hand
+        if (inPane || onViewSelect == nullptr)
+        {   // grab the pane: pan the world (the standing gesture, UI unchanged)
+            grabOffset = inPane ? beat - viewStart : viewBeats * 0.5;
+            dragging = true;
+            if (! inPane && onView != nullptr) onView (beat - grabOffset);   // jump the pane to the hand
+        }
+        else
+        {   // outside the pane: arm the VAGUE SELECTION — sweep a range, and on
+            // release the world zooms to it; a plain click keeps the old jump
+            selecting = true;
+            selA = selB = beat;
+        }
         repaint();
     }
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        if (selecting)
+        {
+            selB = beatAt ((float) e.x);
+            repaint();
+            return;
+        }
         if (dragging && onView != nullptr)
             onView (beatAt ((float) e.x) - grabOffset);
     }
-    void mouseUp (const juce::MouseEvent&) override { dragging = false; repaint(); }
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (selecting)
+        {
+            selecting = false;
+            const double a = juce::jmin (selA, selB), b2 = juce::jmax (selA, selB);
+            if (b2 - a >= juce::jmax (0.5, model.totalBeats * 0.004))
+            {   // a real sweep: the selection BECOMES the world's window
+                if (onViewSelect != nullptr) onViewSelect (a, b2 - a);
+            }
+            else if (onView != nullptr)   // a plain click: jump the pane to the hand
+                onView (beatAt ((float) e.x) - viewBeats * 0.5);
+        }
+        dragging = false;
+        repaint();
+    }
     void mouseDoubleClick (const juce::MouseEvent& e) override
     {
         if (onLocate != nullptr) onLocate (juce::jmax (0.0, beatAt ((float) e.x)));
@@ -160,8 +207,9 @@ private:
     static constexpr float padX = 2.0f;
     Model model;
     juce::Image cache;
-    bool haveModel = false, cacheDirty = true, dragging = false;
+    bool haveModel = false, cacheDirty = true, dragging = false, selecting = false;
     double viewStart = 0, viewBeats = 0, playhead = -1, hoverBeat = -1, grabOffset = 0;
+    double selA = 0, selB = 0;           // the vague selection's sweep (beats)
 
     float span() const   { return juce::jmax (1.0f, (float) getWidth() - padX * 2.0f); }
     float xOf (double beat) const
@@ -199,8 +247,8 @@ private:
             const double endB = i + 1 < model.secs.size() ? model.secs[i + 1].startBeat
                                                           : model.totalBeats;
             const float x0 = xOf (sc.startBeat), x1 = xOf (endB);
-            const auto tint = juce::Colour::fromHSV (std::fmod (0.58f + (float) i * 0.13f, 1.0f),
-                                                     0.45f, 0.95f, 1.0f);
+            // THE FORM'S ONE PALETTE: the same identity the ruler chips wear
+            const auto tint = theme::sectionColour (sc.name);
             g.setColour (tint.withAlpha (0.07f));
             g.fillRect (x0, 0.0f, x1 - x0, (float) h);
             g.setColour (tint.withAlpha (0.30f));
@@ -214,19 +262,26 @@ private:
                             juce::Justification::centredLeft, true);
             }
         }
+        // bar-edge truth (METER-TRUE when the model ships barStarts)
+        auto barEdge = [this] (int bi) -> double
+        {
+            if (bi >= 0 && bi < (int) model.barStarts.size())
+                return model.barStarts[(size_t) bi];
+            return bi * 4.0;
+        };
         // 4-bar orientation ticks
         g.setColour (juce::Colours::white.withAlpha (0.05f));
-        for (double bt = 16.0; bt < model.totalBeats; bt += 16.0)
-            g.fillRect (xOf (bt), (float) labelH, 1.0f, (float) (h - labelH));
+        for (int gb = 4; barEdge (gb) < model.totalBeats; gb += 4)
+            g.fillRect (xOf (barEdge (gb)), (float) labelH, 1.0f, (float) (h - labelH));
 
         // the bands: every track a strip of its own colour
         if (! model.bands.empty())
         {
             const int n = (int) model.bands.size();
             const float bh = juce::jmax (1.0f, (float) rows.getHeight() / (float) n);
-            const double barB = 4.0;
-            const int bars = (int) std::ceil (model.totalBeats / barB);
-            const float barW = (xOf (barB) - xOf (0.0));
+            const int bars = ! model.barStarts.empty()
+                               ? (int) model.barStarts.size() - 1
+                               : (int) std::ceil (model.totalBeats / 4.0);
             for (int t = 0; t < n; ++t)
             {
                 const auto& bd = model.bands[(size_t) t];
@@ -235,7 +290,8 @@ private:
                 const float dim = bd.muted ? 0.35f : 1.0f;
                 for (int bi = 0; bi < bars && bi < (int) bd.note.size(); ++bi)
                 {
-                    const float x = xOf (bi * barB);
+                    const float x = xOf (barEdge (bi));
+                    const float barW = xOf (barEdge (bi + 1)) - x;
                     if (bd.audio[(size_t) bi] != 0)
                     {
                         g.setColour (bd.colour.withAlpha (0.85f * dim));

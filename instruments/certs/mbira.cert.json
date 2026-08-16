@@ -1,0 +1,80 @@
+{
+ "name": "mbira",
+ "kind": "voice",
+ "dsp_sha": "1ac784abcef80d1f",
+ "m1_md5": "729344d89e73e14e",
+ "machine": "chezy-LOQ-15IAX9E",
+ "date": "2026-08-02",
+ "law": "E2 (docs/THE_PHYSICS.md)",
+ "peak_dbfs": -3.55,
+ "clipped_samples": 0,
+ "attack_ms": 20.0,
+ "sustain_rms_db": -31.02,
+ "sustain_centroid_hz": 1032,
+ "harmonics_top": [
+  [
+   259.4,
+   -1.4
+  ],
+  [
+   260.0,
+   -0.7
+  ],
+  [
+   260.6,
+   -0.3
+  ],
+  [
+   261.2,
+   -0.1
+  ],
+  [
+   261.8,
+   0.0
+  ],
+  [
+   262.4,
+   -0.1
+  ],
+  [
+   262.9,
+   -0.5
+  ],
+  [
+   263.5,
+   -1.0
+  ]
+ ],
+ "decay_to_m60_s": 0.5,
+ "noise_tail_dbfs": -200.0,
+ "headroom": {
+  "registers": {
+   "33": {
+    "peak_dbfs": -4.25,
+    "clipped": 0
+   },
+   "60": {
+    "peak_dbfs": -3.55,
+    "clipped": 0
+   },
+   "81": {
+    "peak_dbfs": -3.13,
+    "clipped": 0
+   }
+  },
+  "overlap": {
+   "peak_dbfs": -3.55,
+   "clipped": 0
+  },
+  "retrigger": {
+   "peak_dbfs": -3.44,
+   "clipped": 0
+  },
+  "clipped_total": 0
+ },
+ "verdicts": {
+  "headroom_pass_vel1": true,
+  "headroom_pass_registers": true,
+  "audible": true
+ }
+}

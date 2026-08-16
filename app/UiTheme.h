@@ -9,6 +9,13 @@
 #include <map>
 #include <juce_gui_basics/juce_gui_basics.h>   // the theme is pure JUCE — no engine types
                                                // (uismoke paints it without linking tracktion)
+// THE TYPE IS THE PRODUCT (relight v8): Inter + JetBrains Mono ride the binary
+// (CMake sotadaw_fonts). Guarded — a TU that doesn't link the fonts target
+// still compiles and falls back to system faces.
+#if __has_include("BinaryData.h")
+ #include "BinaryData.h"
+ #define SOTADAW_EMBEDDED_FONTS 1
+#endif
 
 namespace theme
 {
@@ -21,9 +28,9 @@ namespace theme
     const juce::Colour grid      { 0xff232735 };
     const juce::Colour gridBar   { 0xff333a4d };
     const juce::Colour line      { 0xff272c3d };   // hairline borders (blue-shifted)
-    const juce::Colour text      { 0xffedeff7 };
-    const juce::Colour textDim   { 0xff9ba3ba };
-    const juce::Colour textMute  { 0xff5d6478 };
+    const juce::Colour text      { 0xfff1f3fa };   // v10 couture: ink one step brighter
+    const juce::Colour textDim   { 0xffa5adc6 };
+    const juce::Colour textMute  { 0xff6a7288 };
     const juce::Colour accent    { 0xff7c9bff };   // electric blue
     const juce::Colour accentB   { 0xffa78bfa };   // violet — the gradient partner
     const juce::Colour good      { 0xff3ddc97 };
@@ -43,10 +50,10 @@ namespace theme
     inline void panelV (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour base,
                         float corner = 8.0f)
     {
-        g.setGradientFill ({ base.brighter (0.065f), r.getTopLeft(), base.darker (0.07f),
+        g.setGradientFill ({ base.brighter (0.10f), r.getTopLeft(), base.darker (0.07f),
                              r.getBottomLeft(), false });
         g.fillRoundedRectangle (r, corner);
-        g.setColour (juce::Colours::white.withAlpha (0.05f));
+        g.setColour (juce::Colours::white.withAlpha (0.08f));
         g.drawHorizontalLine ((int) r.getY() + 1, r.getX() + corner, r.getRight() - corner);
     }
     inline void glowRing (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c,
@@ -102,17 +109,33 @@ namespace theme
         auto r = b.toFloat();
         g.setGradientFill ({ bgHi, r.getTopLeft(), bg, { r.getX(), r.getHeight() * 0.55f }, false });
         g.fillRect (r);
+        {   // v7 THE NEBULA (Chezy: deep glass premium, 3-5x louder): a diagonal
+            // aurora SWEEP arcs across the upper stage — blue into violet, a real sky
+            juce::ColourGradient sweep (accent.withAlpha (0.0f), r.getX(), r.getBottom() * 0.72f,
+                                        accentB.withAlpha (0.22f), r.getRight() * 0.82f, r.getY(), false);
+            sweep.addColour (0.45, accent.withAlpha (0.18f));
+            sweep.addColour (0.80, accentB.withAlpha (0.20f));
+            g.setGradientFill (sweep);
+            g.fillRect (r);
+        }
         {   // accent bloom, upper right (under the agent dock)
-            juce::ColourGradient gl (accent.withAlpha (0.06f), r.getRight() - r.getWidth() * 0.18f,
+            juce::ColourGradient gl (accent.withAlpha (0.28f), r.getRight() - r.getWidth() * 0.18f,
                                      r.getY() + 20.0f, accent.withAlpha (0.0f),
                                      r.getRight() - r.getWidth() * 0.18f, r.getY() + r.getHeight() * 0.7f, true);
             g.setGradientFill (gl);
             g.fillRect (r);
         }
         {   // violet bloom, lower left (under the rail / hear strip)
-            juce::ColourGradient gl (accentB.withAlpha (0.05f), r.getX() + r.getWidth() * 0.12f,
+            juce::ColourGradient gl (accentB.withAlpha (0.21f), r.getX() + r.getWidth() * 0.12f,
                                      r.getBottom(), accentB.withAlpha (0.0f),
                                      r.getX() + r.getWidth() * 0.12f, r.getBottom() - r.getHeight() * 0.62f, true);
+            g.setGradientFill (gl);
+            g.fillRect (r);
+        }
+        {   // teal counter-glow, lower right — the third light gives the sky DEPTH
+            juce::ColourGradient gl (good.withAlpha (0.08f), r.getRight() - r.getWidth() * 0.10f,
+                                     r.getBottom(), good.withAlpha (0.0f),
+                                     r.getRight() - r.getWidth() * 0.10f, r.getBottom() - r.getHeight() * 0.45f, true);
             g.setGradientFill (gl);
             g.fillRect (r);
         }
@@ -120,11 +143,11 @@ namespace theme
         g.fillRect (r);
         g.setTiledImageFill (grain(), 0, 0, 1.0f);         // film over everything beneath panels
         g.fillRect (r);
-        {   // vignette: the eye settles centre-stage
+        {   // vignette: the eye settles centre-stage (deeper — the sky needs edges)
             juce::ColourGradient vg (juce::Colours::transparentBlack,
                                      r.getCentreX(), r.getCentreY() * 0.95f,
-                                     juce::Colours::black.withAlpha (0.17f), r.getX(), r.getY(), true);
-            vg.addColour (0.70, juce::Colours::transparentBlack);
+                                     juce::Colours::black.withAlpha (0.30f), r.getX(), r.getY(), true);
+            vg.addColour (0.68, juce::Colours::transparentBlack);
             g.setGradientFill (vg);
             g.fillRect (r);
         }
@@ -185,6 +208,52 @@ namespace theme
         return juce::Font (juce::FontOptions (h, juce::Font::bold)).withExtraKerningFactor (0.09f);
     }
 
+    // THE SEVEN-SEGMENT (instrument furniture, from Chezy's spec: real DAW
+    // hardware, not boxes with text). Digits + '.' + '-' render as true LCD
+    // segments with the GHOST-SEGMENT law: every unlit segment shows faintly,
+    // the way real hardware displays do. Trailing letters (a unit like BPM)
+    // are the caller's business — this draws only the segment field.
+    inline void sevenSeg (juce::Graphics& g, juce::Rectangle<float> r,
+                          const juce::String& text, juce::Colour lit)
+    {
+        static const juce::uint8 segOf[10] = {   // bit order: A B C D E F G
+            0b1111110, 0b0110000, 0b1101101, 0b1111001, 0b0110011,
+            0b1011011, 0b1011111, 0b1110000, 0b1111111, 0b1111011 };
+        const float h = r.getHeight(), w = h * 0.52f, th = juce::jmax (1.6f, h * 0.115f);
+        const float gap = w * 0.34f, dotW = th * 1.35f;
+        float need = 0.0f;                                   // measure to right-align
+        for (auto ch : text)
+            need += ch == '.' ? dotW + gap * 0.5f : (ch >= '0' && ch <= '9') || ch == '-' ? w + gap : 0.0f;
+        float x = r.getRight() - need;
+        auto seg = [&] (float sx, float sy, float sw, float sh, bool on)
+        {
+            g.setColour (on ? lit : lit.withAlpha (0.10f));  // ghost segments live
+            g.fillRoundedRectangle (sx, sy, sw, sh, th * 0.45f);
+        };
+        for (auto ch : text)
+        {
+            if (ch == '.')
+            {
+                g.setColour (lit);
+                g.fillEllipse (x, r.getBottom() - dotW, dotW, dotW);
+                x += dotW + gap * 0.5f;
+                continue;
+            }
+            const bool digit = ch >= '0' && ch <= '9';
+            if (! digit && ch != '-') continue;
+            const juce::uint8 m = digit ? segOf[ch - '0'] : 0b0000001;
+            const float y = r.getY(), midY = y + h * 0.5f - th * 0.5f;
+            seg (x + th * 0.6f, y,               w - th * 1.2f, th, m & 0b1000000); // A
+            seg (x + w - th,    y + th * 0.6f,   th, h * 0.5f - th, m & 0b0100000); // B
+            seg (x + w - th,    midY + th * 0.4f, th, h * 0.5f - th, m & 0b0010000); // C
+            seg (x + th * 0.6f, r.getBottom() - th, w - th * 1.2f, th, m & 0b0001000); // D
+            seg (x,             midY + th * 0.4f, th, h * 0.5f - th, m & 0b0000100); // E
+            seg (x,             y + th * 0.6f,   th, h * 0.5f - th, m & 0b0000010); // F
+            seg (x + th * 0.6f, midY,            w - th * 1.2f, th, m & 0b0000001); // G
+            x += w + gap;
+        }
+    }
+
     // text width without the deprecated Font::getStringWidth* (pills were truncating)
     inline float measure (const juce::Font& f, const juce::String& s)
     {
@@ -204,32 +273,49 @@ namespace theme
         };
         if (any ({ "fx_", "reverb", "delay", "filter", "saturate", "widen", "pump", "trim", "brickwall", "compress" }))
             return juce::Colour (0xff9aa7ff);
-        if (any ({ "kick", "snare", "hat", "clap", "perc", "808", "909", "drum", "shaker", "rim", "cymbal", "tom", "timpani" }))
+        // mallets BEFORE drums: "ma-RIM-ba" contains "rim" and log_drum contains
+        // "drum" — the order bug mis-shelved them for every colour dot too
+        if (any ({ "marimba", "kalimba", "steel", "vibra", "log_", "bell", "glock", "harp", "chime" }))
+            return juce::Colour (0xff81c995);
+        if (any ({ "kick", "snare", "hat", "clap", "perc", "808", "909", "drum", "shaker", "rim", "cymbal", "tom", "timpani", "clave" }))
             return juce::Colour (0xffe8837b);
         if (any ({ "bass", "sub", "reese", "wobble" }))            return juce::Colour (0xffc792ea);
         if (any ({ "key", "organ", "rhodes", "clav", "piano", "accordion" })) return juce::Colour (0xfff2d97f);
         if (any ({ "brass", "sax", "horn", "trumpet" }))           return juce::Colour (0xfff8b48a);
-        if (any ({ "marimba", "kalimba", "steel", "vibra", "log_", "bell", "glock", "harp", "chime" }))
-            return juce::Colour (0xff81c995);
         if (any ({ "lead", "saw", "pluck", "acid", "arp", "flute", "whistle" })) return juce::Colour (0xff6cd9d3);
         if (any ({ "pad", "string", "vox", "choir", "drone" }))    return juce::Colour (0xff7aa2f7);
         return juce::Colour (0xff8fa1b3);
     }
 
-    // raised card: soft LARGE shadow + fill + top-light — 2026 elevation is generous
+    // raised card: soft LARGE shadow + fill + top-light — 2026 elevation is generous.
+    // v5 (alive wave v2): deeper seat, brighter crown, crisper rim — cards POP off
+    // the void instead of dissolving into it.
     inline void card (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour fill,
                       float corner = 10.0f, float borderAlpha = 1.0f)
     {
-        g.setColour (juce::Colours::black.withAlpha (0.13f));
-        g.fillRoundedRectangle (r.translated (0.0f, 3.5f).expanded (2.0f), corner + 2.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.26f));
-        g.fillRoundedRectangle (r.translated (0.0f, 1.4f).expanded (0.5f), corner + 0.5f);
-        g.setGradientFill ({ fill.brighter (0.05f), r.getTopLeft(),
-                             fill.darker (0.05f), r.getBottomLeft(), false });
+        // v7 FLOATING GLASS: the card lifts OFF the nebula — deeper seat, brighter
+        // crown, a glass sheen band across the top. PAINT BUDGET LAW: the sheen is a
+        // SMALL top-corner path (a full-card gradient fill here tripled the mix bench).
+        g.setColour (juce::Colours::black.withAlpha (0.24f));
+        g.fillRoundedRectangle (r.translated (0.0f, 4.0f).expanded (2.0f), corner + 2.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.40f));
+        g.fillRoundedRectangle (r.translated (0.0f, 1.6f).expanded (0.5f), corner + 0.5f);
+        g.setGradientFill ({ fill.brighter (0.13f), r.getTopLeft(),
+                             fill.darker (0.09f), r.getBottomLeft(), false });
         g.fillRoundedRectangle (r, corner);
-        g.setColour (juce::Colours::white.withAlpha (0.045f * borderAlpha));
+        {   // the sheen: top corners only, bounded height
+            const float sh = juce::jmin (r.getHeight() * 0.28f, 40.0f);
+            juce::Path p;
+            p.addRoundedRectangle (r.getX(), r.getY(), r.getWidth(), sh,
+                                   corner, corner, true, true, false, false);
+            g.setGradientFill ({ juce::Colours::white.withAlpha (0.055f), r.getTopLeft(),
+                                 juce::Colours::white.withAlpha (0.0f),
+                                 { r.getX(), r.getY() + sh }, false });
+            g.fillPath (p);
+        }
+        g.setColour (juce::Colours::white.withAlpha (0.13f * borderAlpha));
         g.drawRoundedRectangle (r.reduced (0.5f), corner, 1.0f);
-        g.setColour (juce::Colours::white.withAlpha (0.06f * borderAlpha));
+        g.setColour (juce::Colours::white.withAlpha (0.20f * borderAlpha));
         g.drawHorizontalLine ((int) r.getY() + 1, r.getX() + corner * 0.8f, r.getRight() - corner * 0.8f);
     }
 
@@ -239,19 +325,22 @@ namespace theme
                       const juce::String& label, const juce::Font& f,
                       float fillAlpha = 0.15f, float borderAlpha = 0.55f, bool dot = true)
     {
+        // COUTURE PASS (v10, the standing order 'immensely better'): richer body,
+        // quieter rim, brighter ink — premium glass, never wireframe. Same pill,
+        // same language, finer tailoring.
         const float cr = r.getHeight() * 0.5f;
-        g.setColour (c.withAlpha (fillAlpha));
+        g.setColour (c.withAlpha (juce::jmin (0.34f, fillAlpha * 1.55f)));
         g.fillRoundedRectangle (r, cr);
-        g.setColour (c.withAlpha (borderAlpha));
+        g.setColour (c.withAlpha (borderAlpha * 0.55f));
         g.drawRoundedRectangle (r.reduced (0.5f), cr, 1.0f);
         float tx = r.getX() + 7.0f;
         if (dot)
         {
-            g.setColour (c.brighter (0.25f));
+            g.setColour (c.brighter (0.30f));
             g.fillEllipse (r.getX() + 6.0f, r.getCentreY() - 2.0f, 4.0f, 4.0f);
             tx += 6.0f;
         }
-        g.setColour (c.brighter (0.35f));
+        g.setColour (c.brighter (0.50f));
         g.setFont (f);
         g.drawText (label, juce::Rectangle<float> (tx, r.getY(), r.getRight() - tx - 6.0f,
                                                    r.getHeight()).toNearestInt(),
@@ -304,7 +393,14 @@ namespace theme
                 g.setGradientFill ({ lo, { r.getX(), r.getCentreY() },
                                      hi, { r.getRight(), r.getCentreY() }, false });
             g.fillRoundedRectangle (lit, 2.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.18f));   // hot cap on the lit edge
+            if (frac > 0.66f)                                       // hot meters BLOOM (relight v7)
+            {
+                g.setColour (hi.withAlpha (0.32f * (frac - 0.66f) / 0.34f));
+                g.fillRoundedRectangle (vertical ? lit.expanded (2.0f, 0.0f).withHeight (juce::jmin (lit.getHeight(), 14.0f))
+                                                 : lit.expanded (0.0f, 2.0f).withTrimmedLeft (juce::jmax (0.0f, lit.getWidth() - 14.0f)),
+                                        3.0f);
+            }
+            g.setColour (juce::Colours::white.withAlpha (0.22f));   // hot cap on the lit edge
             if (vertical) g.fillRect (lit.getX(), lit.getY(), lit.getWidth(), 1.5f);
             else          g.fillRect (lit.getRight() - 1.5f, lit.getY(), 1.5f, lit.getHeight());
         }
@@ -328,6 +424,19 @@ namespace theme
     };
 
     // the agent's spark — drawn, never a font glyph (no UTF-8 roulette)
+    // THE FORM'S ONE PALETTE: a section's identity colour — stable per name
+    // family (VERSE_2 == VERSE), shared by the ruler, the roll strips, the
+    // navigator and the session card. One truth or the form lies somewhere.
+    inline juce::Colour sectionColour (const juce::String& name)
+    {
+        static const juce::Colour pal[] = { juce::Colour (0xff7c9bff), juce::Colour (0xff3ddc97),
+                                            juce::Colour (0xffa78bfa), juce::Colour (0xffffb86b),
+                                            juce::Colour (0xffffd36b) };
+        auto base = name.toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz");
+        if (base.isEmpty()) base = name;
+        return pal[(size_t) (std::abs (base.hashCode()) % 5)];
+    }
+
     inline void spark (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
     {
         juce::Path p;
@@ -347,6 +456,29 @@ namespace theme
 class SotaLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+#if SOTADAW_EMBEDDED_FONTS
+    // Every Font built without an explicit typeface resolves HERE (via the
+    // default LnF): UI text = Inter (bold requests get real SemiBold, never
+    // synthetic smear), mono = JetBrains Mono (tabular digits for LCD/meters).
+    juce::Typeface::Ptr getTypefaceForFont (const juce::Font& f) override
+    {
+        static const auto sans     = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::InterRegular_ttf, (size_t) BinaryData::InterRegular_ttfSize);
+        static const auto sansBold = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::InterSemiBold_ttf, (size_t) BinaryData::InterSemiBold_ttfSize);
+        static const auto mono     = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::JetBrainsMonoRegular_ttf, (size_t) BinaryData::JetBrainsMonoRegular_ttfSize);
+        static const auto monoBold = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::JetBrainsMonoBold_ttf, (size_t) BinaryData::JetBrainsMonoBold_ttfSize);
+        const auto n = f.getTypefaceName();
+        if (n == juce::Font::getDefaultMonospacedFontName() || n.containsIgnoreCase ("mono"))
+            return f.isBold() && monoBold != nullptr ? monoBold : mono;
+        if (n == juce::Font::getDefaultSansSerifFontName() || n == juce::Font::getDefaultSerifFontName())
+            return f.isBold() && sansBold != nullptr ? sansBold : sans;
+        return juce::LookAndFeel_V4::getTypefaceForFont (f);
+    }
+#endif
+
     SotaLookAndFeel()
     {
         setColour (juce::ResizableWindow::backgroundColourId, theme::bg);
@@ -404,6 +536,26 @@ public:
             }
             return;
         }
+        if (id == "keycap")   // transport micro-keys: the menus' keycap language, machined
+        {
+            const bool lit = b.getToggleState();
+            const auto base = lit ? theme::accent : juce::Colour (0xff2c3247);
+            g.setColour (juce::Colours::black.withAlpha (0.45f));         // seat shadow
+            g.fillRoundedRectangle (r.translated (0.0f, 1.2f), 6.0f);
+            if (lit)
+            {
+                g.setColour (theme::accent.withAlpha (0.28f));            // lit halo
+                g.fillRoundedRectangle (r.expanded (1.5f), 7.0f);
+            }
+            g.setGradientFill ({ base.brighter (lit ? 0.10f : down ? 0.0f : highlighted ? 0.14f : 0.06f),
+                                 r.getTopLeft(), base.darker (0.24f), r.getBottomLeft(), false });
+            g.fillRoundedRectangle (down ? r.translated (0.0f, 0.6f) : r, 5.5f);
+            g.setColour (juce::Colours::white.withAlpha (lit ? 0.35f : 0.12f));   // cap top light
+            g.drawHorizontalLine ((int) r.getY() + 1, r.getX() + 3.0f, r.getRight() - 3.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.5f));
+            g.drawRoundedRectangle (r.reduced (0.5f), 5.5f, 1.0f);
+            return;
+        }
         if (id == "primary" || id == "danger" || id == "confirm")     // filled action buttons
         {
             auto base = id == "danger" ? theme::bad : id == "confirm" ? theme::good : theme::accent;
@@ -423,23 +575,30 @@ public:
         // default: GHOST control (2026 law — borderless until touched, lit when true)
         if (b.getToggleState())
         {
-            const auto c = theme::panelHi.interpolatedWith (theme::accent, highlighted ? 0.22f : 0.16f);
+            theme::glowRing (g, r, theme::accent, 7.0f, 1.5f);   // lit = ELECTRIC (relight v7)
+            const auto c = theme::panelHi.interpolatedWith (theme::accent, highlighted ? 0.28f : 0.22f);
             g.setGradientFill ({ c.brighter (0.10f), r.getTopLeft(), c.darker (0.08f),
                                  r.getBottomLeft(), false });
             g.fillRoundedRectangle (r, 7.0f);
             g.setGradientFill (theme::brand (r.withHeight (2.0f), 0.9f));   // lit top edge
             g.fillRoundedRectangle (r.getX() + 3.0f, r.getY() + 0.5f, r.getWidth() - 6.0f, 2.0f, 1.0f);
-            g.setColour (theme::accent.withAlpha (0.50f));
+            g.setColour (theme::accent.withAlpha (0.35f));
             g.drawRoundedRectangle (r.reduced (0.5f), 7.0f, 1.0f);
             return;
         }
-        const float lift = down ? 0.13f : highlighted ? 0.085f : 0.035f;
-        g.setGradientFill ({ juce::Colours::white.withAlpha (lift), r.getTopLeft(),
-                             juce::Colours::white.withAlpha (lift * 0.45f), r.getBottomLeft(), false });
+        // relight v7: the resting ghost is GLASS, not concrete — an ice-tinted
+        // gradient + top light; the hand brings an electric whisper (still borderless at rest)
+        const float lift = down ? 0.15f : highlighted ? 0.11f : 0.075f;
+        const auto ice = juce::Colours::white.interpolatedWith (theme::accent, 0.22f);
+        g.setGradientFill ({ ice.withAlpha (lift), r.getTopLeft(),
+                             ice.withAlpha (lift * 0.40f), r.getBottomLeft(), false });
         g.fillRoundedRectangle (r, 7.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.06f + (highlighted ? 0.05f : 0.0f)));
+        g.drawHorizontalLine ((int) r.getY() + 1, r.getX() + 4.0f, r.getRight() - 4.0f);
         if (highlighted || down)
         {
-            g.setColour (juce::Colours::white.withAlpha (down ? 0.16f : 0.09f));
+            theme::glowRing (g, r, theme::accent, 6.0f, down ? 1.2f : 0.8f);
+            g.setColour (theme::accent.withAlpha (down ? 0.30f : 0.18f));
             g.drawRoundedRectangle (r.reduced (0.5f), 7.0f, 1.0f);
         }
     }
@@ -450,12 +609,19 @@ public:
         const auto id = b.getComponentID();
         const bool filled = id == "primary" || id == "danger" || id == "confirm";
         const bool pill = id == "mute" || id == "solo";
+        if (id == "keycap")
+        {   // engraved cap legend: mono, lit ink on a lit key
+            g.setColour (b.getToggleState() ? theme::inset : theme::text.withAlpha (0.88f));
+            g.setFont (theme::mono (9.5f, juce::Font::bold));
+            g.drawText (b.getButtonText(), b.getLocalBounds(), juce::Justification::centred);
+            return;
+        }
         g.setColour ((filled || (pill && b.getToggleState()))
                        ? theme::inset
                        : pill ? theme::textMute.brighter (0.15f)
                               : b.findColour (b.getToggleState() ? juce::TextButton::textColourOnId
                                                                  : juce::TextButton::textColourOffId));
-        g.setFont (theme::ui (pill ? 9.5f : filled ? 13.0f : 12.5f,
+        g.setFont (theme::ui (pill ? 9.5f : filled ? 13.5f : 13.0f,
                               (filled || pill) ? juce::Font::bold : juce::Font::plain));
         g.drawText (b.getButtonText(), b.getLocalBounds().reduced (pill ? 0 : 4, 0), juce::Justification::centred);
     }
@@ -484,7 +650,9 @@ public:
                                             std::abs (sliderPos - zeroX), 3.5f);
         g.setColour (fillCol);
         g.fillRoundedRectangle (fill, 2.0f);
-        g.setColour (fillCol.withAlpha (0.35f));                    // thumb halo
+        g.setColour (fillCol.withAlpha (0.16f));                    // outer glow (relight v7)
+        g.fillEllipse (sliderPos - 10.0f, cy - 10.0f, 20.0f, 20.0f);
+        g.setColour (fillCol.withAlpha (0.45f));                    // thumb halo
         g.fillEllipse (sliderPos - 7.0f, cy - 7.0f, 14.0f, 14.0f);
         g.setColour (theme::text);
         g.fillEllipse (sliderPos - 4.5f, cy - 4.5f, 9.0f, 9.0f);
@@ -507,9 +675,11 @@ public:
         track.addCentredArc (centre.x, centre.y, rad, rad, 0.0f, startAngle, endAngle, true);
         g.setColour (theme::inset);
         g.strokePath (track, { 4.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
-        // value arc = the brand
+        // value arc = the brand (relight v7: the arc GLOWS under itself)
         juce::Path val;
         val.addCentredArc (centre.x, centre.y, rad, rad, 0.0f, startAngle, angle, true);
+        g.setColour (theme::accent.withAlpha (0.18f));
+        g.strokePath (val, { 6.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
         g.setGradientFill (theme::brand (r));
         g.strokePath (val, { 3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
         // cap with radial light
@@ -538,7 +708,7 @@ public:
         auto r = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (1.0f);
         g.setColour (theme::inset.withAlpha (0.55f));
         g.fillRoundedRectangle (r, 7.0f);
-        g.setColour (juce::Colours::white.withAlpha (box.hasKeyboardFocus (true) ? 0.0f : 0.055f));
+        g.setColour (juce::Colours::white.withAlpha (box.hasKeyboardFocus (true) ? 0.0f : 0.075f));
         g.drawRoundedRectangle (r.reduced (0.5f), 7.0f, 1.0f);
         if (box.hasKeyboardFocus (true))
         {
@@ -553,7 +723,35 @@ public:
         g.setColour (theme::accent);
         g.strokePath (ch, { 1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
     }
-    juce::Font getComboBoxFont (juce::ComboBox&) override { return theme::ui (12.5f); }
+    juce::Font getComboBoxFont (juce::ComboBox&) override { return theme::ui (13.0f); }
+
+    void drawLabel (juce::Graphics& g, juce::Label& l) override
+    {
+        if (l.getComponentID() == "sevenseg")
+        {   // instrument furniture: a real LCD — inset well, phosphor wash, ghost
+            // segments, engraved unit (the label's NAME). Editing swaps in the
+            // text editor exactly as before; the well stays.
+            auto r = l.getLocalBounds().toFloat().reduced (1.0f);
+            g.setColour (theme::inset);
+            g.fillRoundedRectangle (r, 6.0f);
+            g.setColour (theme::accent.withAlpha (0.10f));
+            g.fillRoundedRectangle (r.reduced (2.0f), 4.5f);
+            g.setColour (theme::line);
+            g.drawRoundedRectangle (r, 6.0f, 1.0f);
+            if (! l.isBeingEdited())
+            {   // digits FILL the glass (hardware law: a display is its digits);
+                // the unit is a small engraving in the right margin
+                auto f = r.reduced (8.0f, 5.0f);
+                auto unit = f.removeFromRight (22.0f);
+                theme::sevenSeg (g, f, l.getText(), theme::accent.brighter (0.35f));
+                g.setColour (theme::textMute);
+                g.setFont (theme::caps (6.5f));
+                g.drawText (l.getName(), unit.toNearestInt(), juce::Justification::bottomLeft);
+            }
+            return;
+        }
+        LookAndFeel_V4::drawLabel (g, l);
+    }
 
     // menus float: MACHINED GLASS (vault law) — deep shadow, sheen lip, brushed body
     void drawPopupMenuBackground (juce::Graphics& g, int width, int height) override
@@ -627,7 +825,7 @@ public:
         const auto ink = ! isActive             ? theme::textMute
                        : textColour != nullptr  ? *textColour
                        : isHighlighted          ? theme::text : theme::textDim;
-        g.setFont (theme::ui (12.5f, isHighlighted && isActive ? juce::Font::bold
+        g.setFont (theme::ui (13.0f, isHighlighted && isActive ? juce::Font::bold
                                                                : juce::Font::plain));
         auto tr = r.reduced (12.0f, 0.0f);
         if (isTicked)
@@ -695,6 +893,7 @@ public:
     void drawMenuBarBackground (juce::Graphics& g, int width, int height, bool,
                                 juce::MenuBarComponent&) override
     {
+        if (width < 600) return;   // riding inline in tier 1: the header glass IS the background
         juce::Rectangle<float> r (0, 0, (float) width, (float) height);
         g.setGradientFill ({ theme::bgHi.brighter (0.035f), r.getTopLeft(),
                              theme::bgHi, r.getBottomLeft(), false });
@@ -704,7 +903,7 @@ public:
     }
     juce::Font getMenuBarFont (juce::MenuBarComponent&, int, const juce::String&) override
     {
-        return theme::ui (12.5f);
+        return theme::ui (13.0f);
     }
     void drawMenuBarItem (juce::Graphics& g, int width, int height, int, const juce::String& itemText,
                           bool isMouseOver, bool isMenuOpen, bool, juce::MenuBarComponent&) override
@@ -723,7 +922,7 @@ public:
             g.fillRoundedRectangle (r, 5.0f);
         }
         g.setColour (isMenuOpen ? theme::text : isMouseOver ? theme::text.withAlpha (0.9f) : theme::textDim);
-        g.setFont (theme::ui (12.5f));
+        g.setFont (theme::ui (13.0f));
         g.drawText (itemText, 0, 0, width, height, juce::Justification::centred);
     }
 
@@ -796,7 +995,7 @@ private:
     static juce::TextLayout layoutTooltipText (const juce::String& text)
     {
         juce::AttributedString as;
-        as.append (text, theme::ui (11.5f), theme::text.withAlpha (0.95f));
+        as.append (text, theme::ui (12.0f), theme::text.withAlpha (0.95f));
         juce::TextLayout tl;
         tl.createLayout (as, 300.0f);
         return tl;
@@ -811,6 +1010,10 @@ public:
     enum class Glyph { play, rec, loop, undo, redo };
     explicit IconButton (Glyph gl, const juce::String& name) : juce::Button (name), glyph (gl) {}
 
+    // THE BEAT LIGHT: the host feeds the beat fraction (0..1) while the transport
+    // rolls (<0 = quiet). Paint-pure — the LCD's play-rate repaint drives motion.
+    std::function<float()> pulsePhase;
+
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         theme::DimScope dim (g, ! isEnabled());            // ghost of a ghost
@@ -819,17 +1022,23 @@ public:
         const auto hot = glyph == Glyph::rec ? theme::rec : theme::accent;
         if (on)   // lit: brand-tinted tile + glow (state deserves the light)
         {
-            auto c = theme::panelHi.interpolatedWith (hot, over ? 0.26f : 0.20f);
-            theme::glowRing (g, r, hot, 7.0f, 2.0f);
-            g.setGradientFill ({ c.brighter (0.10f), r.getTopLeft(), c.darker (0.10f),
-                                 r.getBottomLeft(), false });
+            // THE BEAT LIGHT v2: the lit tile WARMS on every beat (no bullseye —
+            // one surface breathing with the actual tempo; host feeds the phase)
+            float pulse = 0.0f;
+            if (glyph == Glyph::play && pulsePhase != nullptr)
+                if (const float ph = pulsePhase(); ph >= 0.0f && ph <= 1.0f)
+                    pulse = (1.0f - ph) * (1.0f - ph);
+            auto c = theme::panelHi.interpolatedWith (hot, (over ? 0.26f : 0.20f) + 0.22f * pulse);
+            theme::glowRing (g, r, hot, 7.0f, 2.0f + 2.5f * pulse);
+            g.setGradientFill ({ c.brighter (0.10f + 0.10f * pulse), r.getTopLeft(),
+                                 c.darker (0.10f), r.getBottomLeft(), false });
             g.fillRoundedRectangle (r, 7.0f);
-            g.setColour (hot.withAlpha (0.75f));
+            g.setColour (hot.withAlpha (0.75f + 0.25f * pulse));
             g.drawRoundedRectangle (r.reduced (0.5f), 7.0f, 1.0f);
         }
         else      // ghost: whisper tile, border only under the hand
         {
-            const float lift = down ? 0.13f : over ? 0.085f : 0.035f;
+            const float lift = down ? 0.14f : over ? 0.10f : 0.05f;
             g.setGradientFill ({ juce::Colours::white.withAlpha (lift), r.getTopLeft(),
                                  juce::Colours::white.withAlpha (lift * 0.45f), r.getBottomLeft(), false });
             g.fillRoundedRectangle (r, 7.0f);
@@ -926,7 +1135,7 @@ public:
     std::function<void (int)> onSelect;
     ViewSwitch() { startTimerHz (6); }       // follow external state flips (roll open, env boot)
 
-    static constexpr int numSegs = 4;
+    static constexpr int numSegs = 5;                    // SCORE: the notation view joined
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat().reduced (1.0f);
@@ -936,27 +1145,28 @@ public:
         g.drawRoundedRectangle (r.reduced (0.5f), 8.0f, 1.0f);
         const int cur = getView ? getView() : 1;
         const float segW = r.getWidth() / (float) numSegs;
-        static const char* names[] = { "AGENT", "ARRANGE", "MIX", "LIVE" };
+        static const char* names[] = { "AGENT", "ARRANGE", "SCORE", "MIX", "LIVE" };
         for (int i = 0; i < numSegs; ++i)
         {
             auto seg = juce::Rectangle<float> (r.getX() + segW * (float) i, r.getY(), segW, r.getHeight());
             if (i == cur)
             {
                 auto lit = seg.reduced (2.0f);
+                theme::glowRing (g, lit, i == 0 ? theme::agent : theme::accent, 6.0f, 1.4f);
                 if (i == 0)                              // the agent page wears its own colour
                 {
-                    g.setColour (theme::agent.withAlpha (0.28f));
+                    g.setColour (theme::agent.withAlpha (0.34f));
                     g.fillRoundedRectangle (lit, 5.5f);
-                    g.setColour (theme::agent.withAlpha (0.75f));
+                    g.setColour (theme::agent.withAlpha (0.55f));
                     g.drawRoundedRectangle (lit.reduced (0.5f), 5.5f, 1.0f);
                     g.setColour (theme::agent.withAlpha (0.95f));
                     g.fillRoundedRectangle (lit.getX() + 4.0f, lit.getY() + 1.0f, lit.getWidth() - 8.0f, 1.8f, 0.9f);
                 }
                 else
                 {
-                    g.setGradientFill (theme::brand (lit, 0.26f));
+                    g.setGradientFill (theme::brand (lit, 0.32f));
                     g.fillRoundedRectangle (lit, 5.5f);
-                    g.setColour (theme::accent.withAlpha (0.55f));
+                    g.setColour (theme::accent.withAlpha (0.38f));
                     g.drawRoundedRectangle (lit.reduced (0.5f), 5.5f, 1.0f);
                     g.setGradientFill (theme::brand (lit.withHeight (2.0f), 0.95f));
                     g.fillRoundedRectangle (lit.getX() + 4.0f, lit.getY() + 1.0f, lit.getWidth() - 8.0f, 1.8f, 0.9f);
@@ -968,7 +1178,7 @@ public:
                 g.fillRoundedRectangle (seg.reduced (2.0f), 5.5f);
             }
             g.setColour (i == cur ? theme::text : theme::textMute.brighter (i == hover ? 0.25f : 0.0f));
-            g.setFont (theme::caps (9.5f));
+            g.setFont (theme::caps (10.5f));                    // presence pass
             g.drawText (names[i], seg.toNearestInt(), juce::Justification::centred);
         }
     }
@@ -1033,15 +1243,15 @@ public:
                              juce::Colours::black.withAlpha (0.0f),
                              { r.getX(), r.getY() + 8.0f }, false });
         g.fillRoundedRectangle (r, 6.0f);                              // recessed glass
-        g.setColour (theme::accent.withAlpha (0.10f));                 // phosphor wash
+        g.setColour (theme::accent.withAlpha (0.14f));                 // phosphor wash
         g.fillRoundedRectangle (r.reduced (2.0f), 4.5f);
         g.setColour (theme::line);
         g.drawRoundedRectangle (r, 6.0f, 1.0f);
         const auto s = positionText ? positionText() : juce::String ("1.1.1 | 0:00.0");
         g.setColour (theme::accent.withAlpha (0.28f));                 // glow pass
-        g.setFont (theme::mono (15.5f, juce::Font::bold));
+        g.setFont (theme::mono (17.0f, juce::Font::bold));             // presence pass
         g.drawText (s, getLocalBounds().reduced (11, 0).translated (0, 1), juce::Justification::centredLeft);
-        g.setColour (theme::accent.brighter (0.18f));
+        g.setColour (theme::accent.brighter (0.32f));
         g.drawText (s, getLocalBounds().reduced (10, 0), juce::Justification::centredLeft);
     }
 private:

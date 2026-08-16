@@ -113,6 +113,17 @@ KEEP = {                     # section -> which classes play
     # vary_rep's texture variation + the intro/outro taper, never in stripping
     "theme": {"drums", "bass", "vox", "other"},
 }
+# THE FANFARE LAW (worldband 2026-08-02): some idioms open with the LEAD —
+# balkan fanfare pickup, bluegrass fiddle/banjo kickoff, arabesk taksim-ish
+# line. grid.intro_style (KG, seeded beside the worldband voice fields)
+# overrides the intro's KEEP set; drums re-enter with the next section. The
+# band_order dilution evidence: default drums-only intros put ~43% of a form's
+# bars in kick-heavy reduction and are idiomatically wrong for these genres.
+INTRO_STYLE_KEEP = {
+    "fanfare": {"other", "vox"},        # lead + color speak first
+    "kickoff": {"other"},               # the string band's solo pickup
+    "taksim": {"other", "bass"},        # lead over a root drone
+}
 # THE BED LAW: records never go harmonically NAKED — the pad rides stripped
 # sections as a quiet bed (records: filtered pad under the intro, thin pad in
 # verses). Applies to color/pad lanes only; hooks and arps genuinely rest.
@@ -250,6 +261,11 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
          or (song.get("_loop") or {}).get("genre", "")).lower()   # _loop = birth provenance
 
     fam = form_family_for(g)
+    try:                                  # intro_style rides the same baked cache
+        _cache = json.load(open(os.path.join(ROOT, "agent", "dna_cache.json")))["genres"]
+        _istyle = ((_cache.get(g) or {}).get("grid") or {}).get("intro_style")
+    except Exception:
+        _istyle = None                    # fail-closed: classic intros
     if fam == "pop" and not form:
         # W43 pop-seed law (ledger HIGH): every make_track sampled the SAME
         # fixed-seed skeleton at a flat 8 bars. The take's seed now rides in,
@@ -323,6 +339,9 @@ def arrange(song_path, out_name=None, form=None, genre=None, seed=0):
                 allowed, motif = True, secbase                # the motif law
             if secbase == "intro" and cls == "drums" and not any(w in name_l for w in ("kick", "hat")):
                 allowed = False            # real intros strip to kick+hat
+            if secbase == "intro" and _istyle in INTRO_STYLE_KEEP:
+                allowed = cls in INTRO_STYLE_KEEP[_istyle]   # melody-first idioms
+                bed_scale = None if allowed else bed_scale   # no pad bed under a solo pickup
             if allowed:
                 sec_beats = bars * _BQ
                 reps = int(sec_beats // loop_beats) or 1

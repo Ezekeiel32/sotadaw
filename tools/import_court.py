@@ -51,7 +51,9 @@ if TOOLS not in sys.path:
     sys.path.insert(0, TOOLS)
 
 DRUM_LANES = ("Kick", "Snare", "Hats", "Perc", "Cymbals")
-MELODIC_SUFFIX = "_sketch"
+MELODIC_SUFFIX = ("_sketch", "_lead", "_pad", "_chords")
+# (_lead/_pad/_chords = THE STREAM SPLIT lanes, note_streams.py 2026-07-15 —
+#  the 'other' bucket decomposes into voice lanes; they face the same judges)
 
 
 # ---------------------------------------------------------------- receipts
@@ -353,8 +355,49 @@ def court_echo(notes, lane="", decay=0.60, gap_lo=0.20, gap_hi=2.0,
     return ns, receipts
 
 
+def court_length(notes, lane="", ceiling=6):
+    """THE LENGTH COURT census (F1.3, docs/IMPORT_FINALE.md): a lane where
+    many long notes sound at once is a WASH, not a part ('choir of the same
+    instrument' — Chezy 2026-07-15). At every onset the sounding count must
+    stay <= ceiling; violations trim the LONGEST remaining tails back to the
+    offending moment (+ a 0.05b release) so the articulation stays and the
+    pileup dies. Deterministic one-sweep; receipts like every court."""
+    if not notes:
+        return notes, []
+    ns = sorted((dict(n) for n in notes),
+                key=lambda n: (float(n.get("start", 0.0)),
+                               int(n.get("pitch", 0))))
+    trimmed = 0
+    worst = 0
+    for i, n in enumerate(ns):
+        t = float(n["start"])
+        active = [m for m in ns[:i]
+                  if float(m["start"]) + float(m["len"]) > t + 1e-6]
+        worst = max(worst, len(active) + 1)
+        over = len(active) + 1 - ceiling
+        if over <= 0:
+            continue
+        # longest remaining tail past t pays first
+        active.sort(key=lambda m: float(m["start"]) + float(m["len"]),
+                    reverse=True)
+        for m in active[:over]:
+            new_len = max(0.05, t - float(m["start"]) + 0.05)
+            if new_len < float(m["len"]) - 1e-6:
+                m["len"] = round(new_len, 4)
+                trimmed += 1
+    if not trimmed:
+        return notes, []
+    rr = [{"court": "length", "action": "trimmed", "lane": lane,
+           "count": trimmed,
+           "why": f"polyphony census hit {worst} simultaneous voices "
+                  f"(ceiling {ceiling}) — the longest tails gave way; a lane "
+                  f"is a playable part, not a wash"}]
+    return ns, rr
+
+
 # ---------------------------------------------------------------- orchestrator
-def hold_court(song, drums_wav=None, courts=("key", "snap", "echo", "runs"),
+def hold_court(song, drums_wav=None,
+               courts=("key", "snap", "echo", "length", "runs"),
                kit_pitches=None):
     """Judge a song dict IN PLACE. Melodic courts on *_sketch lanes; the runs
     court on the named drum lanes (re-splitting reassigned hits between them).
@@ -374,6 +417,10 @@ def hold_court(song, drums_wav=None, courts=("key", "snap", "echo", "runs"),
             docket += rr
         if "snap" in courts:
             ns, rr = court_snap(ns, lane=nm)
+            docket += rr
+        if "length" in courts:
+            ns, rr = court_length(ns, lane=nm,
+                                  ceiling=8 if nm.endswith("_chords") else 6)
             docket += rr
         t["notes"] = ns
     if "runs" in courts and drums_wav:

@@ -2,12 +2,20 @@
 """BRIDGE: import a DAWproject (.dawproject — Bitwig/Cubase/Nuendo/Studio One open
 exchange format) into song.json. Symbolic layer: tempo, tracks, note clips (with
 playStart/loop offsets, nested clip lanes), audio clips (extracted from the archive),
-channel volume/pan.
+channel volume/pan, AND automation.
 
   dawproject_import.py project.dawproject songs/out.json
 
 Format: a ZIP with project.xml; Lanes timeUnit=beats; Note time/duration in beats
 relative to clip start; vel/rel are 0..1 floats. Volume unit=linear (0..2).
+
+Automation (v2): <Points><Target parameter=ID/> lanes resolve through the
+Structure's Volume/Pan element ids -> track automation[] targets gainDb/pan
+(values converted back to dB / -1..1); a role="master" channel's Volume lane
+lands as song-level masterGainDb automation with values capped at 0 dB (the
+master chain law: the wall regulates, masterGainDb only ever ducks).
+RealPoint interpolation "hold" -> point curve 1.0 (the engine's exact
+hold-then-step); "linear"/absent -> 0.
 """
 import json, math, os, re, sys, zipfile
 import xml.etree.ElementTree as ET
@@ -26,32 +34,44 @@ def import_dawproject(dp_path, song_path):
     if tempo is not None and tempo.get("value"):
         bpm = float(tempo.get("value"))
 
-    # structure: track id -> {name, volume dB, pan}
+    # structure: track id -> {name, volume dB, pan}; parameter-element id ->
+    # (track id, automation target) so <Points><Target parameter=.../> resolves
     tracks_meta = {}
     order = []
+    param_map = {}                       # Volume/Pan element id -> (tid, target)
     for tr in root.iter("Track"):
         tid = tr.get("id")
         if tid is None:
             continue
-        meta = {"name": tr.get("name") or f"track_{len(tracks_meta)+1}",
-                "contentType": tr.get("contentType", "notes"), "gainDb": 0.0, "pan": 0.0}
-        srcv = tr.get("{https://sotadaw.local/ns}source") or tr.get("sotadaw:source")
-        if srcv:
-            try:
-                meta["source"] = json.loads(srcv)
-            except Exception:
-                pass
         ch = tr.find("Channel")
+        is_master = (ch is not None and ch.get("role") == "master")
+        if not is_master:
+            meta = {"name": tr.get("name") or f"track_{len(tracks_meta)+1}",
+                    "contentType": tr.get("contentType", "notes"), "gainDb": 0.0, "pan": 0.0}
+            srcv = tr.get("{https://sotadaw.local/ns}source") or tr.get("sotadaw:source")
+            if srcv:
+                try:
+                    meta["source"] = json.loads(srcv)
+                except Exception:
+                    pass
         if ch is not None:
             vol = ch.find("Volume")
-            if vol is not None and vol.get("value"):
-                v = float(vol.get("value"))
-                meta["gainDb"] = round(20.0 * math.log10(max(1e-4, v)), 2)
+            if vol is not None:
+                if vol.get("id"):
+                    param_map[vol.get("id")] = ("master" if is_master else tid, "gainDb")
+                if not is_master and vol.get("value"):
+                    v = float(vol.get("value"))
+                    meta["gainDb"] = round(20.0 * math.log10(max(1e-4, v)), 2)
             pan = ch.find("Pan")
-            if pan is not None and pan.get("value"):
-                p = float(pan.get("value"))
-                # normalized 0..1 (0.5 = center) is the common encoding
-                meta["pan"] = round((p - 0.5) * 2.0, 3) if 0.0 <= p <= 1.0 else round(p, 3)
+            if pan is not None:
+                if pan.get("id"):
+                    param_map[pan.get("id")] = ("master" if is_master else tid, "pan")
+                if not is_master and pan.get("value"):
+                    p = float(pan.get("value"))
+                    # normalized 0..1 (0.5 = center) is the common encoding
+                    meta["pan"] = round((p - 0.5) * 2.0, 3) if 0.0 <= p <= 1.0 else round(p, 3)
+        if is_master:
+            continue                     # the master strip is a fader, not a lane of ours
         tracks_meta[tid] = meta
         order.append(tid)
 
@@ -110,11 +130,48 @@ def import_dawproject(dp_path, song_path):
             for inner in inner_clips.findall("Clip"):
                 collect_clip(inner, start, track_id)
 
+    auto_by_track = {}                   # tid ("master" incl.) -> [automation lanes]
+    n_capped = 0
+
+    def collect_points(points_el):
+        nonlocal n_capped
+        target = points_el.find("Target")
+        pid = target.get("parameter") if target is not None else None
+        hit = param_map.get(pid or "")
+        if hit is None:
+            return
+        tid, tgt = hit
+        pts = []
+        for rp in points_el.iter("RealPoint"):
+            try:
+                beat = float(rp.get("time", 0))
+                raw = float(rp.get("value", 0))
+            except (TypeError, ValueError):
+                continue
+            if tgt == "gainDb":
+                v = round(20.0 * math.log10(max(1e-4, raw)), 3)
+                if tid == "master" and v > 0.0:
+                    v, n_capped = 0.0, n_capped + 1   # master chain law: only ever ducks
+            else:
+                v = round((raw - 0.5) * 2.0, 4) if 0.0 <= raw <= 1.0 else round(raw, 4)
+            p = {"beat": round(beat, 6), "v": v}
+            if rp.get("interpolation") == "hold":
+                p["curve"] = 1.0                      # the engine's exact hold-then-step
+            pts.append(p)
+        if pts:
+            lane = {"target": "masterGainDb" if tid == "master" else tgt,
+                    "points": sorted(pts, key=lambda p: p["beat"])}
+            auto_by_track.setdefault(tid, []).append(lane)
+
     arrangement = root.find("Arrangement")
     if arrangement is not None:
         for lanes in arrangement.iter("Lanes"):
             tid = lanes.get("track")
-            if tid is None or tid not in tracks_meta:
+            if tid is None:
+                continue
+            for points_el in lanes.findall("Points"):
+                collect_points(points_el)
+            if tid not in tracks_meta:
                 continue
             for clips in lanes.findall("Clips"):
                 for clip in clips.findall("Clip"):
@@ -126,9 +183,12 @@ def import_dawproject(dp_path, song_path):
         meta = tracks_meta[tid]
         notes = sorted(notes_by_track[tid], key=lambda n: n["start"])
         clips = audio_by_track[tid]
-        if not notes and not clips:
+        auto = auto_by_track.get(tid, [])
+        if not notes and not clips and not auto:
             continue
         t = {"name": meta["name"][:24], "gainDb": meta["gainDb"], "pan": meta["pan"], "notes": notes}
+        if auto:
+            t["automation"] = auto
         if meta.get("source"):                      # sotadaw round-trip: the exact source spec
             t["source"] = meta["source"]
             if clips:
@@ -155,6 +215,10 @@ def import_dawproject(dp_path, song_path):
             max_beat = max(max_beat, n["start"] + n["len"])
         for c in t.get("audioClips", []):
             max_beat = max(max_beat, c["startBeat"] + c.get("lengthBeats", 4.0))
+    for lanes in auto_by_track.values():             # a ride past the last note still needs world
+        for lane in lanes:
+            if lane["points"]:
+                max_beat = max(max_beat, lane["points"][-1]["beat"])
     song = {"version": 2, "bpm": round(bpm, 2),
             "lengthBars": max(1, int(max_beat // 4 + 1)),
             "masterGainDb": 0,
@@ -163,11 +227,17 @@ def import_dawproject(dp_path, song_path):
             "master": [{"type": "faustfx", "id": "fx_trim", "params": {"level": -6}},
                        {"type": "faustfx", "id": "fx_truepeak", "params": {"ceiling": -1.2}}],
             "tracks": tracks_out}
+    if auto_by_track.get("master"):
+        song["automation"] = auto_by_track["master"]
     json.dump(song, open(song_path, "w"), indent=1)
     n_notes = sum(len(t["notes"]) for t in tracks_out)
     n_audio = sum(len(t.get("audioClips", [])) for t in tracks_out)
+    n_lanes = sum(len(v) for v in auto_by_track.values())
+    n_apts = sum(len(l["points"]) for v in auto_by_track.values() for l in v)
     msg = (f"imported {len(tracks_out)} tracks / {n_notes} notes / {n_audio} audio clips "
-           f"@ {bpm:.1f}bpm -> {song_path}")
+           f"/ {n_lanes} automation lanes ({n_apts} pts"
+           + (f", {n_capped} master pts capped to 0dB" if n_capped else "")
+           + f") @ {bpm:.1f}bpm -> {song_path}")
     print(msg)
     return msg
 

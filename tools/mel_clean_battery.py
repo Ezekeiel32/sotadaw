@@ -57,6 +57,64 @@ def main():
               mc.clean_cached("/nonexistent.wav") is None)
         mc.MSS_DIR = old
 
+    # -------------------------------------------- THE DRY-TWIN HEALTH LAW
+    # (2026-07-15 goldenbrown autopsy: anvuew dereverb is VOCAL-target — on
+    # an instrumental 'other' stem it returns ~silence; three imports
+    # transcribed a -81dB corpse. A twin that lost the music is refused.)
+    sr = 44100
+    t = np.linspace(0, 2, sr * 2, endpoint=False)
+    wet = (0.3 * np.sin(2 * np.pi * 440 * t)).astype(np.float64)
+    ok, h = mc.dry_twin_health(wet, wet * 0.5, sr)
+    check("health: -6dB twin passes", ok and abs(h["retention_db"] + 6) < 1,
+          f"{h}")
+    ok, h = mc.dry_twin_health(wet, wet * 0.001, sr)
+    check("health: -60dB twin rejected", not ok, f"{h}")
+    ok, _ = mc.dry_twin_health(wet * 0.0, wet * 0.0, sr)
+    check("health: silent stem judges nothing", ok)
+    check("aspiration exempt from body gate",
+          mc.MODELS["aspiration"].get("expect_body") is False)
+    check("dereverb/denoise expect body",
+          mc.MODELS["dereverb"].get("expect_body") is True
+          and mc.MODELS["denoise"].get("expect_body") is True)
+
+    import json
+    import soundfile as sf
+    with tempfile.TemporaryDirectory() as td:
+        wavp = os.path.join(td, "other.wav")
+        sf.write(wavp, np.stack([wet, wet], 1).astype(np.float32), sr,
+                 subtype="FLOAT")
+        corpse = os.path.join(td, "other_dry.wav")
+        sf.write(corpse, np.zeros((len(wet), 2), np.float32), sr,
+                 subtype="FLOAT")
+        got = mc.clean_cached(wavp, "dereverb", say=lambda *a, **k: None)
+        check("cached corpse judged once -> refused + evicted",
+              got is None and not os.path.exists(corpse))
+        v = json.load(open(corpse + ".verdict.json"))
+        check("rejection verdict persisted (no GPU re-pay)",
+              v.get("ok") is False and v.get("retention_db", 0) < -50)
+        got2 = mc.clean_cached(wavp, "dereverb", say=lambda *a, **k: None)
+        check("standing rejection honored", got2 is None)
+
+        healthy = os.path.join(td, "voc.wav")
+        sf.write(healthy, np.stack([wet, wet], 1).astype(np.float32), sr,
+                 subtype="FLOAT")
+        twin = os.path.join(td, "voc_dry.wav")
+        sf.write(twin, np.stack([wet, wet], 1).astype(np.float32) * 0.5, sr,
+                 subtype="FLOAT")
+        got3 = mc.clean_cached(healthy, "dereverb", say=lambda *a, **k: None)
+        check("healthy cached twin passes the gate", got3 == twin)
+
+        nuked2 = os.path.join(td, "n.wav")
+        sf.write(nuked2, np.stack([wet, wet], 1).astype(np.float32), sr,
+                 subtype="FLOAT")
+        twin2 = os.path.join(td, "n_dry.wav")
+        sf.write(twin2, np.zeros((len(wet), 2), np.float32), sr,
+                 subtype="FLOAT")
+        os.environ["SOTADAW_NO_DRYGATE"] = "1"
+        got4 = mc.clean_cached(nuked2, "dereverb", say=lambda *a, **k: None)
+        del os.environ["SOTADAW_NO_DRYGATE"]
+        check("SOTADAW_NO_DRYGATE=1 bypasses (old law)", got4 == twin2)
+
     # vendored arch imports + constructs from each present yaml (cheap dims)
     sys.path.insert(0, os.path.join(ROOT, "third_party", "bs_roformer"))
     try:

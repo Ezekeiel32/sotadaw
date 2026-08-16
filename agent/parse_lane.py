@@ -142,12 +142,61 @@ _STOP = {"the", "a", "an", "that", "this", "sound", "at", "in", "on", "of",
 
 _RESOLUTIONS = None    # per-compile collector; compile() is single-threaded by law
 _HISTORY = None        # per-compile history channel ({"last_plan": ...} or None)
+_CTX = None            # per-compile UI context ({"selections": [...]}) — SELECTION =
+                       # CONTEXT reaches the instant lane too (2026-08-08 rung)
 
 def _record_resolution(key, name):
     """Non-trivial phrase->track links (key != the track's own name) are the
     facts an ACCEPT later confirms into the session store (T2 refers_to)."""
     if _RESOLUTIONS is not None and key and key != str(name).lower():
         _RESOLUTIONS[key] = str(name)
+
+# SELECTION = CONTEXT, instant-lane edition (2026-08-08; live evidence: 'make it
+# quieter' x3 + 'make it darker' missed as track_empty:it while the UI was
+# pointing at a track). Pronouns resolve through the UI's pointing hand — never
+# recorded as sticky aliases (deictic words must stay deictic).
+_PRONOUNS = {"it", "this", "that", "this one", "this track", "that track",
+             "the selected track", "selected track", "the selection", "selection"}
+_SONG_WIDE = {"everything", "song", "whole song", "mix", "whole mix",
+              "whole thing", "all tracks", "every track"}
+
+def _selected_track_names(song):
+    """Track names the UI selection points at (notes/tracks/slot/track-fx
+    selections name their track). -> (sorted unique names, name->index map)."""
+    names = []
+    for s in ((_CTX or {}).get("selections") or []):
+        if not isinstance(s, dict):
+            continue
+        k = s.get("type")
+        if k == "notes" and s.get("track"):
+            names.append(str(s["track"]))
+        elif k == "tracks":
+            names.extend(str(n) for n in (s.get("names") or []) if n)
+        elif k == "slot" and s.get("track"):
+            names.append(str(s["track"]))
+        elif k == "fx" and s.get("scope", "track") == "track" and s.get("owner"):
+            names.append(str(s["owner"]))
+    have = {str(t.get("name", f"#{i}")): i
+            for i, t in enumerate(song.get("tracks", []))}
+    return sorted({n for n in names if n in have}), have
+
+def _pronoun_track(song, p):
+    """'it'/'this' -> the ONE selected track, or an honest Miss (no guessing)."""
+    uniq, have = _selected_track_names(song)
+    if not uniq:
+        raise Miss(f"pronoun_no_selection:{p}")
+    if len(uniq) > 1:
+        raise Miss(f"pronoun_multi_selection:{p}")
+    return have[uniq[0]], f"'{p}' = the selected track '{uniq[0]}'"
+
+def _song_wide_phrase(song, phrase):
+    """'everything'/'the mix' as a SONG-scope idiom — unless a real track owns
+    that exact name (the artifact outranks the idiom)."""
+    p = re.sub(r"^(?:the |our |my )", "", str(phrase or "").strip().lower()).strip()
+    if p not in _SONG_WIDE:
+        return False
+    return p not in {str(t.get("name", "")).strip().lower()
+                     for t in song.get("tracks", [])}
 
 def _word_hits(track, word, role):
     toks = surgical._track_tokens(track)
@@ -171,6 +220,10 @@ def resolve_track_phrase(song, phrase, facts=None):
             if cand in facts:
                 phrase = str(facts[cand])
                 break
+    p = phrase.strip().lower()
+    if p in _PRONOUNS and p not in {str(t.get("name", "")).strip().lower()
+                                    for t in song.get("tracks", [])}:
+        return _pronoun_track(song, p)     # the pointing hand (never a sticky alias)
     words = [w for w in re.split(r"[^a-z0-9#]+", phrase.lower())
              if w and w not in _STOP]
     if not words:
@@ -269,7 +322,12 @@ def _tname(song, ti):
 
 def b_mute(m, song, ctx, facts):
     want = m.group("un") is None
-    got = resolve_track_list(song, m.group("list"), facts)
+    if _song_wide_phrase(song, m.group("list")):   # 'mute everything' = every lane
+        got = [(i, _tname(song, i)) for i in range(len(song.get("tracks", [])))]
+        if not got:
+            raise Miss("no_tracks")
+    else:
+        got = resolve_track_list(song, m.group("list"), facts)
     acts = [{"kind": "track_field", "track": nm, "field": "muted",
              "mode": "set", "value": want} for _, nm in got]
     names = " + ".join(nm for _, nm in got)
@@ -278,8 +336,22 @@ def b_mute(m, song, ctx, facts):
 def b_gain_or_scoped_vel(m, song, ctx, facts):
     g = m.groupdict()
     phrase = g.get("track") or g.get("trackb") or g.get("trackc") or g.get("trackd")
-    ti, ev = resolve_track_phrase(song, phrase, facts)
-    nm = _tname(song, ti)
+    # SONG SCOPE (2026-08-08): 'everything'/'the mix' — and a bare pronoun with
+    # NOTHING selected ('make it quieter') — mean the whole mix, moved as ONE
+    # fader (uniform per-track trim keeps every balance). A pronoun with one
+    # selection targets it; 2+ selected = honest miss (no scope surprises).
+    wide, ti, ev = _song_wide_phrase(song, phrase), None, ""
+    if wide:
+        ev = f"'{phrase}' = the whole mix"
+    else:
+        try:
+            ti, ev = resolve_track_phrase(song, phrase, facts)
+        except Miss as e:
+            if not str(e.reason).startswith("pronoun_no_selection"):
+                raise
+            wide = True
+            ev = f"'{phrase}' with nothing selected = the whole mix"
+    nm = None if wide else _tname(song, ti)
     if g.get("half"):                       # "half as loud" / "twice as loud"
         up = "twice" in g["half"]
         db = 6.0                            # amplitude halving/doubling
@@ -290,7 +362,7 @@ def b_gain_or_scoped_vel(m, song, ctx, facts):
     else:
         up = g.get("rl") == "raise"
     db = None if not g.get("half") else db
-    for k in ("db", "db2", "db3"):
+    for k in ("db", "db2", "db3", "db4"):
         if g.get(k):
             db = float(g[k])
     size = _size(g.get("amt"))
@@ -299,14 +371,23 @@ def b_gain_or_scoped_vel(m, song, ctx, facts):
     sect = g.get("sect") or g.get("sectb")
     if sect:                                    # scoped => velocity, gain untouched
         sec = resolve_section_phrase(song, sect)
-        sel = {"tracks": [nm], "section": sec[0]}
+        sel = {"section": sec[0]} if wide else {"tracks": [nm], "section": sec[0]}
         r = _resolved_notes(song, sel)
         factor = round(10.0 ** ((db if up else -db) / 20.0), 4)
+        who = "the whole mix" if wide else nm
         acts = [{"kind": "surgical", "selector": sel,
                  "ops": [{"op": "scale", "vel": factor}]}]
-        return (acts, f"{nm}: velocity x{factor:g} in '{sec[0]}' ({len(r.refs)} notes)",
+        return (acts, f"{who}: velocity x{factor:g} in '{sec[0]}' ({len(r.refs)} notes)",
                 [ev, f"section '{sec[0]}' beats [{sec[1]:g},{sec[2]:g})"])
     delta = db if up else -db
+    if wide:
+        names = [_tname(song, i) for i in range(len(song.get("tracks", [])))]
+        if not names:
+            raise Miss("no_tracks")
+        acts = [{"kind": "track_field", "track": n2, "field": "gainDb",
+                 "mode": "add", "value": delta} for n2 in names]
+        return (acts, f"the whole mix: gain {delta:+g} dB ({len(names)} tracks, "
+                f"balance kept)", [ev])
     acts = [{"kind": "track_field", "track": nm, "field": "gainDb",
              "mode": "add", "value": delta}]
     return acts, f"{nm}: gain {delta:+g} dB", [ev]
@@ -1074,6 +1155,7 @@ PATTERNS = [(name, re.compile(rx), fn) for name, rx, fn in [
      r"(?: in " + _ART + r"(?P<sectb>[a-z0-9][a-z0-9 _-]*?))?(?: only)?"
      r"|(?:make|turn) " + _ART + _TR + r" (?P<amt>(?P<db>-?\d+(?:\.\d+)?)db |"
      + _SMALL + r" |" + _BIG + r" )?(?P<dir>louder|quieter|softer)"
+     r"(?: by (?P<db4>\d+(?:\.\d+)?)db)?"
      r"(?: in " + _ART + _SECT + r")?(?: only)?"
      r"|turn " + _ART + r"(?P<trackb>[a-z0-9#][a-z0-9# _-]*?) (?P<ud>up|down)"
      r"(?: by)?(?: (?P<db2>\d+(?:\.\d+)?)db)?"
@@ -1247,12 +1329,14 @@ def compile_debug(text, song, context=None, facts=None, history=None):
     s = normalize(text)
     if not s or len(s) > 200:
         return None, "empty_or_long"
-    global _RESOLUTIONS, _HISTORY
+    global _RESOLUTIONS, _HISTORY, _CTX
     _HISTORY = history or {}
+    _CTX = context if isinstance(context, dict) else {}
     try:
         return _compile_inner(s, song, context, facts, t0)
     finally:
         _HISTORY = None
+        _CTX = None
 
 
 def _probe(song, actions):

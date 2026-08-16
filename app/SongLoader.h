@@ -222,6 +222,17 @@ struct Song
         return per;
     }
 
+    // quarter-beats per METRICAL beat in the bar containing `bar` (1.0 = quarter;
+    // 7/8 gives 0.5 — the ruler's whisper ticks + counters step in these)
+    double beatUnitAt (double bar) const
+    {
+        double den = 4.0;
+        for (auto& mp : meterMap)
+            if (mp.bar <= bar + 1e-9) den = mp.den;
+            else break;
+        return 4.0 / den;
+    }
+
     // quarter-beat position where bar N starts, under the meter map
     double barStartBeat (double bar) const
     {
@@ -244,6 +255,23 @@ struct Song
     double totalBeats() const
     {
         return meterMap.empty() ? lengthBars * 4.0 : barStartBeat (lengthBars);
+    }
+
+    // fractional bar index containing quarter-beat q (barStartBeat's inverse;
+    // the UI's bar counters / snap / "add at bar N" all read bars through this)
+    double barAtBeat (double q) const
+    {
+        if (meterMap.empty())
+            return q / 4.0;
+        double regionQ = 0.0, prevBar = 0.0, per = 4.0;
+        for (auto& mp : meterMap)
+        {
+            const double mq = barStartBeat (mp.bar);
+            if (mq >= q + 1e-9) break;
+            regionQ = mq; prevBar = mp.bar;
+            per = mp.num * (4.0 / mp.den);
+        }
+        return prevBar + (q - regionQ) / per;
     }
 
     // THE CONVERSION BOUNDARY (#1, den 8/16): engine BeatPositions are
@@ -595,8 +623,11 @@ inline bool parseSong (const juce::File& f, Song& s)
     // what another layer wrote (chords[] has 9 python writers, write_lyrics one).
     {
         static const char* modeled[] = { "version", "bpm", "key", "lengthBars",
-            "masterGainDb", "swing", "tempoMap", "sections", "provenance", "_loop",
+            "masterGainDb", "swing", "tempoMap", "meterMap", "sections", "provenance", "_loop",
             "midiMap", "master", "buses", "automation", "tracks", "scenes" };
+            // meterMap graduated 2026-07-31 (THE METER IS EDITABLE): the UI now
+            // authors it, so songToVar emits the MODEL, never a stale extras copy.
+            // chords/modulators stay python-owned passthrough by law.
         auto* ex = new juce::DynamicObject();
         juce::var exv (ex);
         if (auto* obj = v.getDynamicObject())
@@ -1822,6 +1853,19 @@ inline juce::var songToVar (const Song& s)
             tm.add (juce::var (o));
         }
         root->setProperty ("tempoMap", tm);
+    }
+    if (! s.meterMap.empty())               // THE WORLD GRID travels on saves
+    {
+        juce::Array<juce::var> mm;
+        for (auto& mp : s.meterMap)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("bar", mp.bar);
+            o->setProperty ("num", mp.num);
+            o->setProperty ("den", mp.den);
+            mm.add (juce::var (o));
+        }
+        root->setProperty ("meterMap", mm);
     }
     if (! s.sections.empty())
     {

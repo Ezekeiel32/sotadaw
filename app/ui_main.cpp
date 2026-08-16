@@ -23,9 +23,12 @@
 #include "GhostGlass.h"
 #include "ActionRail.h"
 #include "PatchField.h"   // THE PATCHBAY: Reason wires between connected components
+#include "VoiceDictate.h" // THE VOICE MODE: mic -> local whisper -> the prompt box
+#include "ConnectorBay.h" // the bridges as real buttons (Chezy 2026-07-16 ask #5)
 #include "JamStrip.h"
 #include "Keymap.h"
 #include "Navigator.h"
+#include "ScorePage.h"   // THE SCORE TAB: engraved notation view (SCORE)
 #ifndef _WIN32
  #include <execinfo.h>
  #include <sys/time.h>
@@ -427,6 +430,14 @@ public:
         m.addItem ("Remove clip", [this, ci] { onClipEdit (ci, clipop::Remove, 0.0); });
         m.showMenuAsync ({});
     }
+    static void pitchWindow (int& lo, int& hi)
+    {   // THE SPAN FLOOR: lanes map content pitch-range -> height, so a clap's
+        // semitone used to stretch across the WHOLE lane (reading as an octave+)
+        // and a one-pitch kick pinned to the lane floor (yFrac hits 1.0). Narrow
+        // content now centers in >=12 semitones of air; wide spans are untouched.
+        if (lo > hi) { lo = 60; hi = 72; return; }
+        if (hi - lo < 12) { const int c = (hi + lo) / 2; lo = c - 6; hi = c + 6; }
+    }
     bool hitsSelectedNote (juce::Point<int> pos) const
     {
         if (track == nullptr || noteSel.empty() || pos.x < headerW) return false;
@@ -435,7 +446,7 @@ public:
         { for (auto& n : ns) { lo = juce::jmin (lo, n.pitch); hi = juce::jmax (hi, n.pitch); } };
         scan (track->notes);
         if (diff != nullptr) { scan (diff->added); scan (diff->removed); }
-        if (lo > hi) { lo = 60; hi = 72; }
+        pitchWindow (lo, hi);
         const int span = juce::jmax (1, hi - lo);
         const auto canvas = canvasArea();
         const double p = effPpb();
@@ -452,6 +463,31 @@ public:
         }
         return false;
     }
+    int noteAt (juce::Point<int> pos) const
+    {   // ANY-note hit (ctrl toggle) — the same geometry hitsSelectedNote walks
+        if (track == nullptr || track->notes.empty() || pos.x < headerW) return -1;
+        int lo = 127, hi = 0;
+        auto scan = [&] (const std::vector<SongNote>& ns)
+        { for (auto& n : ns) { lo = juce::jmin (lo, n.pitch); hi = juce::jmax (hi, n.pitch); } };
+        scan (track->notes);
+        if (diff != nullptr) { scan (diff->added); scan (diff->removed); }
+        pitchWindow (lo, hi);
+        const int span = juce::jmax (1, hi - lo);
+        const auto canvas = canvasArea();
+        const double p = effPpb();
+        for (int i = (int) track->notes.size() - 1; i >= 0; --i)   // topmost-drawn first
+        {
+            auto& n = track->notes[(size_t) i];
+            const float x = xOf (n.start);
+            const float w = juce::jmax (2.0f, (float) (n.len * p) - 1.0f);
+            const float yFrac = 1.0f - (float) (n.pitch - lo) / (float) span;
+            const float y = (float) canvas.getY() + 3.0f + yFrac * ((float) canvas.getHeight() - 12.0f);
+            if (juce::Rectangle<float> (x, y, w, 8.0f).expanded (2.0f, 3.0f).contains (pos.toFloat()))
+                return i;
+        }
+        return -1;
+    }
+    std::function<void (int)> onNotePick;   // ctrl+click a note: host toggles membership
 
     bool isInterestedInDragSource (const SourceDetails& d) override
     {
@@ -661,6 +697,11 @@ public:
     std::function<void (juce::String)> onSetColor;   // "#rrggbb"; empty = back to the ring
     std::function<void (double)> onToggleCell;   // step-sequencer cell click (drum lanes, zoomed)
     bool selected = false;
+    void setSelected (bool s)              // the wash lives in the CACHED canvas —
+    {                                      // selection must re-render it (lit room)
+        if (selected == s) return;
+        selected = s; cacheDirty = true; repaint();
+    }
     int colourIndex = -1;
     double bpm = 120.0;
     juce::Colour trackCol() const
@@ -830,6 +871,11 @@ public:
             nameLbl.setColour (juce::Label::textColourId, trackCol());
             gainS.setColour (juce::Slider::trackColourId, trackCol().withAlpha (0.7f));   // FL: the channel IS its colour
             panS.setColour (juce::Slider::trackColourId, trackCol().withAlpha (0.45f));
+            // THE SPOKEN DESK: a screen reader must say WHOSE fader this is
+            gainS.setTitle (juce::String (t->name) + " volume");
+            panS.setTitle (juce::String (t->name) + " pan");
+            muteB.setTitle (juce::String (t->name) + " mute");
+            soloB.setTitle (juce::String (t->name) + " solo");
         }
         cacheDirty = true;
         repaint();
@@ -841,6 +887,7 @@ public:
     }
     void setDiff (const TrackDiff* d) { diff = d; cacheDirty = true; repaint(); }
     void setPlayheadBeats (double b) { playheadBeats = b; }
+    void rigAlive (float db) { levelDb = db; peakHoldDb = db + 2.5f; }   // ALIVE camera only
 
     // ---- timeline viewport (shared with ruler; MainComponent owns the state) ----
     std::function<void (double, double, bool)> onWheel;   // (beatUnderMouse, deltaY, isZoom)
@@ -988,11 +1035,20 @@ public:
             }
             return;
         }
+        if (e.x >= headerW && ! e.mods.isPopupMenu() && onNotePick != nullptr
+            && (e.mods.isCtrlDown() || e.mods.isCommandDown()))
+        {   // ctrl+click a NOTE toggles its membership (Chezy law 2026-07-16:
+            // de-select ONE while the rest stays); empty air falls through to
+            // multi-track select below — ctrl NEVER grabs the block
+            const int ni = noteAt (e.getPosition());
+            if (ni >= 0) { onNotePick (ni); return; }
+        }
         if (e.x >= headerW && ! e.mods.isPopupMenu() && onBlockDrag != nullptr
+            && ! e.mods.isCtrlDown() && ! e.mods.isCommandDown()
             && hitsSelectedNote (e.getPosition()))
         {
             blockDragging = true;              // the hand picked up THE BLOCK (H11)
-            onBlockDrag (e, 0);
+            onBlockDrag (e, 0);                // plain drag on a lit note = move it
             return;
         }
         if (onSelect) onSelect (e.mods.isCtrlDown() || e.mods.isCommandDown());   // ctrl = add to multi-select
@@ -1147,11 +1203,12 @@ public:
             else if (++peakHoldAge > 30) peakHoldDb -= 0.9f;   // ~1.2s hold, then fall
         }
         if (std::abs (levelDb - paintedLevelDb) > 0.25f || std::abs (peakHoldDb - paintedPeakDb) > 0.25f)
-            repaint (headerW - 7, 0, 7, getHeight());      // meter strip only — and only when it MOVED
+            repaint (0, 0, headerW, getHeight());          // header lights (wash+spine+meter) —
+                                                           // and only when the level MOVED
         if (playheadBeats != paintedPlayhead)              // playhead: two thin columns, not the lane
-        {                                                  // (28px left of the beam = the motion trail)
-            repaint ((int) xOf (paintedPlayhead) - 29, 0, 32, getHeight());
-            repaint ((int) xOf (playheadBeats) - 29, 0, 32, getHeight());
+        {                                                  // (72px comet tail + beam per column)
+            repaint ((int) xOf (paintedPlayhead) - 76, 0, 82, getHeight());
+            repaint ((int) xOf (playheadBeats) - 76, 0, 82, getHeight());
         }
     }
 
@@ -1167,7 +1224,7 @@ public:
         auto r = getLocalBounds();
         const auto col = trackCol();
         auto body = r.toFloat().reduced (1.0f);
-        g.setGradientFill ({ theme::lane.brighter (0.045f), body.getTopLeft(),
+        g.setGradientFill ({ theme::lane.brighter (0.075f), body.getTopLeft(),
                              theme::lane.darker (0.06f), body.getBottomLeft(), false });
         g.fillRoundedRectangle (body, 9.0f);
         g.setColour (juce::Colours::white.withAlpha (0.03f));
@@ -1176,12 +1233,16 @@ public:
         auto header = r.removeFromLeft (headerW);
         if (track != nullptr)
         {
-            {   // the channel wears its colour: tinted header wash fading right (FL law)
+            // live energy 0..1 — drives the channel LIGHTING UP with its own audio
+            const float liveK = juce::jlimit (0.0f, 1.0f, (levelDb + 42.0f) / 42.0f);
+            {   // the channel wears its colour: tinted header wash fading right (FL law);
+                // the wash BURNS BRIGHTER while the channel plays (a lit console strip)
                 auto hz = header.toFloat().reduced (1.0f);
                 juce::Path hp;
                 hp.addRoundedRectangle (hz.getX(), hz.getY(), hz.getWidth(), hz.getHeight(),
                                         9.0f, 9.0f, true, false, true, false);
-                g.setGradientFill ({ col.withAlpha (selected ? 0.13f : 0.075f), hz.getTopLeft(),
+                g.setGradientFill ({ col.withAlpha ((selected ? 0.18f : 0.11f) + 0.16f * liveK),
+                                     hz.getTopLeft(),
                                      col.withAlpha (0.0f), hz.getTopRight(), false });
                 g.fillPath (hp);
             }
@@ -1191,8 +1252,30 @@ public:
                 g.setColour (col.withAlpha (0.35f));
                 g.fillRoundedRectangle (1.0f, 3.0f, 6.0f, (float) getHeight() - 6.0f, 3.0f);
             }
-            g.setColour (col.withAlpha (selected ? 1.0f : 0.85f));
-            g.fillRoundedRectangle (2.0f, 4.0f, 3.5f, (float) getHeight() - 8.0f, 1.75f);
+            {   // THE CHANNEL LIGHTS (alive wave v2 — Chezy: no gauges, no white
+                // streaks): the spine itself BURNS with the lane's live energy —
+                // brighter core + a soft colour aura, one object, the channel's own
+                // colour only. Rides the movement-guarded tick; silent = base spine.
+                if (liveK > 0.03f)
+                {
+                    g.setColour (col.withAlpha (0.45f * liveK));               // aura
+                    g.fillRoundedRectangle (0.0f, 2.5f, 8.5f, (float) getHeight() - 5.0f, 4.0f);
+                }
+                g.setColour (col.brighter (0.65f * liveK)
+                                .withAlpha (selected ? 1.0f : 0.85f + 0.15f * liveK));
+                g.fillRoundedRectangle (2.0f, 4.0f, 3.5f, (float) getHeight() - 8.0f, 1.75f);
+            }
+            if (getHeight() >= 44 && gainS.isVisible())
+            {   // pass 3: the two anonymous faders get engraved legends — panel
+                // print behind the control (hardware law), jewelry-quiet
+                g.setFont (theme::caps (6.5f));
+                g.setColour (theme::textMute.withAlpha (0.55f));
+                g.drawText ("VOL", gainS.getX() + 2, gainS.getBottom() - 8, 24, 7,
+                            juce::Justification::centredLeft);
+                if (panS.isVisible())
+                    g.drawText ("PAN", panS.getX() + 4, panS.getBottom() - 8, 24, 7,
+                                juce::Justification::centredLeft);
+            }
             if (getHeight() >= 50)
             {   // source + fx as coloured chips — one visual language with the rail
                 const auto fam = track->source.kind == "faust" ? theme::familyColour (track->source.id)
@@ -1294,14 +1377,45 @@ public:
             const float x = xOf (playheadBeats);
             if (x >= canvas.getX() && x <= canvas.getRight())
             {
-                const float tx = juce::jmax ((float) canvas.getX(), x - 26.0f);   // motion trail
+                const float tx = juce::jmax ((float) canvas.getX(), x - 34.0f);   // motion trail (pass 5 volume)
                 g.setGradientFill ({ theme::accent.withAlpha (0.0f), tx, 0.0f,
-                                     theme::accent.withAlpha (0.11f), x, 0.0f, false });
+                                     theme::accent.withAlpha (0.22f), x, 0.0f, false });
                 g.fillRect (tx, (float) canvas.getY(), x - tx, (float) canvas.getHeight());
-                g.setColour (theme::accent.withAlpha (0.18f));                    // halo
+                g.setColour (theme::accent.withAlpha (0.34f));                    // halo
                 g.fillRect (x - 2.0f, (float) canvas.getY(), 5.0f, (float) canvas.getHeight());
-                g.setColour (juce::Colours::white.withAlpha (0.92f));
+                g.setColour (juce::Colours::white.withAlpha (0.95f));
                 g.drawVerticalLine ((int) x, (float) canvas.getY(), (float) canvas.getBottom());
+                if (track != nullptr && ! track->notes.empty())
+                {   // THE NOTES CATCH FIRE: the beam is a comet — notes it crosses
+                    // flash white-hot and cool over 64px of travel. Purely spatial
+                    // (no timers), clipped to the beam's repaint band; long pads
+                    // glow at the crossing slice, never whole-body (band law).
+                    juce::Graphics::ScopedSaveState fs (g);
+                    g.reduceClipRegion ((int) x - 72, canvas.getY(), 73, canvas.getHeight());
+                    int lo = 127, hi = 0;                 // renderCache's EXACT span law
+                    auto scan = [&] (const std::vector<SongNote>& ns)
+                    { for (auto& n : ns) { lo = juce::jmin (lo, n.pitch); hi = juce::jmax (hi, n.pitch); } };
+                    scan (track->notes);
+                    if (diff != nullptr) { scan (diff->added); scan (diff->removed); }
+                    pitchWindow (lo, hi);
+                    if (lo <= hi)
+                    {
+                        const int span = juce::jmax (1, hi - lo);
+                        const double p = effPpb();
+                        const float ch = (float) canvas.getHeight();
+                        g.setGradientFill ({ juce::Colours::white.withAlpha (0.0f), x - 72.0f, 0.0f,
+                                             juce::Colours::white.withAlpha (0.42f), x, 0.0f, false });
+                        for (auto& n : track->notes)
+                        {
+                            const float nx = xOf (n.start);
+                            const float nw = juce::jmax (2.0f, (float) (n.len * p) - 1.0f);
+                            if (nx > x || nx + nw < x - 72.0f) continue;
+                            const float yFrac = 1.0f - (float) (n.pitch - lo) / (float) span;
+                            g.fillRoundedRectangle (nx, (float) canvas.getY() + 3.0f + yFrac * (ch - 12.0f),
+                                                    nw, 8.0f, juce::jmin (2.5f, nw * 0.42f));
+                        }
+                    }
+                }
             }
         }
         paintedPlayhead = playheadBeats;
@@ -1361,20 +1475,61 @@ public:
         const double vEnd = viewStart + visBeats;
         auto bx = [&] (double beat) { return (float) ((beat - viewStart) * p); };
 
-        // alternating 4-bar background blocks (orientation at any zoom)
-        for (double blk = std::floor (viewStart / 16.0) * 16.0; blk <= vEnd; blk += 16.0)
-            if ((juce::int64) (blk / 16.0) % 2 == 0)
+        {   // THE TAPESTRY WASH (alive wave v2): the lane canvas wears its channel
+            // colour — the arrangement reads as a colour-coded fabric at a glance
+            // (FL law, cache-side: costs nothing at play time). SELECTED = the
+            // working lane's ROOM lights (Ableton law: you always know where you are)
+            const auto wc = trackCol();
+            const float selK = selected ? 1.6f : 1.0f;
+            g.setGradientFill ({ wc.withAlpha (0.060f * selK), 0.0f, 0.0f,
+                                 wc.withAlpha (0.022f * selK), 0.0f, (float) ch, false });
+            g.fillRect (0, 0, cw, ch);
+            if (selected)                              // ceiling lamp: a lit top edge
+            {
+                g.setGradientFill ({ wc.withAlpha (0.14f), 0.0f, 0.0f,
+                                     wc.withAlpha (0.0f), 0.0f, 12.0f, false });
+                g.fillRect (0, 0, cw, 12);
+            }
+        }
+        // alternating 4-bar background blocks (orientation at any zoom) —
+        // METER-TRUE: block edges ride the world grid (7/8 bars are 3.5q wide)
+        for (int gb = (int) std::floor (atBar (juce::jmax (0.0, viewStart)) / 4.0) * 4;
+             bb (gb) <= vEnd; gb += 4)
+            if ((gb / 4) % 2 == 0)
             {
                 g.setColour (juce::Colours::white.withAlpha (0.025f));
-                g.fillRect (bx (blk), 0.0f, (float) (16.0 * p), (float) ch);
+                g.fillRect (bx (bb (gb)), 0.0f, (float) (bb (gb + 4) - bb (gb)) * (float) p, (float) ch);
             }
         // adaptive grid: beats when wide enough, else bars, else 4-bar blocks
         const double stepB = p >= 7.0 ? 1.0 : p * 4.0 >= 7.0 ? 4.0 : 16.0;
-        for (double b = std::floor (viewStart / stepB) * stepB; b <= vEnd; b += stepB)
+        if (stepB <= 1.0)
+            for (double b = std::floor (viewStart); b <= vEnd; b += 1.0)
+            {   // beat lines stay note-value quarters; BAR emphasis rides the map
+                const bool onBar = std::abs (bb (std::round (atBar (b))) - b) < 1e-6;
+                g.setColour (onBar ? theme::gridBar : theme::grid);
+                g.drawVerticalLine ((int) bx (b), 0.0f, (float) ch);
+            }
+        else
         {
-            const bool major = std::fmod (b, stepB >= 4.0 ? 16.0 : 4.0) < 1e-6;
-            g.setColour (major ? theme::gridBar : theme::grid);
-            g.drawVerticalLine ((int) bx (b), 0.0f, (float) ch);
+            const int barStep = stepB >= 16.0 ? 4 : 1;
+            for (int bar = (int) std::floor (atBar (juce::jmax (0.0, viewStart)) / barStep) * barStep;
+                 bb (bar) <= vEnd; bar += barStep)
+            {
+                const bool major = barStep == 4 || (bar % 4) == 0;
+                g.setColour (major ? theme::gridBar : theme::grid);
+                g.drawVerticalLine ((int) bx (bb (bar)), 0.0f, (float) ch);
+            }
+        }
+        for (double sb : sectionSeams)
+        {   // THE SONG HAS A SHAPE: each section START is a light seam on every lane —
+            // the arrangement's form reads on the canvas itself, not just the ruler
+            if (sb <= viewStart + 1e-6 || sb > vEnd) continue;
+            const float x = bx (sb);
+            g.setGradientFill ({ theme::accent.withAlpha (0.075f), x, 0.0f,
+                                 theme::accent.withAlpha (0.0f), x + 32.0f, 0.0f, false });
+            g.fillRect (x, 0.0f, 32.0f, (float) ch);
+            g.setColour (theme::accent.interpolatedWith (theme::text, 0.35f).withAlpha (0.30f));
+            g.drawVerticalLine ((int) x, 0.0f, (float) ch);
         }
         {   // recessed canvas: inner shadow top + faint floor light (depth under the notes)
             g.setGradientFill ({ juce::Colours::black.withAlpha (0.22f), 0.0f, 0.0f,
@@ -1395,10 +1550,13 @@ public:
             if (ac.startBeat + lenB < viewStart || ac.startBeat > vEnd) continue;
             auto blk = juce::Rectangle<float> (bx (ac.startBeat), 6.0f,
                                                juce::jmax (6.0f, (float) (lenB * p) - 1.0f), ch - 12.0f);
-            g.setGradientFill ({ theme::meterHi.withAlpha (0.22f), blk.getTopLeft(),
-                                 theme::meterHi.withAlpha (0.10f), blk.getBottomLeft(), false });
+            // the clip wears the CHANNEL's colour (tapestry law — audio stems were the
+            // one lane class still in uniform amber; imported stems now read as fabric)
+            const auto wcol = trackCol();
+            g.setGradientFill ({ wcol.withAlpha (0.20f), blk.getTopLeft(),
+                                 wcol.withAlpha (0.09f), blk.getBottomLeft(), false });
             g.fillRoundedRectangle (blk, 4.0f);
-            g.setColour (theme::meterHi.withAlpha (0.18f));            // clip name banner
+            g.setColour (wcol.withAlpha (0.16f));                      // clip name banner
             g.fillRoundedRectangle (blk.withHeight (juce::jmin (12.0f, blk.getHeight())), 4.0f);
             if (clipSel.count (cIdx))                       // block member wears the ring
             {
@@ -1416,8 +1574,8 @@ public:
                     const double clipSec = lenB * (60.0 / (ac.sourceBpm > 0 ? ac.sourceBpm
                                                                             : juce::jmax (1.0, bpm)));
                     const float midY = blk.getCentreY(), half = blk.getHeight() * 0.5f - 2.0f;
-                    g.setColour (theme::meterHi.withAlpha (0.75f));
-                    const int x0 = juce::jmax ((int) blk.getX(), 0), x1 = juce::jmin ((int) blk.getRight(), cw);
+                    g.setColour (wcol.brighter (0.35f).withAlpha (0.85f));   // CRISP peaks in the
+                    const int x0 = juce::jmax ((int) blk.getX(), 0), x1 = juce::jmin ((int) blk.getRight(), cw);   // channel's own light
                     for (int x = x0; x < x1; ++x)
                     {
                         const double sec = ac.offsetSec + (x - blk.getX()) / juce::jmax (1.0f, blk.getWidth()) * clipSec;
@@ -1428,7 +1586,7 @@ public:
                     }
                 }
             }
-            g.setColour (theme::meterHi.withAlpha (0.75f));
+            g.setColour (wcol.brighter (0.15f).withAlpha (0.75f));
             g.drawRoundedRectangle (blk, 4.0f, 1.0f);
             if (ac.fadeInBeats > 0)          // fade ramps: the clip's dignity, made visible (H14)
             {
@@ -1474,7 +1632,7 @@ public:
         { for (auto& n : ns) { lo = juce::jmin (lo, n.pitch); hi = juce::jmax (hi, n.pitch); } };
         scan (track->notes);
         if (diff != nullptr) { scan (diff->added); scan (diff->removed); }
-        if (lo > hi) { lo = 60; hi = 72; }
+        pitchWindow (lo, hi);
         const int span = juce::jmax (1, hi - lo);
 
         auto drawNote = [&] (const SongNote& n, juce::Colour c, bool hollow, bool lit = false,
@@ -1491,13 +1649,26 @@ public:
                 c = c.withMultipliedAlpha (fade);
                 if (! hollow) y -= (1.0f - fade) * 4.0f;
             }
-            if (hollow) { g.setColour (c); g.drawRoundedRectangle (x, y, w, 8.0f, 2.0f, 1.4f); return; }
+            const float rad = juce::jmin (2.5f, w * 0.42f);   // tiny pills keep square-ish CRISP corners
+            if (hollow) { g.setColour (c); g.drawRoundedRectangle (x, y, w, 8.0f, rad, 1.4f); return; }
+            // under-bloom is SCALE-AWARE (Chezy 2026-07-14 "stems look blurry"): a halo on a
+            // 2px note is wider than the note and stacked halos smear dense lanes out of
+            // focus — only gem-sized pills earn the glow; small notes stay pixel-sharp.
+            const float bloomK = juce::jlimit (0.0f, 1.0f, (w - 6.0f) / 12.0f);
+            if (bloomK > 0.01f)
+            {
+                g.setColour (c.withAlpha (0.30f * bloomK * c.getFloatAlpha()));   // the note LIGHTS its row
+                g.fillRoundedRectangle (x - 1.5f, y - 1.5f, w + 3.0f, 11.0f, 4.0f);
+            }
             g.setColour (c);
-            g.fillRoundedRectangle (x, y, w, 8.0f, 2.5f);
-            g.setColour (juce::Colours::white.withAlpha (0.22f * c.getFloatAlpha()));   // top light: notes read as pills
-            g.fillRoundedRectangle (x + 0.5f, y + 0.5f, w - 1.0f, 3.0f, 1.8f);
+            g.fillRoundedRectangle (x, y, w, 8.0f, rad);
+            if (w >= 5.0f)
+            {
+                g.setColour (juce::Colours::white.withAlpha (0.22f * c.getFloatAlpha()));   // top light: notes read as pills
+                g.fillRoundedRectangle (x + 0.5f, y + 0.5f, w - 1.0f, 3.0f, 1.8f);
+            }
             g.setColour (juce::Colours::black.withAlpha (0.25f * fade));
-            g.drawRoundedRectangle (x, y, w, 8.0f, 2.5f, 0.8f);
+            g.drawRoundedRectangle (x, y, w, 8.0f, rad, 0.8f);
             if (lit)                       // marquee-selected: white heat + halo ring
             {
                 g.setColour (juce::Colours::white.withAlpha (0.30f));
@@ -1694,6 +1865,12 @@ public:
     const SongTrack* track = nullptr;
     const TrackDiff* diff = nullptr;
     double totalBeats = 16, playheadBeats = -1, paintedPlayhead = -1;
+    std::vector<double> sectionSeams;   // section starts (beats) — the song's FORM on the canvas
+    // THE METER-TRUE CANVAS: bar<->beat crossings ride the host's song via live
+    // hooks (model-resolver law — never a cached Song*); unset = eternal 4/4.
+    std::function<double (double)> barBeat, beatBar;
+    double bb (double bar) const  { return barBeat ? barBeat (bar) : bar * 4.0; }
+    double atBar (double q) const { return beatBar ? beatBar (q) : q / 4.0; }
     double viewStart = 0, ppb = 0;   // ppb 0 = fit whole song
 
 private:
@@ -1874,7 +2051,8 @@ public:
 // THE CHORD RAIL: song chords[] (written by chordvote / chords_from_audio / finish,
 // riding Song::extras through THE UNDROPPABLE LAW) -> compressed (beat, label) runs
 // for the ruler. Empty when the song carries no chord lane — the rail simply absent.
-static std::vector<std::pair<double, juce::String>> chordRunsFromVar (const juce::var& chordsArr)
+static std::vector<std::pair<double, juce::String>> chordRunsFromVar (const juce::var& chordsArr,
+    std::function<double (double)> barToBeat = [] (double bar) { return bar * 4.0; })
 {
     std::vector<std::pair<double, juce::String>> out;
     if (auto* arr = chordsArr.getArray())
@@ -1882,7 +2060,7 @@ static std::vector<std::pair<double, juce::String>> chordRunsFromVar (const juce
         {
             const auto label = c.getProperty ("chord", "").toString();
             if (label.isEmpty()) continue;
-            const double beat = ((double) c.getProperty ("bar", 1.0) - 1.0) * 4.0;
+            const double beat = barToBeat ((double) c.getProperty ("bar", 1.0) - 1.0);
             if (out.empty() || out.back().second != label)
                 out.emplace_back (beat, label);
         }
@@ -1890,7 +2068,8 @@ static std::vector<std::pair<double, juce::String>> chordRunsFromVar (const juce
 }
 static std::vector<std::pair<double, juce::String>> chordRuns (const sotadaw::Song& s)
 {
-    return chordRunsFromVar (s.extras.getProperty ("chords", juce::var()));
+    return chordRunsFromVar (s.extras.getProperty ("chords", juce::var()),
+                             [&s] (double bar) { return s.barStartBeat (bar); });
 }
 
 class Ruler : public juce::Component
@@ -1898,8 +2077,10 @@ class Ruler : public juce::Component
 public:
     std::function<void (double, double)> onLoopRegion;   // beats (start, end); end<=start clears
     std::function<void (double, double, bool)> onWheel;  // (beatUnderMouse, deltaY, isZoom)
+    std::function<void (double)> onLocate;               // THE FLAGS ARE DOORS: click a chip = go
     std::function<void()> onSectionsEdited;              // drag/rename/add/delete of section markers
     std::function<void()> onTempoEdited;                 // tempo chips edited (G6: v1 read-only died)
+    std::function<void()> onMeterEdited;                 // METER IS EDITABLE: time-sig chips changed
     double baseBpm = 120.0;                              // the song's bpm (new points inherit it)
     std::function<void (juce::String, int)> onSectionCommand;   // H16 content ops: (verb, sectionIdx)
     // THE ENERGY LANE (firing 99): the computed per-bar energy curve rides the ruler
@@ -1911,8 +2092,16 @@ public:
     double viewStart = 0, ppb = 0;
     std::vector<sotadaw::SongSection> sections;
     std::vector<sotadaw::SongTempoPoint> tempoPoints;   // painted as tempo chips (read-only v1)
+    std::vector<sotadaw::SongMeterPoint> meterPoints;   // time-sig chips (THE WORLD GRID, editable)
     std::vector<std::pair<double, juce::String>> chords;   // THE CHORD RAIL: (beat, label) runs
     int indent = 210 + 4;
+    // THE METER-TRUE RULER (WORLD GRID #1, the UI half): every bar<->quarter-beat
+    // crossing rides the song's meter map through these hooks; unset = eternal 4/4.
+    std::function<double (double)> barBeat;    // bar index -> quarter-beat
+    std::function<double (double)> beatBar;    // quarter-beat -> fractional bar
+    std::function<double (double)> beatUnit;   // bar -> quarter-beats per METRICAL beat (4/den)
+    double bb (double bar) const  { return barBeat ? barBeat (bar) : bar * 4.0; }
+    double atBar (double q) const { return beatBar ? beatBar (q) : q / 4.0; }
 
     double effPpb() const
     {
@@ -1920,6 +2109,11 @@ public:
         return juce::jmax (0.01, (getWidth() - indent) / juce::jmax (1.0, totalBeats));
     }
     float xOf (double beat) const   { return (float) (indent + (beat - viewStart) * effPpb()); }
+
+    static juce::Colour sectionColour (const juce::String& name)
+    {   // one truth lives in the kernel (navigator + session card share it)
+        return theme::sectionColour (name);
+    }
 
     void paint (juce::Graphics& g) override
     {
@@ -1933,14 +2127,32 @@ public:
         const double vEnd = viewStart + (getWidth() - indent) / p;
         const double barPx = p * 4.0;
         const int stride = barPx >= 26.0 ? 1 : barPx >= 7.0 ? 4 : barPx >= 2.0 ? 16 : 64;
-        const int firstBar = juce::jmax (0, (int) std::floor (viewStart / 4.0));
-        for (int b = (firstBar / stride) * stride; b * 4.0 <= vEnd; b += stride)
+        const int firstBar = juce::jmax (0, (int) std::floor (atBar (viewStart)));
+        for (int b = (firstBar / stride) * stride; bb (b) <= vEnd; b += stride)
         {
-            const float x = xOf (b * 4.0);
+            const float x = xOf (bb (b));
             if (x < indent) continue;
-            g.setColour (theme::gridBar.withAlpha (0.8f));
-            g.drawVerticalLine ((int) x, (float) getHeight() - 8.0f, (float) getHeight());
-            g.setColour (theme::textMute);
+            // TICK HIERARCHY (ruler reads the form): 4-group downbeats stand
+            // taller and brighter — the grid gains metre at arm's length
+            const bool major = (b % (stride * 4)) == 0;
+            g.setColour (theme::gridBar.withAlpha (major ? 1.0f : 0.65f)
+                             .brighter (major ? 0.35f : 0.0f));
+            g.drawVerticalLine ((int) x, (float) getHeight() - (major ? 14.0f : 8.0f),
+                                (float) getHeight());
+            if (stride == 1 && barPx >= 48.0)            // zoomed-in: the beats whisper
+            {                                            // (7/8 whispers SEVEN eighths, not 3.5 quarters)
+                g.setColour (theme::gridBar.withAlpha (0.28f));
+                const double unit = beatUnit ? juce::jmax (0.05, beatUnit ((double) b)) : 1.0;
+                const int nq = juce::jmax (1, (int) std::round ((bb (b + 1) - bb (b)) / unit));
+                for (int q = 1; q < nq; ++q)
+                {
+                    const float qx = xOf (bb (b) + q * unit);
+                    if (qx >= indent)
+                        g.drawVerticalLine ((int) qx, (float) getHeight() - 4.0f,
+                                            (float) getHeight());
+                }
+            }
+            g.setColour (major ? theme::textMute.brighter (0.25f) : theme::textMute);
             g.setFont (theme::mono (8.5f, juce::Font::bold));
             g.drawText (juce::String (b + 1), (int) x + 3, 1, 34, 11, juce::Justification::centredLeft);
         }
@@ -1968,7 +2180,7 @@ public:
             bool started = false;
             for (size_t bi = 0; bi < energy.size(); ++bi)
             {
-                const float x1 = xOf ((double) bi * 4.0), x2 = xOf ((double) (bi + 1) * 4.0);
+                const float x1 = xOf (bb ((double) bi)), x2 = xOf (bb ((double) (bi + 1)));
                 if (x2 < indent || x1 > getWidth()) continue;
                 const float y = yBase - juce::jlimit (0.0f, 1.0f, energy[bi]) * (yBase - yTop);
                 if (! started) { curve.startNewSubPath (juce::jmax ((float) indent, x1), y); started = true; }
@@ -1988,9 +2200,9 @@ public:
             }
             if (energyDragging && energySection >= 0)    // live feedback: the span + the verdict chip
             {
-                const double a = sections[(size_t) energySection].startBar * 4.0;
+                const double a = bb (sections[(size_t) energySection].startBar);
                 const double b = energySection + 1 < (int) sections.size()
-                                   ? sections[(size_t) energySection + 1].startBar * 4.0 : totalBeats;
+                                   ? bb (sections[(size_t) energySection + 1].startBar) : totalBeats;
                 juce::Rectangle<float> span (juce::jmax ((float) indent, xOf (a)), 0.0f,
                                              xOf (b) - juce::jmax ((float) indent, xOf (a)), (float) getHeight());
                 g.setColour (theme::accentB.withAlpha (0.12f));
@@ -2005,6 +2217,17 @@ public:
         if (! chords.empty() && barPx >= 12.0)           // THE CHORD RAIL: the harmony reads
         {                                                // along the grid; sections/tempo chips
             const auto cf = theme::mono (8.0f, juce::Font::bold);   // paint OVER it by z-order
+            // CHORDS YIELD TO FLAGS: on short rulers the chip row and the chord
+            // row share a band — a chord label never fights a section chip
+            std::vector<std::pair<float, float>> flagSpans;
+            for (auto& s : sections)
+            {
+                const float fx = xOf (bb (s.startBar));
+                if (fx < indent - 2 || fx > getWidth()) continue;
+                const auto ff = theme::caps (7.5f);
+                flagSpans.push_back ({ fx - 2.0f,
+                    fx + juce::jmin (90.0f, theme::measure (ff, s.name.toUpperCase()) + 14.0f) + 4.0f });
+            }
             float lastRight = -1e9f;
             for (size_t ci = 0; ci < chords.size(); ++ci)
             {
@@ -2015,6 +2238,10 @@ public:
                 const float w = theme::measure (cf, chords[ci].second) + 6.0f;
                 const float cx = juce::jmax ((float) indent + 2.0f, x + 2.0f);
                 if (cx < lastRight + 4.0f || cx + w > xe - 1.0f) continue;   // never crowd, never spill the run
+                bool shadowed = false;
+                for (auto& fs : flagSpans)
+                    if (cx < fs.second && cx + w > fs.first) { shadowed = true; break; }
+                if (shadowed) continue;                  // the flag owns this ground
                 g.setColour (theme::accentB.withAlpha (0.28f));
                 g.drawVerticalLine ((int) juce::jmax ((float) indent, x), 12.0f, (float) getHeight() - 2.0f);
                 g.setColour (theme::text.withAlpha (0.62f));
@@ -2023,20 +2250,36 @@ public:
                 lastRight = cx + w;
             }
         }
-        for (auto& s : sections)                         // section flags: chips, not floating text
+        for (size_t si = 0; si < sections.size(); ++si)  // section flags: chips, not floating text
         {
-            const float x = xOf (s.startBar * 4.0);
+            auto& s = sections[si];
+            const float x = xOf (bb (s.startBar));
+            // THE RULER READS THE FORM: each section wears a stable identity
+            // colour — flag line, chip AND a whisper band across its span, so
+            // the arrangement's shape reads on the MAIN canvas, not just the
+            // navigator. Same-name sections share a colour (VERSE == VERSE).
+            const auto sc = sectionColour (s.name);
+            const double spanEnd = si + 1 < sections.size()
+                                     ? bb (sections[si + 1].startBar) : totalBeats;
+            const float bx1 = juce::jmax ((float) indent, x);
+            const float bx2 = juce::jmin ((float) getWidth(), xOf (spanEnd));
+            if (bx2 > bx1)
+            {
+                g.setGradientFill ({ sc.withAlpha (0.34f), { bx1, 0.0f },
+                                     sc.withAlpha (0.10f), { bx2, 0.0f }, false });
+                g.fillRect (bx1, 0.0f, bx2 - bx1, 2.5f);
+            }
             if (x < indent - 2 || x > getWidth()) continue;
-            g.setColour (theme::warn.withAlpha (0.65f));
+            g.setColour (sc.withAlpha (0.65f));
             g.drawVerticalLine ((int) x, 0.0f, (float) getHeight());
             const auto f = theme::caps (7.5f);
             const float wch = juce::jmin (90.0f, theme::measure (f, s.name.toUpperCase()) + 14.0f);
             theme::chip (g, { x + 1.5f, (float) getHeight() - 13.5f, wch, 12.0f },
-                         theme::warn, s.name.toUpperCase(), f, 0.16f, 0.0f, false);
+                         sc, s.name.toUpperCase(), f, 0.16f, 0.0f, false);
         }
         for (auto& tp : tempoPoints)                     // tempo map chips: the grid travels
         {
-            const float x = xOf (tp.bar * 4.0);
+            const float x = xOf (bb (tp.bar));
             if (x < indent - 2 || x > getWidth()) continue;
             g.setColour (theme::accent.withAlpha (0.55f));
             g.drawVerticalLine ((int) x, 10.0f, (float) getHeight() - 14.0f);
@@ -2044,6 +2287,22 @@ public:
                               "~" + juce::String (tp.bpm, 0)) + 10.0f, 11.0f },
                          theme::accent, "~" + juce::String (tp.bpm, 0),
                          theme::mono (8.0f, juce::Font::bold), 0.18f, 0.0f, false);
+        }
+        for (auto& mp : meterPoints)                     // time-sig chips: the WORLD GRID reads
+        {
+            const float x = xOf (bb (mp.bar));
+            if (x < indent - 2 || x > getWidth()) continue;
+            float dx = 2.0f;                             // share a bar with a tempo chip politely
+            for (auto& tp : tempoPoints)
+                if (std::abs (tp.bar - mp.bar) < 1e-6)
+                    dx += theme::measure (theme::mono (8.0f, juce::Font::bold),
+                                          "~" + juce::String (tp.bpm, 0)) + 13.0f;
+            const auto lbl = juce::String (mp.num) + "/" + juce::String (mp.den);
+            g.setColour (theme::accentB.withAlpha (0.5f));
+            g.drawVerticalLine ((int) x, 10.0f, (float) getHeight() - 14.0f);
+            theme::chip (g, { x + dx, 11.0f, theme::measure (theme::mono (8.0f, juce::Font::bold),
+                              lbl) + 14.0f, 11.0f },
+                         theme::accentB, lbl, theme::mono (8.0f, juce::Font::bold), 0.18f, 0.0f, false);
         }
         if (playheadBeats >= 0)
         {
@@ -2080,7 +2339,7 @@ public:
     {
         for (int i = (int) sections.size() - 1; i >= 0; --i)
         {
-            const float x = xOf (sections[(size_t) i].startBar * 4.0);
+            const float x = xOf (bb (sections[(size_t) i].startBar));
             if (juce::Rectangle<float> (x, (float) getHeight() - 13.0f, 92.0f, 13.0f)
                     .contains (pos.toFloat()))
                 return i;
@@ -2088,11 +2347,48 @@ public:
         return -1;
     }
 
+    int meterAt (juce::Point<int> pos) const             // hit = the "N/D" time-sig chip
+    {
+        for (int i = (int) meterPoints.size(); --i >= 0;)
+        {
+            const auto& mp = meterPoints[(size_t) i];
+            const float x = xOf (bb (mp.bar));
+            float dx = 2.0f;
+            for (auto& tp : tempoPoints)
+                if (std::abs (tp.bar - mp.bar) < 1e-6)
+                    dx += theme::measure (theme::mono (8.0f, juce::Font::bold),
+                                          "~" + juce::String (tp.bpm, 0)) + 13.0f;
+            const float w = theme::measure (theme::mono (8.0f, juce::Font::bold),
+                              juce::String (mp.num) + "/" + juce::String (mp.den)) + 14.0f;
+            if (juce::Rectangle<float> (x + dx, 11.0f, w, 11.0f).contains (pos.toFloat()))
+                return i;
+        }
+        return -1;
+    }
+
+    static const std::array<std::pair<int, int>, 9>& commonSigs()
+    {   // the menu's signature card (num, den) — ASCII only, engine-legal dens
+        static const std::array<std::pair<int, int>, 9> sigs {{
+            { 4, 4 }, { 3, 4 }, { 2, 4 }, { 5, 4 }, { 6, 8 }, { 7, 8 }, { 9, 8 }, { 12, 8 }, { 2, 2 } }};
+        return sigs;
+    }
+    void setMeterAt (double bar, int num, int den)
+    {   // one point per bar: replace the reigning point or add a new one
+        for (auto& mp : meterPoints)
+            if (std::abs (mp.bar - bar) < 1e-6) { mp.num = num; mp.den = den;
+                                                 if (onMeterEdited) onMeterEdited(); repaint(); return; }
+        meterPoints.push_back ({ bar, num, den });
+        std::sort (meterPoints.begin(), meterPoints.end(),
+                   [] (auto& a, auto& b) { return a.bar < b.bar; });
+        if (onMeterEdited) onMeterEdited();
+        repaint();
+    }
+
     int tempoAt (juce::Point<int> pos) const             // hit = the "~NNN" tempo chip
     {
         for (int i = (int) tempoPoints.size(); --i >= 0;)
         {
-            const float x = xOf (tempoPoints[(size_t) i].bar * 4.0);
+            const float x = xOf (bb (tempoPoints[(size_t) i].bar));
             const float w = theme::measure (theme::mono (8.0f, juce::Font::bold),
                               "~" + juce::String (tempoPoints[(size_t) i].bpm, 0)) + 10.0f;
             if (juce::Rectangle<float> (x + 2.0f, 11.0f, w, 11.0f).contains (pos.toFloat()))
@@ -2110,7 +2406,7 @@ public:
         tempoEd->setInputRestrictions (6, "0123456789.");
         tempoEd->setText (juce::String (tempoPoints[(size_t) i].bpm, 1), juce::dontSendNotification);
         tempoEd->setFont (theme::mono (10.0f, juce::Font::bold));
-        tempoEd->setBounds ((int) xOf (tempoPoints[(size_t) i].bar * 4.0) + 1, 8, 62, 15);
+        tempoEd->setBounds ((int) xOf (bb (tempoPoints[(size_t) i].bar)) + 1, 8, 62, 15);
         addAndMakeVisible (*tempoEd);
         tempoEd->selectAll();
         tempoEd->grabKeyboardFocus();
@@ -2163,6 +2459,29 @@ public:
         }
         if (e.mods.isPopupMenu() && e.x >= indent)        // empty ruler answers too (G6)
         {
+            const int mpi = meterAt (e.getPosition());   // a time-sig chip under the hand?
+            if (mpi >= 0)
+            {
+                juce::PopupMenu mm;
+                const auto& mp0 = meterPoints[(size_t) mpi];
+                mm.addSectionHeader (juce::String (mp0.num) + "/" + juce::String (mp0.den)
+                                     + " @ bar " + juce::String ((int) mp0.bar + 1));
+                const double atBarN = mp0.bar;
+                for (auto& sig : commonSigs())
+                    mm.addItem (juce::String (sig.first) + "/" + juce::String (sig.second),
+                                true, mp0.num == sig.first && mp0.den == sig.second,
+                                [this, atBarN, sig] { setMeterAt (atBarN, sig.first, sig.second); });
+                mm.addSeparator();
+                mm.addItem ("Remove time signature", [this, mpi]
+                            {
+                                if (mpi >= (int) meterPoints.size()) return;
+                                meterPoints.erase (meterPoints.begin() + mpi);
+                                if (onMeterEdited) onMeterEdited();
+                                repaint();
+                            });
+                mm.showMenuAsync ({});
+                return;
+            }
             const int tpi = tempoAt (e.getPosition());   // a tempo chip under the hand?
             if (tpi >= 0)
             {
@@ -2191,24 +2510,32 @@ public:
             const double beat = beatAt (e.x);
             int inSec = -1;                               // the section under the cursor
             for (int i = (int) sections.size() - 1; i >= 0; --i)
-                if (sections[(size_t) i].startBar * 4.0 <= beat) { inSec = i; break; }
+                if (bb (sections[(size_t) i].startBar) <= beat) { inSec = i; break; }
             juce::PopupMenu m;
-            m.addItem ("Add section at bar " + juce::String ((int) std::round (beat / 4.0) + 1)
+            m.addItem ("Add section at bar " + juce::String ((int) std::round (atBar (beat)) + 1)
                        + " (2x-click)", [this, beat]
             {
                 sotadaw::SongSection sec;
-                sec.startBar = juce::jmax (0.0, std::round (beat / 4.0));
+                sec.startBar = juce::jmax (0.0, std::round (atBar (beat)));
                 sec.name = "part " + juce::String ((int) sections.size() + 1);
                 sections.push_back (sec);
                 if (onSectionsEdited) onSectionsEdited();
                 repaint();
                 beginRename ((int) sections.size() - 1);
             });
-            m.addItem ("Add tempo point at bar " + juce::String ((int) std::round (beat / 4.0) + 1),
+            {   // THE METER IS EDITABLE: author the world grid from the ruler
+                juce::PopupMenu sm;
+                const double atBarN = juce::jmax (0.0, std::round (atBar (beat)));
+                for (auto& sig : commonSigs())
+                    sm.addItem (juce::String (sig.first) + "/" + juce::String (sig.second),
+                                [this, atBarN, sig] { setMeterAt (atBarN, sig.first, sig.second); });
+                m.addSubMenu ("Time signature at bar " + juce::String ((int) atBarN + 1), sm);
+            }
+            m.addItem ("Add tempo point at bar " + juce::String ((int) std::round (atBar (beat)) + 1),
                        [this, beat]
             {
                 sotadaw::SongTempoPoint tp;
-                tp.bar = juce::jmax (0.0, std::round (beat / 4.0));
+                tp.bar = juce::jmax (0.0, std::round (atBar (beat)));
                 tp.bpm = baseBpm;                       // inherit; the chip edits from here
                 for (auto& p : tempoPoints)             // ...or the reigning point's bpm
                     if (p.bar <= tp.bar) tp.bpm = p.bpm;
@@ -2224,9 +2551,9 @@ public:
             if (inSec >= 0)
                 m.addItem ("Loop '" + sections[(size_t) inSec].name + "'", [this, inSec]
                 {
-                    const double a = sections[(size_t) inSec].startBar * 4.0;
+                    const double a = bb (sections[(size_t) inSec].startBar);
                     const double b = inSec + 1 < (int) sections.size()
-                                       ? sections[(size_t) inSec + 1].startBar * 4.0 : totalBeats;
+                                       ? bb (sections[(size_t) inSec + 1].startBar) : totalBeats;
                     loopStart = a; loopEnd = b;
                     if (onLoopRegion) onLoopRegion (a, b);
                     repaint();
@@ -2251,7 +2578,7 @@ public:
         if (dragSection >= 0)                            // drag chip = move section (bar snap)
         {
             sections[(size_t) dragSection].startBar =
-                juce::jmax (0.0, std::round (beatAt (e.x) / 4.0));
+                juce::jmax (0.0, std::round (atBar (beatAt (e.x))));
             sectionMoved = true;
             repaint(); return;
         }
@@ -2266,7 +2593,7 @@ public:
             const double downBeat = dragStart;
             energySection = -1;
             for (int i = (int) sections.size() - 1; i >= 0; --i)
-                if (sections[(size_t) i].startBar * 4.0 <= downBeat) { energySection = i; break; }
+                if (bb (sections[(size_t) i].startBar) <= downBeat) { energySection = i; break; }
             if (energySection < 0) energySection = 0;
         }
         if (energyDragging)
@@ -2283,6 +2610,14 @@ public:
         if (dragSection >= 0)
         {
             if (sectionMoved && onSectionsEdited) onSectionsEdited();
+            else if (! sectionMoved && onLocate
+                     && dragSection < (int) sections.size())
+            {   // THE FLAGS ARE DOORS (Chezy 2026-07-17 02:08 "WHERE IS THE
+                // NAVIGATION IN SONG?!"): a plain CLICK on a section chip
+                // JUMPS the transport there — drag still moves the marker,
+                // double-click still renames. Every DAW's locate law.
+                onLocate (bb (sections[(size_t) dragSection].startBar));
+            }
             dragSection = -1; sectionMoved = false;
             repaint(); return;
         }
@@ -2303,7 +2638,7 @@ public:
         if (idx >= 0) { beginRename (idx); return; }
         if (e.x < indent) return;                        // dbl-click empty ruler = add section
         sotadaw::SongSection sec;
-        sec.startBar = juce::jmax (0.0, std::round (beatAt (e.x) / 4.0));
+        sec.startBar = juce::jmax (0.0, std::round (atBar (beatAt (e.x))));
         sec.name = "part " + juce::String ((int) sections.size() + 1);
         sections.push_back (sec);
         if (onSectionsEdited) onSectionsEdited();
@@ -2317,7 +2652,7 @@ public:
         renamer = std::make_unique<juce::TextEditor>();
         renamer->setText (sections[(size_t) idx].name, juce::dontSendNotification);
         renamer->setFont (juce::Font (juce::FontOptions (10.0f)));
-        renamer->setBounds ((int) xOf (sections[(size_t) idx].startBar * 4.0) + 1,
+        renamer->setBounds ((int) xOf (bb (sections[(size_t) idx].startBar)) + 1,
                             getHeight() - 15, 92, 14);
         addAndMakeVisible (*renamer);
         renamer->selectAll();
@@ -2526,6 +2861,8 @@ public:
         selection.clear(); selected = -1;
         auditionPitch = -1;                 // fresh open: no key lit (close silenced the engine)
         playheadBeats = -1;                 // fresh take: no stale beam
+        chaseArm = chase;                   // P46: first live beat may locate to NOW
+        followSuspended = false;
         noteColour = ti < (int) s.tracks.size() ? channelColour (s.tracks[(size_t) ti], ti)
                                                  : theme::trackColour (ti);
         hasKey = parseKeyMask (s.key, keyMask, keyRoot);   // the song's key lights the rows
@@ -2651,12 +2988,36 @@ public:
     // the host clock feeds beats; the beam + follow + loop tint answer.
     double playheadBeats = -1;          // -1 = stopped (no beam)
     double loopA = -1, loopB = -1;      // the arrange loop region, mirrored here
+    // P46 FOLLOW TRUCE + CHASE (UI_SPEC_100): follow yields to the hand — a manual
+    // pan while playing SUSPENDS it (pill re-arms, F toggles, stop resets); CHASE
+    // = opening the roll mid-playback locates the view to NOW (magnet chip).
+    bool followEnabled = true, followSuspended = false;
+    bool chase = true, chaseArm = false;
+    juce::Rectangle<float> followPillRect, chaseChipRect;
+    // P38 SCALE VIEW: 0 = ALL (chromatic, plain), 1 = TINT (key rows lit — the
+    // standing default), 2 = FOLD (only in-key rows render; rows whose notes
+    // already live out of key STAY — visibility law — wearing a red tick).
+    int scaleView = 1;
+    juce::Rectangle<float> scaleChipRect;
     void setPlayheadBeats (double b)
     {
         if (std::abs (b - playheadBeats) < 1e-9) return;
         const double old = playheadBeats;
         playheadBeats = b;
-        if (b >= 0)                     // follow: keep the beam in the middle band
+        if (b < 0) followSuspended = false;         // stop: the truce resets
+        if (b >= 0 && chaseArm)
+        {   // P46 CHASE: the roll opened mid-playback — locate to NOW. Horizontal
+            // ONLY: vFramePending stays armed so the first paint still centers the
+            // TOWER on the notes (chase used to kill it — a roll opened during
+            // playback showed C9..C5 void while the kick lived 4 octaves below).
+            chaseArm = false;
+            const double vis = gridArea().getWidth() / effPpb();
+            vs = juce::jmax (0.0, b - vis * 0.15);
+            clampView();
+            repaint();
+            return;
+        }
+        if (b >= 0 && followEnabled && ! followSuspended)   // follow: keep the beam in the middle band
         {
             const double vis = gridArea().getWidth() / effPpb();
             if (b < vs || b > vs + vis * 0.85)
@@ -2670,7 +3031,7 @@ public:
         auto beamCol = [this] (double bt)   // two thin columns, never the whole roll
         {
             if (bt < 0) return;
-            repaint ((int) xOf (bt) - 30, 0, 34, getHeight());
+            repaint ((int) xOf (bt) - 76, 0, 82, getHeight());   // comet tail + beam
         };
         beamCol (old);
         beamCol (b);
@@ -2704,7 +3065,14 @@ public:
         // longer a keyhole cut to the notes that happen to be there — it is the
         // whole instrument, C-2..G8, and the viewport (vy/vRowPx) decides what you
         // see. Notes can be written anywhere; nothing is unreachable by design.
-        for (int p = 127; p >= 0; --p) rows.push_back (p);
+        // P38 FOLD is the one sanctioned squeeze: only in-key rows render, but a
+        // row whose notes already live out of key NEVER hides (visibility law).
+        for (int p = 127; p >= 0; --p)
+        {
+            if (scaleView == 2 && hasKey && ! keyMask[p % 12] && ! used.count (p))
+                continue;
+            rows.push_back (p);
+        }
     }
 
     juce::Rectangle<int> gridArea() const
@@ -2786,13 +3154,16 @@ public:
                 { lo = juce::jmin (lo, n.pitch); hi = juce::jmax (hi, n.pitch); any = true; }
         if (! any) { lo = hi = 60; }          // an empty lane opens at middle C
         // THE OPEN LAW: a roll NEVER opens with the track's own notes hiding off
-        // screen. If the music's range is taller than the panel at the readable
-        // default, the rows shrink until it ALL fits (down to the 6px floor) — a
-        // 6-octave harpsichord line opens whole. Anything narrower keeps the
-        // comfortable default height and simply centers. (FL/Reason both make you
-        // go find your own notes; the tower brings them to you.)
+        // screen — and THE ROOM FITS THE TAKE both ways. Taller-than-the-panel
+        // ranges shrink rows until it ALL fits (down to the 6px floor — a
+        // 6-octave harpsichord line opens whole); NARROW takes zoom IN so a
+        // one-pitch kick never drowns in 60 rows of void, floored at ~2 octaves
+        // of context and a 26px taste ceiling (wheel laws still roam 6..40).
+        // (FL/Reason both make you go find your own notes; the tower brings
+        // them to you, at the size the take deserves.)
         const double fit = (double) gridArea().getHeight() / (double) (hi - lo + 5);   // +2 rows of air
-        vRowPx = juce::jlimit (6.0, 14.0, fit);
+        const double cap = juce::jmax (14.0, juce::jmin (26.0, gridArea().getHeight() / 24.0));
+        vRowPx = juce::jlimit (6.0, cap, fit);
         const int midRow = rowIndexOf (juce::jlimit (0, 127, (lo + hi) / 2));
         vy = ((double) midRow + 0.5) * effRowPx() - gridArea().getHeight() * 0.5;
         clampViewV();
@@ -2852,6 +3223,14 @@ public:
         const double dy = w.deltaY, dx = w.deltaX;
         if (dy == 0 && dx == 0) return;
         const double zd = dy != 0 ? dy : -dx;    // a trackpad's sideways still zooms
+        if (e.mods.isAltDown() && ! readOnly && ! selection.empty()
+            && song != nullptr && trackIndex >= 0
+            && gridArea().contains (e.getPosition()))
+        {   // P45 ALT+WHEEL: the selection's velocities scale under the cursor
+            velWheelNotch (zd > 0 ? +1 : -1, shift, e.getPosition());
+            return;
+        }
+        zRestoreOk = false;                      // manual view act: the Z dive ticket tears
         if (ctrl && shift)
         {
             zoomRowsAround (e.y, zd > 0 ? 1.18 : 1.0 / 1.18);
@@ -2875,6 +3254,7 @@ public:
             return;
         }
         const double d = dy != 0 ? dy : -dx;                        // shift, or a trackpad's sideways
+        if (playheadBeats >= 0) followSuspended = true;   // P46: the hand outranks follow
         vs -= d * (gridArea().getWidth() / effPpb()) * 0.25;
         clampView();
         repaint();
@@ -2884,6 +3264,88 @@ public:
     // sequencer — lit pads on a step grid, velocity = brightness, ghosts green,
     // dropped/removed red-struck, the playhead a moving column. Reuses the roll's
     // OWN transform (xOf/effPpb/vs) + diff — one wiring, two floors.
+    void paintFormStrip (juce::Graphics& g, juce::Rectangle<int> r, double p, double vEnd)
+    {   // THE ROLL READS THE FORM (arrange-ruler twin): section identity
+        // whispers + bar numbers with metre hierarchy along the top edge —
+        // the second judging surface knows where it is in the song.
+        const auto& secs = song->sections;
+        for (size_t si = 0; si < secs.size(); ++si)
+        {
+            const double a = song->barStartBeat (secs[si].startBar);
+            const double e2 = si + 1 < secs.size() ? song->barStartBeat (secs[si + 1].startBar)
+                                                   : juce::jmax (vEnd, a + 4.0);
+            const float x1 = juce::jmax ((float) r.getX(), xOf (a));
+            const float x2 = juce::jmin ((float) r.getRight(), xOf (e2));
+            if (x2 <= x1) continue;
+            const auto sc = Ruler::sectionColour (secs[si].name);
+            g.setGradientFill ({ sc.withAlpha (0.30f), { x1, (float) r.getY() },
+                                 sc.withAlpha (0.08f), { x2, (float) r.getY() }, false });
+            g.fillRect (x1, (float) r.getY(), x2 - x1, 2.0f);
+            if (xOf (a) >= (float) r.getX() - 2.0f && p * 4.0 >= 30.0)
+            {
+                g.setColour (sc.withAlpha (0.70f));
+                g.setFont (theme::caps (7.0f));
+                g.drawText (secs[si].name.toUpperCase(), (int) xOf (a) + 14,
+                            (int) r.getY() + 3, 86, 9, juce::Justification::centredLeft);
+            }
+        }
+        const int stride = p * 4.0 >= 26.0 ? 1 : p * 4.0 >= 7.0 ? 4 : 16;
+        g.setFont (theme::mono (8.0f, juce::Font::bold));
+        const int phBar = playheadBeats >= 0
+                            ? (int) std::floor (song->barAtBeat (playheadBeats) + 1e-9) : -1;
+        for (int bar = (int) std::floor (song->barAtBeat (vs)) / stride * stride;
+             song->barStartBeat (bar) <= vEnd; bar += stride)
+        {
+            const float x = xOf (song->barStartBeat (bar));
+            if (x < (float) r.getX()) continue;
+            const bool major = (bar % (stride * 4)) == 0;
+            g.setColour (bar == phBar ? theme::accent                 // P49: NOW locates by eye
+                         : (major ? theme::textMute.brighter (0.3f) : theme::textMute)
+                               .withAlpha (major ? 0.9f : 0.55f));
+            g.drawText (juce::String (bar + 1), (int) x + 3, (int) r.getY() + 1, 30, 10,
+                        juce::Justification::centredLeft);
+        }
+        if (p >= 36.0 && ! chatSurface)
+        {   // P49 levels B/C: beat labels (17.2) fade in; 16ths (17.2.3) when they
+            // breathe — the address grammar of the props strip, on the ruler itself
+            const float aB = (float) juce::jlimit (0.30, 0.60, 0.30 + (p - 36.0) / 60.0);
+            g.setFont (theme::mono (7.0f));
+            const int b0 = juce::jmax (0, (int) std::floor (song->barAtBeat (juce::jmax (0.0, vs))));
+            for (int bar = b0; song->barStartBeat (bar) <= vEnd; ++bar)
+            {
+                const double q0 = song->barStartBeat (bar), q1 = song->barStartBeat (bar + 1);
+                for (double q = q0 + 1.0; q < q1 - 1e-9; q += 1.0)
+                {
+                    if (q > vEnd) break;
+                    const float x = xOf (q);
+                    if (x < (float) r.getX()) continue;
+                    g.setColour (theme::textMute.withAlpha (aB));
+                    g.drawText (juce::String (bar + 1) + "." + juce::String ((int) (q - q0) + 1),
+                                (int) x + 2, (int) r.getY() + 1, 26, 9,
+                                juce::Justification::centredLeft);
+                }
+                if (p * 0.25 >= 28.0)
+                {
+                    const float aC = (float) juce::jlimit (0.25, 0.50,
+                                                           0.25 + (p * 0.25 - 28.0) / 40.0);
+                    g.setColour (theme::textMute.withAlpha (aC));
+                    for (double q = q0; q < juce::jmin (q1, vEnd) - 1e-9; q += 0.25)
+                    {
+                        if (std::abs (q - std::round (q)) < 1e-9) continue;   // beats own their label
+                        const float x = xOf (q);
+                        if (x < (float) r.getX()) continue;
+                        const int bt = (int) std::floor (q - q0 + 1e-9);
+                        const int sx = (int) std::floor ((q - q0 - bt) * 4.0 + 1e-6);
+                        g.drawText (juce::String (bar + 1) + "." + juce::String (bt + 1)
+                                      + "." + juce::String (sx + 1),
+                                    (int) x + 2, (int) r.getY() + 11, 30, 8,
+                                    juce::Justification::centredLeft);
+                    }
+                }
+            }
+        }
+    }
+
     void paintDrumGrid (juce::Graphics& g)
     {
         auto& t = song->tracks[(size_t) trackIndex];
@@ -2899,7 +3361,7 @@ public:
         {
             const float x0 = xOf (b), cw = (float) (cell * p);
             const bool beat = std::fmod (b + 1e-6, 1.0) < 2e-6;
-            const bool bar  = std::fmod (b + 1e-6, 4.0) < 2e-6;
+            const bool bar  = std::abs (song->barStartBeat (std::round (song->barAtBeat (b))) - b) < 2e-6;
             const int grp = ((int) std::llround (std::fmod (b < 0 ? b + 64 : b, 2.0) / cell)) / 4;
             g.setColour (grp % 2 == 0 ? theme::inset.withAlpha (0.55f)
                                       : theme::panel.brighter (0.03f));
@@ -2958,6 +3420,7 @@ public:
         // 4) the channel spine on the gutter — whose machine this is
         g.setColour (noteColour.withAlpha (0.9f));
         g.fillRect (0.0f, (float) r.getY(), 3.0f, (float) r.getHeight());
+        paintFormStrip (g, r, p, vEnd);   // the drum machine reads the form too
     }
 
     void paint (juce::Graphics& g) override
@@ -2987,17 +3450,25 @@ public:
             const int pn = rows[(size_t) i];
             const float y = yOfRow (i);
             const bool black = juce::String (names[pn % 12]).containsChar ('#');
-            // grid row shading + octave line under every C
-            g.setColour (black ? theme::bg : theme::panel.brighter (0.04f));
+            // grid row shading + octave line under every C — the ROOM must READ
+            // (tapestry law: 0.01-0.03 alpha is the invisible class; the cave is dead)
+            // and it reads in the theme's OWN blue: white-based lightening greys the
+            // glass into concrete — every lift below is accent-tinted, never white
+            g.setColour (black ? theme::bg
+                                : theme::panel.interpolatedWith (theme::accent, 0.055f).brighter (0.025f));
             g.fillRect ((float) r.getX(), y, (float) r.getWidth(), rh - 1.0f);
-            if ((pn / 12) % 2 == 0)                    // octave zebra (Cubase law): faint banding
+            if ((pn / 12) % 2 == 0)                    // octave zebra (Cubase law): visible banding
             {
-                g.setColour (juce::Colours::white.withAlpha (0.012f));
+                g.setColour (theme::accent.withAlpha (0.040f));
                 g.fillRect ((float) r.getX(), y, (float) r.getWidth(), rh - 1.0f);
             }
-            if (hasKey && keyMask[pn % 12])            // the song's key lights its rows
+            if (scaleView >= 1 && hasKey && keyMask[pn % 12])   // P38 TINT: the key lights its rows
             {
-                g.setColour (theme::accent.withAlpha (pn % 12 == keyRoot ? 0.075f : 0.032f));
+                // SCALE-AWARE MATERIAL (the bloomK family): 7 of 12 rows wear this
+                // tint, calibrated at 14px rows — at the fit law's 26px ceiling the
+                // same alpha stacks into heavy banding. Fat rows whisper instead.
+                const float keyEase = juce::jlimit (0.65f, 1.0f, 14.0f / rh);
+                g.setColour (theme::accent.withAlpha ((pn % 12 == keyRoot ? 0.18f : 0.10f) * keyEase));
                 g.fillRect ((float) r.getX(), y, (float) r.getWidth(), rh - 1.0f);
             }
             if (pn % 12 == 0)
@@ -3022,6 +3493,8 @@ public:
             {
                 g.setColour (juce::Colour (0xff23262b));
                 g.fillRoundedRectangle (key.withWidth (34.0f), 2.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.10f));   // glossy top edge
+                g.fillRect (3.0f, y + 1.0f, 32.0f, 1.5f);
                 g.setColour (juce::Colours::black.withAlpha (0.5f));
                 g.drawRoundedRectangle (key.withWidth (34.0f).reduced (0.5f), 2.0f, 1.0f);
                 g.setColour (juce::Colour (0xffd4d7dc));
@@ -3029,8 +3502,8 @@ public:
             }
             else
             {
-                g.setGradientFill ({ juce::Colour (0xffdde0e4), key.getTopLeft(),
-                                     juce::Colour (0xffc9ccd2), key.getBottomLeft(), false });
+                g.setGradientFill ({ juce::Colour (0xffe6e9ee), key.getTopLeft(),
+                                     juce::Colour (0xffccd0d7), key.getBottomLeft(), false });
                 g.fillRect (key);
                 g.setColour (juce::Colour (0xffb2b5bb));
                 g.drawHorizontalLine ((int) (y + rh - 1.0f), 2.0f, 48.0f);
@@ -3041,6 +3514,11 @@ public:
                     g.drawText ("C" + juce::String (pn / 12 - 1), 4, (int) y, 40,
                                 (int) juce::jmax (10.0f, rh), juce::Justification::centredRight);
                 }
+                if (scaleView == 2 && hasKey && ! keyMask[pn % 12])
+                {   // P38 FOLD: a blue-note row (kept for its own notes) wears a red tick
+                    g.setColour (theme::bad.withAlpha (0.85f));
+                    g.fillRect (46.0f, y + rh * 0.5f - 1.0f, 4.0f, 2.0f);
+                }
             }
             if (pn == auditionPitch)
             {   // THE KEYS SOUND: the SOUNDING key is lit — truth (what you hear), not hover
@@ -3048,13 +3526,24 @@ public:
                 g.fillRoundedRectangle (key.withWidth (black ? 34.0f : 46.0f), 2.0f);
             }
         }
+        {   // THE ROOM WEARS THE CHANNEL (tapestry law comes to the roll): a top wash
+            // in the channel's OWN colour — open the bass roll and the room is teal,
+            // the kick's amber. Ownership at a glance; readOnly ghost rolls included.
+            const float wh = (float) r.getHeight() * 0.58f;
+            g.setGradientFill ({ noteColour.withAlpha (0.15f), { 0.0f, (float) r.getY() },
+                                 noteColour.withAlpha (0.015f), { 0.0f, (float) r.getY() + wh }, false });
+            g.fillRect ((float) r.getX(), (float) r.getY(), (float) r.getWidth(), wh);
+            g.setColour (noteColour.withAlpha (0.020f));            // colour floor to the bottom
+            g.fillRect ((float) r.getX(), (float) r.getY() + wh, (float) r.getWidth(),
+                        (float) r.getHeight() - wh);
+        }
         for (double b = std::floor (vs / 8.0) * 8.0; b <= vEnd; b += 8.0)
         {   // FL law: alternate BARS wash lighter — the grid breathes in twos
             const float x1 = juce::jmax ((float) r.getX(), xOf (b));
             const float x2 = juce::jmin ((float) r.getRight(), xOf (b + 4.0));
             if (x2 > x1)
             {
-                g.setColour (juce::Colours::white.withAlpha (0.016f));
+                g.setColour (theme::accent.withAlpha (0.030f));
                 g.fillRect (x1, (float) r.getY(), x2 - x1, (float) r.getHeight());
             }
         }
@@ -3068,7 +3557,8 @@ public:
         const double beatStep = p >= 5.0 ? 1.0 : 4.0;
         for (double b = std::floor (vs / beatStep) * beatStep; b <= vEnd; b += beatStep)
         {
-            g.setColour (std::fmod (b, 4.0) < 1e-6 ? theme::gridBar : theme::grid);
+            g.setColour (std::abs (song->barStartBeat (std::round (song->barAtBeat (b))) - b) < 1e-6
+                             ? theme::gridBar : theme::grid);
             g.drawVerticalLine ((int) xOf (b), (float) r.getY(), (float) getHeight());
         }
         if (loopB > loopA && loopA >= 0)                 // the loop region rides the roll too
@@ -3082,6 +3572,30 @@ public:
                 g.fillRect (lr);
                 g.setGradientFill (theme::brand (lr.withHeight (2.0f), 0.75f));
                 g.fillRect (lr.withHeight (2.0f));
+            }
+        }
+        paintFormStrip (g, r, p, vEnd);   // THE ROLL READS THE FORM (arrange-ruler twin)
+        if (! chatSurface && ! song->chords.empty() && p * 4.0 >= 22.0)
+        {   // P37: the harmonic spine rides the roll — chord names at their bars,
+            // the SOUNDING chord lit while the beam crosses it
+            const auto cf = theme::caps (7.0f);
+            g.setFont (cf);
+            float lastR = -1e9f;
+            for (auto& c : song->chords)
+            {
+                if (c.label.isEmpty()) continue;
+                const int cb = juce::jmax (0, (int) std::floor (c.bar - 1.0 + 1e-9));
+                const double frac = juce::jmax (0.0, c.bar - 1.0 - cb);
+                const double q = song->barStartBeat (cb)
+                               + frac * (song->barStartBeat (cb + 1) - song->barStartBeat (cb));
+                if (q > vEnd) continue;
+                const float x = xOf (q);
+                if (x < (float) r.getX() - 2.0f || x <= lastR + 8.0f) continue;
+                const bool live = playheadBeats >= 0 && chordAtBeat (playheadBeats) == &c;
+                g.setColour (theme::accent.withAlpha (live ? 0.95f : chordLock ? 0.70f : 0.42f));
+                g.drawText (c.label, (int) x + 3, (int) r.getY() + 22, 72, 9,
+                            juce::Justification::centredLeft);
+                lastR = x + theme::measure (cf, c.label);
             }
         }
         // velocity lane: its own inset panel under the grid (chat cards shed it when short)
@@ -3106,7 +3620,7 @@ public:
         for (size_t gi = 0; gi < song->tracks.size(); ++gi)
         {
             if ((int) gi == trackIndex) continue;
-            g.setColour (channelColour (song->tracks[gi], (int) gi).withAlpha (0.13f));
+            g.setColour (channelColour (song->tracks[gi], (int) gi).withAlpha (0.16f));
             for (auto& n : song->tracks[gi].notes)
             {
                 if (n.start + n.len < vs || n.start > vEnd) continue;
@@ -3135,9 +3649,9 @@ public:
             auto body = juce::Rectangle<float> (x, y + 1.5f, w, juce::jmax (4.0f, rh - 3.0f));
             const float vel = (float) n.vel;
             const float bodyA = (0.78f + 0.22f * vel) * (0.28f + 0.72f * chc);
-            if (vel >= 0.75f && chc > 0.9f)            // hot notes GLOW (FL law)
+            if (vel >= 0.60f && chc > 0.9f)            // hot notes GLOW (FL law, relight volume)
             {
-                g.setColour (base.withAlpha (0.22f * (vel - 0.75f) * 4.0f));
+                g.setColour (base.withAlpha (0.30f * (vel - 0.60f) * 2.5f));
                 g.fillRoundedRectangle (body.expanded (2.0f), 4.0f);
             }
             {   // the note IS the channel's light: lit top edge, saturated floor
@@ -3160,10 +3674,27 @@ public:
                 g.fillRoundedRectangle (body.getX() + 2.0f, body.getY() + 2.0f,
                                         3.0f, juce::jmax (2.0f, body.getHeight() - 4.0f), 1.5f);
             }
+            if (rh >= 15.0f && w >= 34.0f && ! chatSurface)   // THE NOTE KNOWS ITS NAME:
+            {   // fat-zoom rows carry their pitch on the note itself (FL/Live law);
+                // ink follows the channel colour's own brightness so every hue reads
+                static const char* nn[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+                const auto ink = base.getPerceivedBrightness() > 0.55f ? juce::Colours::black
+                                                                       : juce::Colours::white;
+                g.setColour (ink.withAlpha (juce::jmin (1.0f, (0.40f + 0.28f * chc) * (sel ? 1.25f : 1.0f))));
+                g.setFont (theme::mono (juce::jlimit (8.0f, 10.5f, rh * 0.42f), juce::Font::bold));
+                g.drawText (juce::String (nn[((n.pitch % 12) + 12) % 12]) + juce::String (n.pitch / 12 - 1),
+                            (int) body.getX() + 7, (int) body.getY(), (int) w - 10, (int) body.getHeight(),
+                            juce::Justification::centredLeft);
+            }
             if (velLaneH() > 0)
             {   // FL lollipops: a stem with a lit head — velocity reads at a glance
                 const float vh = (float) n.vel * (float) (velLaneH() - (chatSurface ? 6 : 12));
                 const float hy = (float) getHeight() - 5.0f - vh;
+                if (n.vel >= 0.60)                       // hot heads glow — accents read across the lane
+                {
+                    g.setColour (base.withAlpha (0.34f * (float) (n.vel - 0.60) * 2.5f));
+                    g.fillEllipse (x - 4.5f, hy - 5.0f, 11.0f, 11.0f);
+                }
                 g.setColour (base.withAlpha (sel ? 0.95f : 0.70f));
                 g.fillRoundedRectangle (x, hy, 2.0f, vh, 1.0f);
                 g.setColour (base.interpolatedWith (juce::Colours::white, 0.25f * (float) n.vel)
@@ -3226,14 +3757,28 @@ public:
         {   // the beam: motion trail + halo + hot line, grid top to velocity floor
             const float x = xOf (playheadBeats);
             const float y0 = (float) r.getY(), y1 = (float) getHeight() - 2.0f;
-            const float tx = juce::jmax ((float) r.getX(), x - 26.0f);
+            const float tx = juce::jmax ((float) r.getX(), x - 34.0f);
             g.setGradientFill ({ theme::accent.withAlpha (0.0f), tx, 0.0f,
-                                 theme::accent.withAlpha (0.10f), x, 0.0f, false });
+                                 theme::accent.withAlpha (0.16f), x, 0.0f, false });
             g.fillRect (tx, y0, x - tx, y1 - y0);
-            g.setColour (theme::accent.withAlpha (0.18f));
+            g.setColour (theme::accent.withAlpha (0.26f));
             g.fillRect (x - 2.0f, y0, 5.0f, y1 - y0);
-            g.setColour (juce::Colours::white.withAlpha (0.92f));
+            g.setColour (juce::Colours::white.withAlpha (0.95f));
             g.drawVerticalLine ((int) x, y0, y1);
+            if (song != nullptr && trackIndex >= 0 && trackIndex < (int) song->tracks.size())
+            {   // THE NOTES CATCH FIRE (roll twin): the comet lights the crossing
+                // slice of each note, cooling over 64px — same band, same law
+                juce::Graphics::ScopedSaveState fs (g);
+                g.reduceClipRegion ((int) x - 72, (int) y0, 73, (int) (y1 - y0));
+                g.setGradientFill ({ juce::Colours::white.withAlpha (0.0f), x - 72.0f, 0.0f,
+                                     juce::Colours::white.withAlpha (0.45f), x, 0.0f, false });
+                for (auto& n : song->tracks[(size_t) trackIndex].notes)
+                {
+                    const auto b = noteRect (n);
+                    if (! b.isEmpty() && b.getX() <= x && b.getRight() >= x - 72.0f)
+                        g.fillRoundedRectangle (b, 3.0f);
+                }
+            }
         }
         if (mode == Mode::marquee)
         {
@@ -3255,16 +3800,99 @@ public:
                          lk ? 0.34f : 0.16f, lk ? 0.95f : 0.45f);
         }
         else keyChipRect = {};
+        if (! chatSurface && ! readOnly && ! drumMode)
+        {   // P46 the magnet: chase state beside the key chip (open-on-NOW toggle)
+            const auto f2 = theme::caps (7.0f);
+            const juce::String cl = "CHASE";
+            chaseChipRect = { keyChipRect.isEmpty() ? (float) r.getX() + 6.0f
+                                                    : keyChipRect.getRight() + 6.0f,
+                              (float) r.getY() + 6.0f,
+                              theme::measure (f2, cl) + 26.0f, 15.0f };
+            theme::chip (g, chaseChipRect, theme::accent, cl, f2,
+                         chase ? 0.30f : 0.08f, chase ? 0.90f : 0.35f);
+        }
+        else chaseChipRect = {};
+        if (! chatSurface && ! readOnly && ! drumMode && hasKey)
+        {   // P38: the scale-view cycle chip — ALL, TINT, FOLD
+            const auto f2 = theme::caps (7.0f);
+            const juce::String sl = scaleView == 2 ? "SCALE FOLD"
+                                  : scaleView == 1 ? "SCALE TINT" : "SCALE ALL";
+            scaleChipRect = { chaseChipRect.isEmpty()
+                                  ? (keyChipRect.isEmpty() ? (float) r.getX() + 6.0f
+                                                           : keyChipRect.getRight() + 6.0f)
+                                  : chaseChipRect.getRight() + 6.0f,
+                              (float) r.getY() + 6.0f,
+                              theme::measure (f2, sl) + 26.0f, 15.0f };
+            theme::chip (g, scaleChipRect, theme::good, sl, f2,
+                         scaleView == 2 ? 0.30f : scaleView == 1 ? 0.16f : 0.08f,
+                         scaleView == 2 ? 0.92f : scaleView == 1 ? 0.70f : 0.40f);
+        }
+        else scaleChipRect = {};
+        for (auto& pr : propRects) pr = {};
+        if (! chatSurface && ! readOnly && ! selection.empty()
+            && r.getWidth() > 560 && selection.size() <= 20000)
+        {   // P44 NOTE PROPERTIES: the selection's numbers, each chip a scrub handle
+            auto& tt = song->tracks[(size_t) trackIndex];
+            int pmin = 128, pmax = -1, vmin = 128, vmax = -1;
+            double smin = 1e18, lmin = 1e18, lmax = -1e18;
+            for (auto i : selection)
+                if (i < tt.notes.size())
+                {
+                    auto& n = tt.notes[i];
+                    pmin = juce::jmin (pmin, n.pitch);  pmax = juce::jmax (pmax, n.pitch);
+                    const int v7 = (int) std::lround (n.vel * 127.0);
+                    vmin = juce::jmin (vmin, v7);       vmax = juce::jmax (vmax, v7);
+                    smin = juce::jmin (smin, n.start);
+                    lmin = juce::jmin (lmin, n.len);    lmax = juce::jmax (lmax, n.len);
+                }
+            if (pmax >= 0)
+            {
+                const juce::String vals[4] = {
+                    pmin == pmax ? pitchName (pmin) : pitchName (pmin) + "~" + pitchName (pmax),
+                    vmin == vmax ? juce::String (vmin) : juce::String (vmin) + "~" + juce::String (vmax),
+                    barBeat16 (smin),
+                    std::abs (lmax - lmin) < 1e-6 ? lenName (lmin) : "~" + lenName (lmin) };
+                static const char* tags[4] = { "PITCH", "VEL", "AT", "LEN" };
+                const auto f2 = theme::caps (7.0f);
+                float px = (! scaleChipRect.isEmpty() ? scaleChipRect.getRight() + 10.0f
+                            : ! chaseChipRect.isEmpty() ? chaseChipRect.getRight() + 10.0f
+                            : ! keyChipRect.isEmpty() ? keyChipRect.getRight() + 6.0f
+                            : (float) r.getX() + 6.0f);
+                for (int fi = 0; fi < 4; ++fi)
+                {
+                    const juce::String lbl = juce::String (tags[fi]) + " " + vals[fi];
+                    const float w = theme::measure (f2, lbl) + 16.0f;
+                    if (px + w > (float) r.getRight() - 270.0f) break;   // degrade, never jumble
+                    propRects[fi] = { px, (float) r.getY() + 6.0f, w, 15.0f };
+                    const bool hot = mode == Mode::scrubField && scrubFieldId == fi;
+                    theme::chip (g, propRects[fi], hot ? theme::accent : juce::Colours::white,
+                                 lbl, f2, hot ? 0.30f : 0.10f, hot ? 0.95f : 0.72f);
+                    px += w + 6.0f;
+                }
+            }
+        }
+        if (playheadBeats >= 0 && (! followEnabled || followSuspended)
+            && ! chatSurface && ! readOnly)
+        {   // P46: follow yielded to the hand — the pill says how to call it back
+            const auto f2 = theme::caps (7.5f);
+            const juce::String pl = "FOLLOW OFF - F";
+            const float pw = theme::measure (f2, pl) + 18.0f;
+            followPillRect = { (float) r.getRight() - pw - 10.0f,
+                               (float) r.getBottom() - 40.0f, pw, 16.0f };
+            theme::chip (g, followPillRect, theme::warn, pl, f2, 0.30f, 0.92f);
+        }
+        else followPillRect = {};
         // hint chip: floats top-right of the grid, never under the velocity bars
         // (chat cards shed it — editing hints are stage affordances)
         if (! chatSurface)
         {
             const juce::String hint = selection.size() > 1
-                ? juce::String ((int) selection.size()) + " notes | Q=quantize  H=humanize  ctrl+B=repeat  ctrl+rclick=OPS  arrows=nudge/transpose  del"
+                ? juce::String ((int) selection.size()) + " notes | Q=quantize  H=humanize  alt+wheel=vel  Z=zoom  ctrl+L=legato  ctrl+B=repeat  ctrl+rclick=OPS  del"
                 : "wheel=OCTAVES  drag the keys=fly  ctrl+wheel=zoom  ctrl+shift+wheel=row size | hold B=brush  K=knife  drag=move  edge=resize  right-DRAG=erase  ctrl+rclick=OPS";
             const auto f = theme::ui (9.0f);
             const float tw = theme::measure (f, hint) + 18.0f;
-            juce::Rectangle<float> chip ((float) r.getRight() - tw - 8.0f, (float) r.getY() + 6.0f, tw, 17.0f);
+            // P49: the hint yields the ruler band — position truth outranks chrome
+            juce::Rectangle<float> chip ((float) r.getRight() - tw - 8.0f, (float) r.getY() + 34.0f, tw, 17.0f);
             g.setColour (theme::inset.withAlpha (0.82f));
             g.fillRoundedRectangle (chip, 8.5f);
             g.setColour (juce::Colours::white.withAlpha (0.07f));
@@ -3323,11 +3951,31 @@ public:
                 g.drawRoundedRectangle (handle.reduced (0.5f), 2.5f, 1.0f);
             }
         }
+        if (velOverlayText.isNotEmpty())
+        {   // P45: the wheel gesture's numbers ride the cursor (factor + live range)
+            const auto f = theme::caps (9.0f);
+            const float tw = theme::measure (f, velOverlayText) + 20.0f;
+            const float cx = juce::jlimit ((float) r.getX() + 2.0f,
+                                           juce::jmax ((float) r.getX() + 2.0f, (float) r.getRight() - tw - 4.0f),
+                                           (float) velOverlayAt.x + 14.0f);
+            const float cy = juce::jlimit ((float) r.getY() + 2.0f,
+                                           (float) getHeight() - 24.0f,
+                                           (float) velOverlayAt.y - 26.0f);
+            const juce::Rectangle<float> chip (cx, cy, tw, 17.0f);
+            g.setColour (theme::inset.withAlpha (0.92f));
+            g.fillRoundedRectangle (chip, 8.5f);
+            g.setColour (theme::accent.withAlpha (0.55f));
+            g.drawRoundedRectangle (chip.reduced (0.5f), 8.5f, 1.0f);
+            g.setColour (juce::Colours::white.withAlpha (0.92f));
+            g.setFont (f);
+            g.drawText (velOverlayText, chip.toNearestInt(), juce::Justification::centred);
+        }
     }
 
-    int noteAt (juce::Point<int> pos, bool& nearRightEdge)
+    int noteAt (juce::Point<int> pos, bool& nearRightEdge, bool* nearLeftEdge = nullptr)
     {
         nearRightEdge = false;
+        if (nearLeftEdge != nullptr) *nearLeftEdge = false;
         if (song == nullptr) return -1;
         auto& t = song->tracks[(size_t) trackIndex];
         const double p = effPpb();
@@ -3347,6 +3995,11 @@ public:
                 // still MOVES it (zoom in to resize a tiny one; standard DAW law)
                 const float grab = juce::jlimit (6.0f, 12.0f, w * 0.35f);
                 nearRightEdge = w > 14.0f && pos.x > x + w - grab;
+                // P36: the LEFT edge is the START handle — a narrower zone (the
+                // body stays a MOVE), only on notes wide enough to offer both
+                if (nearLeftEdge != nullptr)
+                    *nearLeftEdge = ! nearRightEdge && w > 20.0f
+                                    && pos.x < x + juce::jlimit (5.0f, 9.0f, w * 0.25f);
                 return i;
             }
         }
@@ -3358,10 +4011,10 @@ public:
         // DISCOVERABILITY: hovering a note's right edge shows the resize cursor,
         // so "drag the edge = change length" is findable, not a secret.
         if (song == nullptr || readOnly) { setMouseCursor (juce::MouseCursor::NormalCursor); return; }
-        bool edge = false;
-        const int idx = noteAt (e.getPosition(), edge);
-        setMouseCursor (idx >= 0 && edge ? juce::MouseCursor::LeftRightResizeCursor
-                                         : juce::MouseCursor::NormalCursor);
+        bool edge = false, edgeL = false;
+        const int idx = noteAt (e.getPosition(), edge, &edgeL);
+        setMouseCursor (idx >= 0 && (edge || edgeL) ? juce::MouseCursor::LeftRightResizeCursor
+                                                    : juce::MouseCursor::NormalCursor);
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -3373,6 +4026,7 @@ public:
             // read-only ghost roll too (looking is not editing). Bounded to its own
             // band: the velocity lane below it keeps its last 12px.
             mode = Mode::pitchNav;
+            zRestoreOk = false;                  // manual flight tears the Z ticket
             dragPitchNav (e);
             return;
         }
@@ -3380,6 +4034,7 @@ public:
         {   // GRAB THE KEYBOARD AND PULL (Logic law): the keys are a handle on the
             // whole tower. dbl-click still selects the pitch — that's its own event.
             mode = Mode::keyScroll;
+            zRestoreOk = false;                  // manual flight tears the Z ticket
             keyScrollAnchorY = e.y;
             keyScrollAnchorVy = vy;
             // THE KEYS SOUND: the grabbed key SINGS while held — velocity from the
@@ -3403,6 +4058,35 @@ public:
         auto r = gridArea();
         dragEditArmed = false;                   // a new gesture: the drag re-arms on first mutation
 
+        if (! e.mods.isPopupMenu() && ! followPillRect.isEmpty()
+            && followPillRect.contains (e.position))
+        {   // P46: the pill re-arms follow
+            followEnabled = true; followSuspended = false; repaint(); return;
+        }
+        if (! e.mods.isPopupMenu() && ! chaseChipRect.isEmpty()
+            && chaseChipRect.contains (e.position))
+        {   // P46: magnet toggle — open-on-NOW (mid-play flip locates immediately)
+            chase = ! chase;
+            chaseArm = chase && playheadBeats >= 0;
+            repaint(); return;
+        }
+        if (! e.mods.isPopupMenu() && ! scaleChipRect.isEmpty()
+            && scaleChipRect.contains (e.position))
+        {   // P38: ALL -> TINT -> FOLD -> ALL (fold re-shapes the rows)
+            scaleView = (scaleView + 1) % 3;
+            rebuildRows();
+            clampViewV();
+            repaint(); return;
+        }
+        if (! e.mods.isPopupMenu() && ! readOnly)
+            for (int fi = 0; fi < 4; ++fi)
+                if (! propRects[fi].isEmpty() && propRects[fi].contains (e.position))
+                {   // P44: grab a field — the drag scrubs the selection
+                    mode = Mode::scrubField;
+                    scrubAnchor = e.getPosition();
+                    beginScrub (fi);
+                    repaint(); return;
+                }
         if (hasKey && ! keyChipRect.isEmpty() && keyChipRect.contains (e.position)
             && ! e.mods.isPopupMenu())
         {   // the key chip IS the lock (H12): off -> KEY; with a chord spine the
@@ -3417,8 +4101,8 @@ public:
         {
             mode = Mode::velocity; adjustVelocity (e); return;
         }
-        bool edge = false;
-        const int idx = noteAt (e.getPosition(), edge);
+        bool edge = false, edgeL = false;
+        const int idx = noteAt (e.getPosition(), edge, &edgeL);
         if (idx >= 0)
         {
             if ((juce::KeyPress::isKeyCurrentlyDown ('k') || juce::KeyPress::isKeyCurrentlyDown ('K'))
@@ -3450,7 +4134,7 @@ public:
             if (! selection.count ((size_t) idx))
                 { selection.clear(); selection.insert ((size_t) idx); }
             selected = idx;
-            mode = edge ? Mode::resize : Mode::move;
+            mode = edge ? Mode::resize : edgeL ? Mode::resizeL : Mode::move;
             dragOrig.clear();
             for (auto s : selection)
                 if (s < t.notes.size()) dragOrig.push_back ({ s, t.notes[s] });
@@ -3533,6 +4217,7 @@ public:
             return;
         }
         if (mode == Mode::velocity) { adjustVelocity (e); return; }
+        if (mode == Mode::scrubField) { applyScrub (e.x - scrubAnchor.x); return; }
         if (mode == Mode::brush) { brushAt (e); return; }
         if (mode == Mode::marquee)
         {
@@ -3585,6 +4270,21 @@ public:
                 if (i < t.notes.size() && (int) i != selected)
                     t.notes[i].len = juce::jlimit (0.05, beats - t.notes[i].start, newLen);
         }
+        else if (mode == Mode::resizeL)
+        {   // P36: the LEFT edge moves the START; every selected end stays planted
+            const double end0 = dragNote.start + dragNote.len;
+            const double ns = juce::jlimit (0.0, end0 - 0.05,
+                              snapBeats > 0 ? snapTo (beat, snapBeats) : beat);
+            const double delta = ns - dragNote.start;
+            for (auto& [i, orig] : dragOrig)
+                if (i < t.notes.size())
+                {
+                    auto& n = t.notes[i];
+                    const double end = orig.start + orig.len;
+                    n.start = juce::jlimit (0.0, end - 0.05, orig.start + delta);
+                    n.len   = end - n.start;
+                }
+        }
         changedWhileDragging = true;
         repaint();
     }
@@ -3610,6 +4310,12 @@ public:
     void mouseDoubleClick (const juce::MouseEvent& e) override
     {
         if (song == nullptr || readOnly || rows.empty()) return;
+        for (int fi = 0; fi < 4; ++fi)
+            if (! propRects[fi].isEmpty() && propRects[fi].contains (e.position))
+            {   // P44: double-click a field = type the exact value
+                openPropEditor (fi, propSeed (fi));
+                return;
+            }
         bool edge = false;
         const int idx = noteAt (e.getPosition(), edge);
         if (idx >= 0)
@@ -3692,6 +4398,12 @@ public:
             if (onChanged) onChanged();
             repaint(); return true;
         }
+        if (ctrl && k.getKeyCode() == 'L')           // P48: legato lands on the hand
+        { opLegato(); return true; }
+        if (! ctrl && tc == 'z')                     // P47 THE DIVE: Z frames the selection
+        { opZoomToSelection (k.getModifiers().isShiftDown()); return true; }
+        if (! ctrl && tc == 'f')                     // P46: follow on/off (clears the truce)
+        { followEnabled = ! followEnabled; followSuspended = false; repaint(); return true; }
         const int kc = k.getKeyCode();
         if (! selection.empty()
             && (kc == juce::KeyPress::leftKey || kc == juce::KeyPress::rightKey
@@ -3718,8 +4430,12 @@ public:
                     phi = juce::jmax (phi, t.notes[i].pitch);
                 }
                 if (plo > phi) { /* nothing moved */ }
-                else if (useTower()) scrollPitchIntoView (plo, phi);   // the tower scrolls to them
-                else if (phi > rows.front() || plo < rows.back()) rebuildRows();   // card band re-fits
+                else
+                {
+                    if (scaleView == 2) rebuildRows();   // P38: chromatic moves re-shape the fold
+                    if (useTower()) scrollPitchIntoView (plo, phi);   // the tower scrolls to them
+                    else if (phi > rows.front() || plo < rows.back()) rebuildRows();   // card band re-fits
+                }
             }
             if (onChanged) onChanged();
             repaint(); return true;
@@ -4046,6 +4762,321 @@ public:
         selected = selection.empty() ? -1 : (int) *selection.begin();
         repaint();
     }
+    // P45 ALT+WHEEL VELOCITY (FL reflex, UI_SPEC_100): multiplicative scale with a
+    // FLOAT SHADOW — clamped notes remember their spread, so up-then-down returns
+    // the exact starting velocities. A 400ms wheel rest closes the gesture: ONE
+    // undo step per burst; the overlay chip fades when the wheel rests.
+    std::map<size_t, double> velWheelOrig;
+    double velWheelFactor = 1.0;
+    juce::uint32 velWheelLastMs = 0;
+    juce::String velOverlayText;
+    juce::Point<int> velOverlayAt;
+    void velWheelNotch (int dir, bool fine, juce::Point<int> at)
+    {
+        if (song == nullptr || trackIndex < 0 || trackIndex >= (int) song->tracks.size())
+            return;
+        auto& t = song->tracks[(size_t) trackIndex];
+        const auto now = juce::Time::getMillisecondCounter();
+        if (velWheelOrig.empty() || now - velWheelLastMs > 400)
+        {   // a rest starts a NEW gesture: fresh anchors + one undo step
+            armEdit();
+            velWheelOrig.clear();
+            velWheelFactor = 1.0;
+            for (auto i : selection)
+                if (i < t.notes.size()) velWheelOrig[i] = t.notes[i].vel;
+        }
+        velWheelLastMs = now;
+        const double step = fine ? 1.01 : 1.05;
+        velWheelFactor = juce::jlimit (0.05, 20.0, velWheelFactor * (dir > 0 ? step : 1.0 / step));
+        double lo = 1.0, hi = 0.0;
+        for (auto& [i, ov] : velWheelOrig)
+            if (i < t.notes.size())
+            {
+                auto& v = t.notes[i].vel;
+                v = juce::jlimit (0.05, 1.0, ov * velWheelFactor);
+                lo = juce::jmin (lo, v);
+                hi = juce::jmax (hi, v);
+            }
+        if (hi < lo) return;                     // stale selection: nothing lived
+        velOverlayText = "vel x" + juce::String (velWheelFactor, 2) + "   "
+                       + juce::String ((int) std::lround (lo * 127.0)) + "-"
+                       + juce::String ((int) std::lround (hi * 127.0));
+        velOverlayAt = at;
+        if (onChanged) onChanged();
+        juce::Component::SafePointer<PianoRollEditor> sp (this);
+        juce::Timer::callAfterDelay (460, [sp]
+        {
+            if (sp != nullptr && sp->velOverlayText.isNotEmpty()
+                && juce::Time::getMillisecondCounter() - sp->velWheelLastMs >= 400)
+            { sp->velOverlayText.clear(); sp->repaint(); }
+        });
+        repaint();
+    }
+
+    // P47 THE DIVE (UI_SPEC_100): Z frames the selection (else the loop brace, else
+    // the whole song) and keeps a one-deep return ticket — Z again restores the
+    // exact prior view. Any manual pan/zoom tears the ticket. shift+Z always = song.
+    double zSaveVs = 0.0, zSaveRppb = 0.0, zSaveVy = 0.0;
+    bool zRestoreOk = false;
+    void opZoomToSelection (bool wholeSong)
+    {
+        auto r = gridArea();
+        if (song == nullptr || r.getWidth() < 40) return;
+        if (playheadBeats >= 0) followSuspended = true;   // a deliberate dive outranks follow
+        if (! wholeSong && zRestoreOk)
+        {   // the return ticket: back out of the dive
+            vs = zSaveVs; rppb = zSaveRppb; vy = zSaveVy;
+            zRestoreOk = false;
+            clampView(); clampViewV(); repaint();
+            return;
+        }
+        auto& t = song->tracks[(size_t) trackIndex];
+        double lo = 1e18, hi = -1e18;
+        int plo = 128, phi = -1;
+        if (! wholeSong)
+            for (auto i : selection)
+                if (i < t.notes.size())
+                {
+                    lo  = juce::jmin (lo, t.notes[i].start);
+                    hi  = juce::jmax (hi, t.notes[i].start + t.notes[i].len);
+                    plo = juce::jmin (plo, t.notes[i].pitch);
+                    phi = juce::jmax (phi, t.notes[i].pitch);
+                }
+        if (hi <= lo && ! wholeSong && loopB > loopA) { lo = loopA; hi = loopB; }
+        if (hi <= lo) { lo = 0.0; hi = juce::jmax (4.0, song->totalBeats()); }
+        zSaveVs = vs; zSaveRppb = effPpb(); zSaveVy = vy;
+        const double span = juce::jmax (0.25, hi - lo);
+        rppb = juce::jlimit (0.02, 240.0, (double) r.getWidth() / (span * 1.12));
+        vs = juce::jmax (0.0, lo - span * 0.06);
+        clampView();
+        if (phi >= plo && useTower()) scrollPitchIntoView (plo, phi);
+        zRestoreOk = ! wholeSong;
+        repaint();
+    }
+
+    // P44 NOTE PROPERTIES STRIP (UI_SPEC_100): numeric truth for the selection —
+    // PITCH / VEL / AT / LEN chips ride the top row beside the key chip. Dragging
+    // a chip SCRUBS the selection RELATIVE (originals-anchored: back to zero =
+    // exact start values); double-click TYPES an absolute value (Enter commits,
+    // Esc cancels). One undo step per gesture; C4 = MIDI 60 (the tower's grammar).
+    juce::Rectangle<float> propRects[4];
+    int scrubFieldId = -1;
+    juce::Point<int> scrubAnchor;
+    std::unique_ptr<juce::TextEditor> propEdit;
+    int propEditField = -1;
+    static juce::String pitchName (int p)
+    {
+        static const char* nm[] = { "C", "C#", "D", "D#", "E", "F",
+                                    "F#", "G", "G#", "A", "A#", "B" };
+        return juce::String (nm[((p % 12) + 12) % 12]) + juce::String (p / 12 - 1);
+    }
+    static int parsePitch (const juce::String& sIn)
+    {
+        const auto s = sIn.trim();
+        if (s.isEmpty()) return -1;
+        if (s.containsOnly ("0123456789")) return juce::jlimit (0, 127, s.getIntValue());
+        static const int base[] = { 9, 11, 0, 2, 4, 5, 7 };            // A..G
+        const auto c0 = (char) juce::CharacterFunctions::toUpperCase (s[0]);
+        if (c0 < 'A' || c0 > 'G') return -1;
+        int pc = base[c0 - 'A'], idx = 1;
+        if      (idx < s.length() && s[idx] == '#') { pc = (pc + 1) % 12; ++idx; }
+        else if (idx < s.length() && (s[idx] == 'b' || s[idx] == 'B')
+                 && s.substring (idx + 1).trim().isNotEmpty())          // "B" alone = the note
+        { pc = (pc + 11) % 12; ++idx; }
+        const auto oct = s.substring (idx).trim();
+        if (oct.isEmpty() || ! oct.retainCharacters ("-0123456789").equalsIgnoreCase (oct))
+            return -1;
+        return juce::jlimit (0, 127, 12 * (oct.getIntValue() + 1) + pc);
+    }
+    juce::String lenName (double len) const
+    {
+        const double sixteenths = len / 0.25;
+        if (std::abs (sixteenths - std::round (sixteenths)) < 1e-6)
+        {
+            int n = (int) std::round (sixteenths), d = 16;
+            while (n % 2 == 0 && d > 1) { n /= 2; d /= 2; }
+            return d == 1 ? juce::String (n) + (n == 1 ? " beat x4" : "b")   // whole notes: rare
+                          : juce::String (n) + "/" + juce::String (d);
+        }
+        return juce::String (len, 2) + "b";
+    }
+    juce::String barBeat16 (double q) const
+    {   // meter-true address: bar.beat.16th through the WORLD GRID
+        const int bar = (int) std::floor (song->barAtBeat (q) + 1e-9);
+        const double within = q - song->barStartBeat (bar);
+        const int beat = (int) std::floor (within + 1e-9);
+        const int six  = (int) std::floor ((within - beat) * 4.0 + 1e-9);
+        return juce::String (bar + 1) + "." + juce::String (beat + 1)
+             + "." + juce::String (six + 1);
+    }
+    void beginScrub (int fieldId)
+    {   // capture originals: every drag delta applies FROM these (zero drift)
+        scrubFieldId = fieldId;
+        dragOrig.clear();
+        auto& t = song->tracks[(size_t) trackIndex];
+        for (auto s : selection)
+            if (s < t.notes.size()) dragOrig.push_back ({ s, t.notes[s] });
+        dragEditArmed = false;
+    }
+    void applyScrub (int dx)
+    {
+        if (song == nullptr || trackIndex < 0 || scrubFieldId < 0) return;
+        auto& t = song->tracks[(size_t) trackIndex];
+        const double beats = song->totalBeats();
+        const double g = snapBeats > 0 ? snapBeats : 0.25;
+        bool changed = false, pitchChanged = false;
+        for (auto& [i, orig] : dragOrig)
+        {
+            if (i >= t.notes.size()) continue;
+            auto& n = t.notes[i];
+            if (scrubFieldId == 0)
+            {   // PITCH: 8px per semitone
+                const int np = juce::jlimit (0, 127, orig.pitch + dx / 8);
+                if (np != n.pitch) { armDragEdit(); n.pitch = np; changed = pitchChanged = true; }
+            }
+            else if (scrubFieldId == 1)
+            {   // VEL: ~3px per 1/127 step
+                const double nv = juce::jlimit (0.05, 1.0, orig.vel + (double) dx / 381.0);
+                if (std::abs (nv - n.vel) > 1e-12) { armDragEdit(); n.vel = nv; changed = true; }
+            }
+            else if (scrubFieldId == 2)
+            {   // AT: 24px per grid step, the cluster moves whole
+                const double d = std::round ((double) dx / 24.0) * g;
+                const double ns = juce::jlimit (0.0, beats - 0.05, orig.start + d);
+                if (std::abs (ns - n.start) > 1e-12) { armDragEdit(); n.start = ns; changed = true; }
+            }
+            else if (scrubFieldId == 3)
+            {   // LEN: 24px per grid step on every selected length
+                const double d = std::round ((double) dx / 24.0) * g;
+                const double nl = juce::jlimit (0.05, beats - n.start, orig.len + d);
+                if (std::abs (nl - n.len) > 1e-12) { armDragEdit(); n.len = nl; changed = true; }
+            }
+        }
+        if (changed)
+        {
+            changedWhileDragging = true;
+            if (pitchChanged && ! useTower()) rebuildRows();   // card band re-fits
+        }
+        repaint();
+    }
+    void commitPropText (int fieldId, const juce::String& text)
+    {   // typed = ABSOLUTE (AT moves the cluster so its first note lands there)
+        if (song == nullptr || trackIndex < 0 || selection.empty()) return;
+        auto& t = song->tracks[(size_t) trackIndex];
+        const double beats = song->totalBeats();
+        if (fieldId == 0)
+        {
+            const int p = parsePitch (text);
+            if (p < 0) return;
+            armEdit();
+            bool outside = false;
+            for (auto i : selection)
+                if (i < t.notes.size())
+                { t.notes[i].pitch = p; outside = outside || rowIndexOf (p) < 0; }
+            if (outside && ! useTower()) rebuildRows();
+        }
+        else if (fieldId == 1)
+        {
+            if (! text.containsOnly ("0123456789")) return;
+            const double v = juce::jlimit (1, 127, text.getIntValue()) / 127.0;
+            armEdit();
+            for (auto i : selection)
+                if (i < t.notes.size()) t.notes[i].vel = juce::jmax (0.05, v);
+        }
+        else if (fieldId == 2)
+        {   // "17.3.2" bar.beat.16th (meter-true) or plain beats ("12.5b" / "12.5")
+            double target = -1.0;
+            auto parts = juce::StringArray::fromTokens (text.trim().removeCharacters ("b"), ".", "");
+            if (parts.size() >= 2 && parts.size() <= 3)
+            {
+                const int bar = parts[0].getIntValue() - 1;
+                const int beat = parts[1].getIntValue() - 1;
+                const int six = parts.size() == 3 ? parts[2].getIntValue() - 1 : 0;
+                if (bar >= 0 && beat >= 0 && six >= 0)
+                    target = song->barStartBeat (bar) + beat + six * 0.25;
+            }
+            else if (parts.size() == 1 && parts[0].isNotEmpty())
+                target = parts[0].getDoubleValue();
+            if (target < 0) return;
+            double lo = 1e18;
+            for (auto i : selection)
+                if (i < t.notes.size()) lo = juce::jmin (lo, t.notes[i].start);
+            if (lo > 1e17) return;
+            const double d = juce::jlimit (0.0, beats - 0.05, target) - lo;
+            armEdit();
+            for (auto i : selection)
+                if (i < t.notes.size())
+                    t.notes[i].start = juce::jlimit (0.0, beats - 0.05, t.notes[i].start + d);
+        }
+        else if (fieldId == 3)
+        {   // "1/8" fraction of a whole note, or beats ("0.75")
+            double len = -1.0;
+            if (text.containsChar ('/'))
+            {
+                auto nd = juce::StringArray::fromTokens (text, "/", "");
+                if (nd.size() == 2 && nd[0].getIntValue() > 0 && nd[1].getIntValue() > 0)
+                    len = 4.0 * nd[0].getIntValue() / nd[1].getIntValue();
+            }
+            else len = text.removeCharacters ("b").getDoubleValue();
+            if (len <= 0) return;
+            armEdit();
+            for (auto i : selection)
+                if (i < t.notes.size())
+                    t.notes[i].len = juce::jlimit (0.05, beats - t.notes[i].start, len);
+        }
+        if (onChanged) onChanged();
+        repaint();
+    }
+    juce::String propSeed (int fieldId)
+    {   // the editor opens on the selection's uniform value (mixed = start typing)
+        auto& t = song->tracks[(size_t) trackIndex];
+        int pmin = 128, pmax = -1, vmin = 128, vmax = -1;
+        double smin = 1e18, lmin = 1e18, lmax = -1e18;
+        for (auto i : selection)
+            if (i < t.notes.size())
+            {
+                auto& n = t.notes[i];
+                pmin = juce::jmin (pmin, n.pitch);  pmax = juce::jmax (pmax, n.pitch);
+                const int v7 = (int) std::lround (n.vel * 127.0);
+                vmin = juce::jmin (vmin, v7);       vmax = juce::jmax (vmax, v7);
+                smin = juce::jmin (smin, n.start);
+                lmin = juce::jmin (lmin, n.len);    lmax = juce::jmax (lmax, n.len);
+            }
+        if (pmax < 0) return {};
+        if (fieldId == 0) return pmin == pmax ? pitchName (pmin) : juce::String();
+        if (fieldId == 1) return vmin == vmax ? juce::String (vmin) : juce::String();
+        if (fieldId == 2) return barBeat16 (smin);
+        return std::abs (lmax - lmin) < 1e-6 ? lenName (lmin) : juce::String();
+    }
+    void openPropEditor (int fieldId, const juce::String& seed)
+    {
+        propEditField = fieldId;
+        if (propEdit == nullptr)
+        {
+            propEdit = std::make_unique<juce::TextEditor>();
+            propEdit->setFont (theme::ui (11.0f));
+            propEdit->setJustification (juce::Justification::centred);
+            propEdit->onReturnKey = [this]
+            {
+                if (propEdit != nullptr && propEditField >= 0)
+                    commitPropText (propEditField, propEdit->getText());
+                if (propEdit != nullptr) propEdit->setVisible (false);
+                propEditField = -1;
+                grabKeyboardFocus();
+            };
+            propEdit->onEscapeKey  = [this]
+            { if (propEdit != nullptr) propEdit->setVisible (false); propEditField = -1; grabKeyboardFocus(); };
+            propEdit->onFocusLost  = [this]
+            { if (propEdit != nullptr) propEdit->setVisible (false); propEditField = -1; };
+            addChildComponent (*propEdit);
+        }
+        propEdit->setBounds (propRects[fieldId].toNearestInt().expanded (6, 2));
+        propEdit->setText (seed, juce::dontSendNotification);
+        propEdit->setVisible (true);
+        propEdit->grabKeyboardFocus();
+        propEdit->selectAll();
+    }
+
     // the harmonic spine at this beat (#2's chord track; chords carry 1-based bars,
     // the WORLD GRID routes bar->beat). nullptr when the song has no spine there.
     const sotadaw::SongChord* chordAtBeat (double beat) const
@@ -4153,7 +5184,7 @@ public:
         qm.addItem ("25%",           [this] { opQuantize (0.25); });
         m.addSubMenu ("Quantize to grid", qm);
         m.addItem ("Humanize (H)",       [this] { opHumanize(); });
-        m.addItem ("Legato",             [this] { opLegato(); });
+        m.addItem ("Legato (ctrl+L)",    [this] { opLegato(); });
         m.addItem ("Mirror pitch",       [this] { opMirror(); });
         m.addItem ("Retrograde",         [this] { opRetrograde(); });
         m.addItem ("Stretch x2",         [this] { opStretch (2.0); });
@@ -4194,7 +5225,7 @@ public:
     }
 
 private:
-    enum class Mode { none, move, resize, velocity, marquee, brush, pitchNav, keyScroll };
+    enum class Mode { none, move, resize, resizeL, velocity, marquee, brush, pitchNav, keyScroll, scrubField };
     double keyScrollAnchorY = 0, keyScrollAnchorVy = 0;   // grabbing the keyboard
     std::pair<int, double> lastBrush { -1, -1.0 };
     void brushAt (const juce::MouseEvent& e)   // THE BRUSH (H12): hold B, drag the grid
@@ -4713,6 +5744,40 @@ public:
     void paint (juce::Graphics& g) override
     {
         if (mix <= 0.01f) return;
+        // THE VEIL IS RENDERED ONCE (xrun court, Chezy live 2026-07-15): this paint
+        // was ~40% of ALL app CPU during agent-mode audition — a full-window radial
+        // aura + ~1500 peg ellipses + brushed-metal line storms, re-rasterised at the
+        // pod's 30Hz while 16 JIT voices fought for the same cores (XRUN 456->558).
+        // Layers 1-5 depend only on (size, mix, board, column, wingsOn) -> cached
+        // image, rebuilt on key change (the ~1s morph re-renders per step; the
+        // steady page blits). Layer 6 (SESSION rail vitals) stays live — cheap text.
+        {
+            const auto lb = getLocalBounds();
+            juce::String key;
+            key << lb.getWidth() << "x" << lb.getHeight()
+                << "|" << board.toString() << "|" << column.toString()
+                << "|" << (wingsOn ? 1 : 0)
+                << "|" << (int) std::lround (mix * 64.0f);
+            if (staticCache.isNull() || key != staticKey)
+            {
+                staticKey = key;
+                staticCache = juce::Image (juce::Image::ARGB,
+                                           juce::jmax (1, lb.getWidth()),
+                                           juce::jmax (1, lb.getHeight()), true);
+                juce::Graphics cg (staticCache);
+                renderStatic (cg);
+            }
+            g.drawImageAt (staticCache, 0, 0);
+        }
+        paintLiveRail (g);
+    }
+
+private:
+    juce::Image staticCache;
+    juce::String staticKey;
+
+    void renderStatic (juce::Graphics& g)
+    {
         const auto r = getLocalBounds().toFloat();
         // 1) premium depth: a near-black vertical gradient, fully covering at mix=1
         g.setGradientFill ({ juce::Colour (0xff0b0c13).withAlpha (mix), r.getTopLeft(),
@@ -4745,16 +5810,25 @@ public:
             auto b = board.toFloat();
             g.setColour (juce::Colours::black.withAlpha (0.30f * a));   // sits proud of the hull
             g.fillRoundedRectangle (b.translated (0.0f, 3.0f).expanded (1.5f), 17.0f);
-            g.setGradientFill ({ juce::Colour (0xff12151f).withAlpha (0.92f * a), b.getTopLeft(),
-                                 juce::Colour (0xff0b0d15).withAlpha (0.92f * a), b.getBottomLeft(), false });
+            g.setGradientFill ({ juce::Colour (0xff181d31).withAlpha (0.95f * a), b.getTopLeft(),
+                                 juce::Colour (0xff0d101a).withAlpha (0.95f * a), b.getBottomLeft(), false });
             g.fillRoundedRectangle (b, 16.0f);
             {
                 juce::Graphics::ScopedSaveState ss (g);
                 juce::Path clip;
                 clip.addRoundedRectangle (b.getX(), b.getY(), b.getWidth(), b.getHeight(), 16.0f);
                 g.reduceClipRegion (clip);
+                {   // THE WORKBENCH LAMP (alive wave): light pools from the top rail
+                    // onto the bench — the board reads as a LIT surface, never a void
+                    // (one linear gradient; the radial ban stands)
+                    const float pool = juce::jmin (170.0f, b.getHeight() * 0.42f);
+                    g.setGradientFill ({ juce::Colours::white.withAlpha (0.065f * a), b.getTopLeft(),
+                                         juce::Colours::white.withAlpha (0.0f),
+                                         { b.getX(), b.getY() + pool }, false });
+                    g.fillRect (b.withHeight (pool));
+                }
                 // the sketchboard: a fine peg grid (quiet — it never fights the cards)
-                g.setColour (juce::Colours::white.withAlpha (0.020f * a));
+                g.setColour (juce::Colours::white.withAlpha (0.028f * a));
                 for (float py = b.getY() + 18.0f; py < b.getBottom(); py += 24.0f)
                     for (float px = b.getX() + 18.0f; px < b.getRight(); px += 24.0f)
                         g.fillEllipse (px - 1.0f, py - 1.0f, 2.0f, 2.0f);
@@ -4783,9 +5857,9 @@ public:
                 g.setColour (juce::Colours::white.withAlpha (0.055f * a));   // machined top lip
                 g.drawHorizontalLine ((int) b.getY() + 1, b.getX() + 14.0f, b.getRight() - 14.0f);
             }
-            g.setColour (juce::Colours::white.withAlpha (0.07f * a));
+            g.setColour (juce::Colours::white.withAlpha (0.09f * a));
             g.drawRoundedRectangle (b.reduced (0.5f), 16.0f, 1.0f);
-            g.setColour (theme::accent.withAlpha (0.10f * a));
+            g.setColour (theme::accent.withAlpha (0.12f * a));
             g.drawRoundedRectangle (b.expanded (0.5f), 17.0f, 1.0f);
         }
         // 3c) THE LIGHT WELL — the page IS the chat (frameless law): a soft column
@@ -4854,6 +5928,11 @@ public:
             g.fillRect (r.getRight() - m - L, r.getBottom() - m - t, L, t);
             g.fillRect (r.getRight() - m - t, r.getBottom() - m - L, t, L);
         }
+    }
+
+    void paintLiveRail (juce::Graphics& g)
+    {
+        const auto r = getLocalBounds().toFloat();
         // 6) THE SESSION RAIL — the left instrument: live vitals + the section
         //    ladder, balancing the FactoryPort on the right. Ambient, mono, tactical.
         if (mix > 0.55f)
@@ -4906,9 +5985,10 @@ public:
                     for (int i = 0; i < sections.size() && y < rail.getBottom() - 12.0f; ++i)
                     {
                         const bool cur = i == curSection;
+                        const auto sc2 = theme::sectionColour (sections[i]);   // one palette
                         juce::Rectangle<float> sr (inner.getX(), y, inner.getWidth(), 15.0f);
-                        if (cur) { g.setColour (theme::accent.withAlpha (0.16f * a)); g.fillRoundedRectangle (sr, 4.0f); }
-                        g.setColour ((cur ? theme::accent : theme::textDim).withAlpha ((cur ? 1.0f : 0.7f) * a));
+                        if (cur) { g.setColour (sc2.withAlpha (0.16f * a)); g.fillRoundedRectangle (sr, 4.0f); }
+                        g.setColour ((cur ? sc2 : sc2.withAlpha (0.55f)).withAlpha ((cur ? 1.0f : 0.7f) * a));
                         g.fillEllipse (sr.getX() + 2.0f, sr.getCentreY() - 2.0f, 4.0f, 4.0f);
                         g.setColour ((cur ? theme::text : theme::textDim).withAlpha (a));
                         g.setFont (theme::ui (9.5f, cur ? juce::Font::bold : juce::Font::plain));
@@ -5047,6 +6127,10 @@ public:
         return {};
     }
     juce::Point<float> masterJack() const { return masterJackPt; }
+    // THE ROOF GROMMET (GUTTER LAW, Chezy shots 2026-07-14): exterior patch
+    // cables end HERE, on the bezel metal — the room wires its own under-glass
+    // feed to the real jack. Wires never cross the hull face again.
+    juce::Point<float> masterGrommet() const { return masterGrommetPt; }
 
     //------------------------------- THE HANDS --------------------------------
     void mouseEnter (const juce::MouseEvent&) override { hover = true;  repaint(); }
@@ -5331,6 +6415,7 @@ public:
             laneRects.clear(); laneTrack.clear(); secSpans.clear();
             deskSlots.clear(); deskTrack.clear();
             masterJackPt = {};
+            masterGrommetPt = {};
             rasterFace = flipMix > 0.5f ? 1 : 0;
             auto content = glass.reduced (juce::jmax (18.0f, Rg * 0.62f), 0.0f);
             if (base != nullptr && ! base->tracks.empty())
@@ -5718,9 +6803,13 @@ public:
                 g.setColour (led2);
                 g.fillEllipse (hud.getX() + 1.3f, hud.getCentreY() - 1.7f, 3.4f, 3.4f);
                 if (playhead >= 0.0)
-                {
-                    const int barN  = (int) (playhead / 4.0) + 1;
-                    const int beatN = ((int) playhead) % 4 + 1;
+                {   // METER-TRUE HUD: the pod's clock rides the hearing song's world grid
+                    const int barN  = base != nullptr ? (int) base->barAtBeat (playhead) + 1
+                                                      : (int) (playhead / 4.0) + 1;
+                    const double u  = base != nullptr ? juce::jmax (0.05, base->beatUnitAt ((double) (barN - 1))) : 1.0;
+                    const double ib = base != nullptr ? playhead - base->barStartBeat ((double) (barN - 1))
+                                                      : playhead - (barN - 1) * 4.0;
+                    const int beatN = (int) (juce::jmax (0.0, ib) / u) + 1;
                     g.setColour ((playing ? theme::accent.brighter (0.2f) : theme::textDim)
                                      .withAlpha (0.95f));
                     g.setFont (theme::mono (8.5f));
@@ -5854,9 +6943,9 @@ private:
             secBandH = 13.0f;
             for (size_t s = 0; s < base->sections.size(); ++s)
             {
-                const double b0 = base->sections[s].startBar * 4.0;
+                const double b0 = base->barStartBeat (base->sections[s].startBar);
                 const double b1 = s + 1 < base->sections.size()
-                                    ? base->sections[s + 1].startBar * 4.0 : total;
+                                    ? base->barStartBeat (base->sections[s + 1].startBar) : total;
                 const float x0 = xOfBeat (b0), x1 = xOfBeat (b1);
                 g.setColour (theme::trackColour ((int) s + 2).withAlpha (0.55f));
                 g.fillRect (x0, content.getY(), juce::jmax (1.0f, x1 - x0 - 1.0f), 3.4f);
@@ -6023,6 +7112,20 @@ private:
             g.setColour (juce::Colours::white.withAlpha (0.12f));
             g.drawRoundedRectangle (meter.reduced (0.5f), 2.5f, 0.8f);
             masterJackPt = { meter.getCentreX(), meter.getY() - 2.5f };
+            // THE ROOF GROMMET: exterior loom lands on the bezel above the
+            // meter; this under-glass feed is the room's OWN interior run
+            // (drawn face-first — the HUD + optics mount over it)
+            {
+                const float gx = meter.getCentreX();
+                masterGrommetPt = { gx, (z.full.getY() + z.glass.getY()) * 0.5f };
+                g.setColour (theme::accent.withAlpha (0.28f));
+                g.drawLine (gx, z.glass.getY() + 1.0f, gx, meter.getY() - 1.5f, 1.4f);
+                g.setColour (juce::Colour (0xff262c38));                 // collar
+                g.fillEllipse (gx - 4.5f, masterGrommetPt.y - 4.5f, 9.0f, 9.0f);
+                g.setColour (theme::accent.withAlpha (0.55f));           // ring
+                g.drawEllipse (gx - 3.2f, masterGrommetPt.y - 3.2f, 6.4f, 6.4f, 1.1f);
+                g.drawLine (gx, masterGrommetPt.y + 3.0f, gx, z.glass.getY() + 1.5f, 1.2f);
+            }
         }
     }
 
@@ -6063,6 +7166,20 @@ private:
                                       60.0f, content.getHeight() - 8.0f)
             : desk.reduced (2.0f, 6.0f);
         auto masterBar = right.removeFromBottom (juce::jmin (24.0f, right.getHeight() * 0.36f));
+        // THE ROOF GROMMET (back face): the under-panel feed paints FIRST — the
+        // RET plates + MASTER BUS bar mount over it (real rack wiring; the
+        // exterior drop used to cross the whole face, Chezy shots 2026-07-14)
+        {
+            const float gbx = masterBar.getCentreX();
+            masterGrommetPt = { gbx, (z.full.getY() + z.glass.getY()) * 0.5f };
+            g.setColour (theme::accent.withAlpha (0.30f));
+            g.drawLine (gbx, z.glass.getY() + 1.0f, gbx, masterBar.getY() - 1.0f, 1.4f);
+            g.setColour (juce::Colour (0xff262c38));                 // collar
+            g.fillEllipse (gbx - 4.5f, masterGrommetPt.y - 4.5f, 9.0f, 9.0f);
+            g.setColour (theme::accent.withAlpha (0.55f));           // ring
+            g.drawEllipse (gbx - 3.2f, masterGrommetPt.y - 3.2f, 6.4f, 6.4f, 1.1f);
+            g.drawLine (gbx, masterGrommetPt.y + 3.0f, gbx, z.glass.getY() + 1.5f, 1.2f);
+        }
         std::vector<juce::Point<float>> busJack ((size_t) juce::jmax (0, nB));
         for (int bi = 0; bi < nB; ++bi)
         {
@@ -6224,6 +7341,7 @@ private:
     struct SecSpan { float x0 = 0, x1 = 0; double beat = 0; };
     std::vector<SecSpan> secSpans;                   // section buttons
     juce::Point<float> masterJackPt;                 // where master cables plug in
+    juce::Point<float> masterGrommetPt;              // bezel entry (GUTTER LAW landing)
     // THE FLIP WAVE state (Chezy 2026-07-11 live): faces, brace, listen, desk hands
     std::set<int> selectedSet, soloSet;              // multi beacons + solo rings
     bool flipped = false;                            // which face the user asked for
@@ -6248,7 +7366,26 @@ private:
 class BrowserRail : public juce::Component
 {
 public:
-    struct Item { juce::String section, id; juce::Colour col; };
+    struct Item { juce::String section, id; juce::Colour col; bool shelf = false; int n = -1; };
+
+    // THE FAMILY SHELVES: the instrument list groups by sound family (the same
+    // classifier the colours already use) — 87 voices read as shelves, not one
+    // alphabetical run. Names mirror theme::familyColour's key sets exactly.
+    static const char* familyName (const juce::String& raw)
+    {
+        const auto n = raw.toLowerCase();
+        auto any = [&n] (std::initializer_list<const char*> keys)
+        { for (auto* k : keys) if (n.contains (k)) return true; return false; };
+        if (any ({ "fx_", "reverb", "delay", "filter", "saturate", "widen", "pump", "trim", "brickwall", "compress" })) return "FX";
+        if (any ({ "marimba", "kalimba", "steel", "vibra", "log_", "bell", "glock", "harp", "chime" })) return "MALLETS + BELLS";
+        if (any ({ "kick", "snare", "hat", "clap", "perc", "808", "909", "drum", "shaker", "rim", "cymbal", "tom", "timpani", "clave" })) return "DRUMS";
+        if (any ({ "bass", "sub", "reese", "wobble" })) return "BASS";
+        if (any ({ "key", "organ", "rhodes", "clav", "piano", "accordion" })) return "KEYS";
+        if (any ({ "brass", "sax", "horn", "trumpet" })) return "BRASS + WINDS";
+        if (any ({ "lead", "saw", "pluck", "acid", "arp", "flute", "whistle" })) return "LEADS";
+        if (any ({ "pad", "string", "vox", "choir", "drone" })) return "PADS + VOICES";
+        return "WORLD + MORE";
+    }
     // display-only labels (crate cards speak "128 - Am"; groove cards speak their
     // FEEL); drag/assign/audition payloads stay the raw id
     std::map<juce::String, juce::String> crateLabels, grooveLabels;
@@ -6270,6 +7407,18 @@ public:
     std::function<void (const juce::String&)> onCrateScene;                      // crate -> launcher scene
     std::function<void (const Item&)> onPoint;   // single-click points — the host may audition
     int sel = -1;   // single-click = point at a sound (selection = agent context)
+    // THE VAULT BEHIND GLASS (rebrand 31 R3): the rail boots FOLDED — headers carry
+    // counts, a click opens a shelf, typing in the filter opens everything. The
+    // vault's capability never shrinks; only its furniture does.
+    juce::StringArray openShelves { "CRATE" };
+    bool shelfOpen (const juce::String& key) const
+    { return filter.getText().trim().isNotEmpty() || openShelves.contains (key); }
+    void toggleShelf (const juce::String& key)
+    {
+        if (openShelves.contains (key)) openShelves.removeString (key);
+        else                            openShelves.add (key);
+        refilter();
+    }
     const Item* selectedItem() const
     {
         return (sel >= 0 && sel < (int) items.size() && items[(size_t) sel].id.isNotEmpty())
@@ -6279,6 +7428,7 @@ public:
     BrowserRail()
     {
         filter.setTextToShowWhenEmpty ("filter sounds...", juce::Colours::white.withAlpha (0.35f));
+        filter.setTitle ("Filter sounds");        // THE SPOKEN DESK
         filter.setFont (theme::ui (12.0f));
         filter.onTextChange = [this] { refilter(); };
         addAndMakeVisible (filter);
@@ -6307,10 +7457,33 @@ public:
             for (auto& s_ : list)
                 if (q.isEmpty() || s_.containsIgnoreCase (q)) hits.add (s_);
             if (hits.isEmpty()) return;
-            items.push_back ({ sec, "", c });                   // header row
-            for (auto& s_ : hits) items.push_back ({ sec, s_, c });
+            items.push_back ({ sec, "", c, false, hits.size() }); // header carries its true count
+            if (shelfOpen (sec))
+                for (auto& s_ : hits) items.push_back ({ sec, s_, c });
         };
-        addAll ("INSTRUMENTS", srcInstruments, theme::accent);
+        {   // INSTRUMENTS get THE FAMILY SHELVES instead of one flat run
+            juce::StringArray hits;
+            for (auto& s_ : srcInstruments)
+                if (q.isEmpty() || s_.containsIgnoreCase (q)) hits.add (s_);
+            if (! hits.isEmpty())
+            {
+                items.push_back ({ "INSTRUMENTS", "", theme::accent, false, hits.size() });
+                static const char* shelves[] = { "DRUMS", "BASS", "KEYS", "LEADS",
+                                                 "PADS + VOICES", "MALLETS + BELLS",
+                                                 "BRASS + WINDS", "WORLD + MORE", "FX" };
+                for (auto* fam : shelves)
+                {
+                    juce::StringArray in;
+                    for (auto& s_ : hits)
+                        if (juce::String (familyName (s_)) == fam) in.add (s_);
+                    if (in.isEmpty()) continue;
+                    items.push_back ({ fam, "", theme::familyColour (in[0]), true, in.size() });
+                    if (shelfOpen (fam))
+                        for (auto& s_ : in)
+                            items.push_back ({ "INSTRUMENTS", s_, theme::accent });
+                }
+            }
+        }
         addAll ("GROOVES", srcGrooves, theme::agent);           // pointable FEELS
         addAll ("KITS", srcKits, theme::good);
         addAll ("VST3", srcVsts, theme::warn);
@@ -6359,46 +7532,83 @@ private:
             {
                 if (it.id.isEmpty())
                 {
-                    if (i > 0) { g.setColour (theme::line.withAlpha (0.7f)); g.drawHorizontalLine (y + 2, 8.0f, (float) getWidth() - 8.0f); }
                     int count = 0;                             // items until the next header
                     for (size_t j = (size_t) i + 1; j < owner->items.size()
                                                     && owner->items[j].id.isNotEmpty(); ++j) ++count;
-                    g.setColour (it.col.withAlpha (0.9f));     // section identity tick
-                    g.fillRoundedRectangle (8.0f, (float) y + 7.0f, 3.0f, 8.0f, 1.5f);
+                    if (it.shelf)
+                    {   // FAMILY SHELF: a quiet engraved rail inside the section —
+                        // family colour tick, small caps, no divider (shelves stack)
+                        {   // the caret IS the identity tick: oriented by fold state
+                            const bool open = owner->shelfOpen (it.section);
+                            juce::Path tri; const float cx = 15.0f, cy = (float) y + 11.5f;
+                            if (open) tri.addTriangle (cx - 3.0f, cy - 1.5f, cx + 3.0f, cy - 1.5f, cx, cy + 2.5f);
+                            else      tri.addTriangle (cx - 1.5f, cy - 3.0f, cx - 1.5f, cy + 3.0f, cx + 2.5f, cy);
+                            g.setColour (it.col.withAlpha (0.75f)); g.fillPath (tri);
+                        }
+                        g.setColour (it.col.withAlpha (0.55f).brighter (0.2f));
+                        g.setFont (theme::caps (7.5f));
+                        g.drawText (it.section, 21, y + 6, getWidth() - 56, 11,
+                                    juce::Justification::centredLeft);
+                        g.setColour (theme::textMute.withAlpha (0.5f));
+                        g.setFont (theme::mono (7.5f));
+                        g.drawText (juce::String (it.n >= 0 ? it.n : count), getWidth() - 34, y + 6, 26, 11,
+                                    juce::Justification::centredRight);
+                        y += rowH; ++i;
+                        continue;
+                    }
+                    if (i > 0) { g.setColour (theme::line.withAlpha (0.7f)); g.drawHorizontalLine (y + 2, 8.0f, (float) getWidth() - 8.0f); }
+                    int total = count;                         // shelves count their members
+                    for (size_t j = (size_t) i + 1; j < owner->items.size(); ++j)
+                    {
+                        if (owner->items[j].id.isNotEmpty()) continue;
+                        if (! owner->items[j].shelf) break;    // next real section
+                        for (size_t k = j + 1; k < owner->items.size()
+                                               && owner->items[k].id.isNotEmpty(); ++k) ++total;
+                    }
+                    {   // section caret: same grammar as the shelves
+                        const bool open = owner->shelfOpen (it.section);
+                        juce::Path tri; const float cx = 9.5f, cy = (float) y + 11.0f;
+                        if (open) tri.addTriangle (cx - 3.0f, cy - 1.5f, cx + 3.0f, cy - 1.5f, cx, cy + 2.5f);
+                        else      tri.addTriangle (cx - 1.5f, cy - 3.0f, cx - 1.5f, cy + 3.0f, cx + 2.5f, cy);
+                        g.setColour (it.col.withAlpha (0.9f)); g.fillPath (tri);
+                    }
                     g.setColour (theme::textMute.brighter (0.1f));
                     g.setFont (theme::caps (8.5f));
                     g.drawText (it.section, 16, y + 5, getWidth() - 50, 12, juce::Justification::centredLeft);
                     g.setColour (theme::textMute.withAlpha (0.75f));
                     g.setFont (theme::mono (8.5f));
-                    g.drawText (juce::String (count), getWidth() - 34, y + 5, 26, 12,
+                    g.drawText (juce::String (it.n >= 0 ? it.n : total), getWidth() - 34, y + 5, 26, 12,
                                 juce::Justification::centredRight);
                 }
                 else
                 {
+                    // THE RAIL IS A RACK (rail wave 2026-07-14): every sound row speaks
+                    // the lane-header grammar — colour spine + family wash fading right +
+                    // name. The library reads as the same fabric as the canvas.
                     const auto dotCol = it.section == "INSTRUMENTS" ? theme::familyColour (it.id) : it.col;
-                    if (i == owner->sel)
+                    const bool sel = i == owner->sel, hov = i == hover;
                     {
-                        g.setColour (dotCol.withAlpha (0.16f));
-                        g.fillRoundedRectangle (4.0f, (float) y, (float) getWidth() - 8.0f, (float) rowH, 5.0f);
-                        g.setColour (dotCol.withAlpha (0.9f));
-                        g.fillRoundedRectangle (4.0f, (float) y + 3.0f, 2.5f, (float) rowH - 6.0f, 1.25f);
-                        g.setColour (dotCol.withAlpha (0.45f));
-                        g.drawRoundedRectangle (4.5f, y + 0.5f, (float) getWidth() - 9.0f, (float) rowH - 1.0f, 5.0f, 1.0f);
+                        juce::Rectangle<float> row (4.0f, (float) y, (float) getWidth() - 8.0f, (float) rowH);
+                        g.setGradientFill ({ dotCol.withAlpha (sel ? 0.19f : hov ? 0.13f : 0.085f),
+                                             row.getTopLeft(),
+                                             dotCol.withAlpha (sel ? 0.035f : 0.014f),
+                                             row.getTopRight(), false });
+                        g.fillRoundedRectangle (row, 5.0f);
+                        if (sel)
+                        {
+                            g.setColour (dotCol.withAlpha (0.45f));
+                            g.drawRoundedRectangle (row.reduced (0.5f), 5.0f, 1.0f);
+                        }
                     }
-                    else if (i == hover)
-                    {
-                        g.setColour (juce::Colours::white.withAlpha (0.05f));
-                        g.fillRoundedRectangle (4.0f, (float) y, (float) getWidth() - 8.0f, (float) rowH, 5.0f);
-                    }
-                    g.setColour (dotCol.withAlpha (i == owner->sel || i == hover ? 0.4f : 0.22f));
-                    g.fillEllipse (9.5f, (float) y + 6.5f, 8.0f, 8.0f);
-                    g.setColour (dotCol.brighter (i == hover ? 0.2f : 0.0f));
-                    g.fillEllipse (11.5f, (float) y + 8.5f, 4.0f, 4.0f);
-                    g.setColour (i == owner->sel ? theme::text
-                                 : theme::textDim.brighter (i == hover ? 0.25f : 0.12f));
-                    g.setFont (theme::ui (11.5f, i == owner->sel ? juce::Font::bold : juce::Font::plain));
-                    g.drawText (owner->displayOf (it), 25, y, getWidth() - 29, rowH,
-                                juce::Justification::centredLeft);
+                    g.setColour (dotCol.brighter (hov ? 0.25f : 0.0f)
+                                       .withAlpha (sel ? 0.95f : hov ? 0.80f : 0.55f));
+                    g.fillRoundedRectangle (6.0f, (float) y + 3.5f, 2.5f, (float) rowH - 7.0f, 1.25f);
+                    g.setColour (sel ? theme::text
+                                 : theme::textDim.brighter (hov ? 0.25f : 0.12f));
+                    g.setFont (theme::ui (11.5f, sel ? juce::Font::bold : juce::Font::plain));
+                    g.drawText (owner->displayOf (it),
+                                it.section == "INSTRUMENTS" ? 20 : 16,    // shelf members nest
+                                y, getWidth() - 24, rowH, juce::Justification::centredLeft);
                 }
                 y += rowH; ++i;
             }
@@ -6412,9 +7622,12 @@ private:
         void mouseDown (const juce::MouseEvent& e) override    // click = point at it
         {
             const int idx = (e.y - 4) / rowH;
-            if (idx < 0 || idx >= (int) owner->items.size()
-                || owner->items[(size_t) idx].id.isEmpty())
+            if (idx < 0 || idx >= (int) owner->items.size()) return;
+            if (owner->items[(size_t) idx].id.isEmpty())
+            {   // header row answers the click: fold/unfold the shelf
+                owner->toggleShelf (owner->items[(size_t) idx].section);
                 return;
+            }
             if (e.mods.isPopupMenu())                          // G6: every row answers
             {
                 owner->sel = idx;                              // the menu acts on what you see
@@ -6435,7 +7648,7 @@ private:
                 }
                 else if (sec == "GROOVES")
                 {
-                    m.addItem (juce::PopupMenu::Item ("pointed at it - the agent sees this feel")
+                    m.addItem (juce::PopupMenu::Item ("pointed at it - the producer sees this feel")
                                    .setEnabled (false));
                     m.addItem (juce::PopupMenu::Item ("drag onto a lane to APPLY the groove")
                                    .setEnabled (false));
@@ -6512,7 +7725,21 @@ public:
         if (hot || mixTick % 4 == 0) repaint();
     }
 
-    static constexpr int stripW = 76;
+    // THE DESK FILLS THE ROOM (2026-07-17): strip width is the desk's to spend.
+    // Few strips on a wide desk grow toward true console width (cap 100px) so
+    // 11 tracks at 1920 read as a FULL BOARD, not strips beside a dead void;
+    // a crowded desk keeps the 76px classic and scrolls exactly as before.
+    // paintStrip lays out proportionally (stripZones carves the rect), so the
+    // only law here is the width itself.
+    int stripW = 76;
+    void refreshStripW()
+    {
+        const int n  = song != nullptr ? (int) song->tracks.size() : 0;
+        const int units = juce::jmax (1, n + numBuses() + 1);          // tracks + buses + MASTER
+        const int fill  = (getWidth() - 22 - 6 * units) / units;      // 8|10 margins + 2px seams
+        stripW = juce::jlimit (76, 100, fill);
+    }
+    void resized() override { refreshStripW(); }      // hit-tests never see a stale width
     int stripScroll = 0;
     bool sbDragging = false;                     // the thumb is in the hand
     float sbGrabDx = 0;                           // px: the desk scrolls (wheel); buses+MASTER stay pinned
@@ -6523,6 +7750,7 @@ public:
     {
         theme::backdrop (g, getLocalBounds());
         if (song == nullptr || lanes == nullptr) return;
+        refreshStripW();                              // the desk re-measures its room every paint
         const int n = juce::jmin ((int) song->tracks.size(), lanes->size());
         const int nB = numBuses();
         if ((int) peakDb.size() != n + nB + 1)
@@ -6564,9 +7792,9 @@ public:
         {
             const auto tr = sbThumb();
             g.setColour (theme::line.withAlpha (0.45f));
-            g.fillRoundedRectangle (8.0f, tr.getY(), (float) rEdge - 16.0f, 3.0f, 1.5f);
+            g.fillRoundedRectangle (8.0f, tr.getCentreY() - 1.5f, (float) rEdge - 16.0f, 3.0f, 1.5f);
             g.setColour (theme::textDim.withAlpha (sbDragging ? 1.0f : 0.8f));
-            g.fillRoundedRectangle (sbDragging ? tr.expanded (0.0f, 1.0f) : tr, 1.5f);
+            g.fillRoundedRectangle (sbDragging ? tr.expanded (0.0f, 1.5f) : tr, 3.0f);
         }
         if (nB > 0)                                    // RETURNS: the send buses join the desk
         {
@@ -6589,6 +7817,23 @@ public:
         }
         g.setColour (theme::line);
         g.drawVerticalLine (masterRect().getX() - 8, 10.0f, (float) stripH());
+        {   // the BUS BIRTH strip: a quiet vertical invitation before the returns
+            const auto br = busAddRect();
+            g.setColour (theme::panel.withAlpha (0.55f));
+            g.fillRoundedRectangle (br.toFloat(), 5.0f);
+            g.setColour (theme::warn.withAlpha (0.35f));
+            g.drawRoundedRectangle (br.toFloat().reduced (0.5f), 5.0f, 1.0f);
+            g.setColour (theme::warn.withAlpha (0.8f));
+            g.setFont (theme::caps (10.0f));
+            g.drawText ("+", br.withHeight (22), juce::Justification::centred);
+            juce::GlyphArrangement ga;
+            ga.addLineOfText (theme::caps (6.5f), "BUS", 0.0f, 0.0f);
+            juce::Path tp;
+            ga.createPath (tp);
+            tp.applyTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi)
+                               .translated ((float) br.getCentreX() + 3.0f, (float) br.getCentreY() + 12.0f));
+            g.fillPath (tp);
+        }
         const float mlv = masterLevel ? masterLevel() : -100.0f;
         paintStrip (g, masterRect(), "MASTER", theme::accent.interpolatedWith (theme::text, 0.55f),
                     song->masterGainDb, 0.0, mlv, true, holdPeak (n + nB, mlv),
@@ -6601,10 +7846,19 @@ public:
                 g.drawHorizontalLine (fy - 3, 8.0f, (float) getWidth() - 8.0f);
                 const float ph = juce::jmin (150.0f, (float) (getHeight() - fy) - 4.0f);
                 auto pool = [&g, fy, ph] (juce::Rectangle<int> sr, juce::Colour c, float amt)
-                {
-                    g.setGradientFill ({ c.withAlpha (amt), (float) sr.getCentreX(), (float) fy,
-                                         c.withAlpha (0.0f), (float) sr.getCentreX(), (float) fy + ph, false });
-                    g.fillRect ((float) sr.getX() + 2.0f, (float) fy, (float) sr.getWidth() - 4.0f, ph);
+                {   // a light CONE, not a slab: the spill narrows as it falls, so
+                    // adjacent channels read as stage lights instead of muddy tiles
+                    const float x0 = (float) sr.getX() + 2.0f, x1 = (float) sr.getRight() - 2.0f;
+                    const float cx = (x0 + x1) * 0.5f, wBot = (x1 - x0) * 0.16f;
+                    juce::Path cone;
+                    cone.startNewSubPath (x0, (float) fy);
+                    cone.lineTo (x1, (float) fy);
+                    cone.lineTo (cx + wBot, (float) fy + ph);
+                    cone.lineTo (cx - wBot, (float) fy + ph);
+                    cone.closeSubPath();
+                    g.setGradientFill ({ c.withAlpha (amt), cx, (float) fy,
+                                         c.withAlpha (0.0f), cx, (float) fy + ph, false });
+                    g.fillPath (cone);
                 };
                 g.saveState();
                 g.reduceClipRegion (0, 0, rEdge, getHeight());
@@ -6633,7 +7887,7 @@ public:
             g.setColour (theme::agent.withAlpha (0.9f));
             g.drawRoundedRectangle (masterRect().toFloat().expanded (1.5f), 8.0f, 1.6f);
             g.setFont (theme::caps (8.0f));
-            g.drawText ("AGENT CONTEXT", masterRect().withY (masterRect().getBottom() + 3).withHeight (12),
+            g.drawText ("PRODUCER CONTEXT", masterRect().withY (masterRect().getBottom() + 3).withHeight (12),
                         juce::Justification::centred);
         }
     }
@@ -6641,21 +7895,43 @@ public:
     int mixTick = 0;                // splits the desk into 20 Hz (hot) / 5 Hz (idle) cadences
     std::vector<int> peakAge;
 
-    int stripH() const                            { return juce::jmin (getHeight() - 16, 680); }
+    int stripH() const                            // THE FADERS GET THEIR TRAVEL:
+    {   // strips fill the room (the 680 cap left a 200px void under the desk
+        // on tall windows; the fader run is the carve remainder, so every
+        // pixel of height is TRAVEL). 1040 keeps 4K walls from ribbon strips.
+        // An overflowing desk RESERVES a real scrollbar row — the old 3px thumb
+        // squeezed into the window's last pixels read as decoration, not
+        // hardware (Chezy 2026-07-17: "scrollbar aint work, only mouse scroll").
+        return juce::jmin (getHeight() - 16 - (maxStripScroll() > 0 ? 12 : 0), 1040);
+    }
     juce::Rectangle<int> stripRect (int i) const  { return { 8 + i * (stripW + 6) - stripScroll, 8, stripW, stripH() }; }
-    juce::Rectangle<int> masterRect() const       { return { getWidth() - stripW - 10, 8, stripW, stripH() }; }
+    // x-only geometry (stripH depends on maxStripScroll — rect getters calling
+    // stripH from inside the scroll math would recurse; X never needs height)
+    int masterX() const                           { return getWidth() - stripW - 10; }
+    juce::Rectangle<int> masterRect() const       { return { masterX(), 8, stripW, stripH() }; }
     int numBuses() const                          { return song != nullptr ? (int) song->buses.size() : 0; }
+    int busX (int i) const                        { return masterX() - 2 - (numBuses() - i) * (stripW + 6); }
     juce::Rectangle<int> busRect (int i) const    // returns sit right-aligned before MASTER
     {
-        return { masterRect().getX() - 2 - (numBuses() - i) * (stripW + 6), 8, stripW, stripH() };
+        return { busX (i), 8, stripW, stripH() };
     }
+    // WAVE 4 (2026-07-24): the desk could EDIT send levels per existing bus but
+    // had zero bus-CREATION sites — only the agent could mint a return. The
+    // slim ghost strip before the returns is the birth affordance.
+    // busAddX is X-ONLY by the law two comments up: the first cut routed
+    // stripsRightEdge through busAddRect().stripH() and recursed to a SEGV
+    // the mix-face camera caught on the very first shoot.
+    int busAddX() const
+    { return (numBuses() > 0 ? busX (0) : masterX()) - 4 - 24; }
+    juce::Rectangle<int> busAddRect() const        // paint/hit only — never scroll math
+    { return { busAddX(), 8, 20, stripH() }; }
     int maxVisibleStrips() const
     {
-        const int rightEdge = numBuses() > 0 ? busRect (0).getX() : masterRect().getX();
+        const int rightEdge = busAddX();
         return juce::jmax (0, (rightEdge - 18) / (stripW + 6));
     }
     int stripsRightEdge() const                    // where track strips end and returns begin
-    { return (numBuses() > 0 ? busRect (0).getX() : masterRect().getX()) - 4; }
+    { return busAddX() - 4; }
     int maxStripScroll() const
     {
         const int nT = song != nullptr ? (int) song->tracks.size() : 0;
@@ -6666,8 +7942,8 @@ public:
         const float tw = (float) stripsRightEdge() - 16.0f;
         const float th = (float) juce::jmax (24, (int) (tw * tw / (tw + (float) maxStripScroll())));
         const float tx = 8.0f + (tw - th) * (float) stripScroll / (float) juce::jmax (1, maxStripScroll());
-        return { tx, (float) (8 + stripH()) + 3.0f, th, 3.0f };
-    }
+        return { tx, (float) (8 + stripH()) + 4.0f, th, 6.0f };   // real hardware in its
+    }                                                             // reserved row (stripH)
     void setScrollFromThumbX (float x)               // thumb x -> stripScroll (drag + jump)
     {
         const float tw = (float) stripsRightEdge() - 16.0f;
@@ -7038,6 +8314,7 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
+        if (busAddRect().contains (e.getPosition())) { busAddMenu(); return; }
         // G3 (the totality audit's one BUG): a right-click used to fall into
         // dragStrip and JUMP the fader under the cursor. The right button now
         // answers with the strip's own menu — never a value change.
@@ -7046,7 +8323,7 @@ public:
         {   // the scrollbar is HARDWARE: grab the thumb, or jump-center to the click
             const auto tr = sbThumb();
             const juce::Rectangle<float> band (8.0f, tr.getY() - 5.0f,
-                                               (float) stripsRightEdge() - 16.0f, 13.0f);
+                                               (float) stripsRightEdge() - 16.0f, 16.0f);
             if (band.contains (e.position))
             {
                 sbDragging = true;
@@ -7165,7 +8442,7 @@ public:
             m.addSectionHeader ("MASTER");
             m.addItem ("Master rack + verdict", [this] { if (onSelectStrip) onSelectStrip (-1); });
             m.addItem ("Master to unity (0 dB)", [this] { if (onMasterGain) onMasterGain (0.0); repaint(); });
-            m.addItem ("Point the agent at the master", true, masterPointed, [this]
+            m.addItem ("Point the producer at the master", true, masterPointed, [this]
             {
                 masterPointed = ! masterPointed;
                 if (onPointedChange) onPointedChange();
@@ -7182,6 +8459,25 @@ public:
         sendDragBus = -1;
     }
     std::function<void()> onSendBegin, onSendCommit;        // host: snapshot / save+rebuild
+    std::function<void (const juce::String&)> onBusAdd;     // host: mint a return bus (flavor word)
+
+    void busAddMenu()
+    {
+        juce::PopupMenu m;
+        m.addSectionHeader ("NEW RETURN BUS");
+        for (auto* f : { "verb (hall reverb)", "space (big wash)",
+                         "delay (dub echoes)", "drive (saturation)", "empty" })
+        {
+            const juce::String label (f);
+            m.addItem (label, [this, label]
+            {
+                if (onBusAdd)
+                    onBusAdd (label.upToFirstOccurrenceOf (" ", false, false));
+            });
+        }
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (
+            localAreaToGlobal (busAddRect())));
+    }
     int sendDragBus = -1;
     bool sendDragDirty = false;
     void mouseDoubleClick (const juce::MouseEvent& e) override
@@ -7453,10 +8749,13 @@ public:
     std::vector<CapEvent> capLog;
     double capStart = 0;
 
+    // METER-TRUE: capture stamps land on the world grid's bars (hooks from host)
+    std::function<double (double)> barBeat, beatBar;
     double quantBeat() const
     {
         const double b = getPlayheadBeat != nullptr ? getPlayheadBeat() : 0.0;
-        return std::ceil (b / 4.0 - 1e-6) * 4.0;         // engine launches on the next bar
+        const double bar = std::ceil ((beatBar ? beatBar (b) : b / 4.0) - 1e-6);
+        return barBeat ? barBeat (bar) : bar * 4.0;       // engine launches on the next bar
     }
     void logLaunch (int row, int col, bool on)
     {
@@ -7530,13 +8829,34 @@ public:
         }
         if (changed)
         {
-            song->lengthBars = juce::jmax (song->lengthBars, std::ceil (capEnd / 4.0));
+            song->lengthBars = juce::jmax (song->lengthBars, std::ceil (song->barAtBeat (capEnd)));
             if (onEdited != nullptr) onEdited();
         }
         capLog.clear();
     }
 
-    static constexpr int rowH = 42, headH = 34, nameW = 138, cellW = 118, gap = 5;
+    static constexpr int headH = 34, nameW = 138, gap = 5;
+    // THE GRID FILLS THE STAGE (live-face wave): cells stretch into the free width
+    // AND rows into the free height (up to caps) — few scenes/tracks never leave
+    // a dead void at the right or below
+    int cellW = 118, rowH = 42;
+    // one formula, two callers: the grid's own layout AND the pad row above it
+    // (THE PADS SIT ON THEIR COLUMNS) — duplicated math drifts, so it lives here
+    static int cellWFor (int width, int nScenes)
+    {
+        const int n = juce::jmax (1, nScenes);
+        return juce::jlimit (118, 208, (width - nameW - gap * (n + 1) - 14) / n);
+    }
+    void updateCellW()
+    {
+        const int n = juce::jmax (1, numScenes());
+        cellW = cellWFor (getWidth(), n);
+        const int rows = song != nullptr ? juce::jmax (1, (int) song->tracks.size()) : 1;
+        // THE ROWS FILL THE ROOM (the mixer's travel law, on the launcher):
+        // the 62 cap stranded a void under sparse grids on tall windows
+        rowH = juce::jlimit (42, 84, (getHeight() - headH - gap * (rows + 1) - 8) / rows);
+    }
+    void resized() override { updateCellW(); clampScroll(); }
     int scrollX = 0, scrollY = 0;                  // frozen panes: names+headers pinned, cells slide
     juce::Point<int> dndPos;                       // external drag hover (edge auto-scroll)
     bool dndHover = false;
@@ -7612,6 +8932,7 @@ public:
     {
         theme::backdrop (g, getLocalBounds());
         if (song == nullptr) return;
+        updateCellW();                                   // scenes can change without a resize
         const int cols = numScenes();
         const int rows = (int) song->tracks.size();
         const int gridBottom = headH + gap + rows * (rowH + gap);
@@ -7624,8 +8945,11 @@ public:
             if (well.getRight() <= nameW + 2 || well.getX() >= getWidth() || well.getHeight() <= 0) continue;
             juce::Graphics::ScopedSaveState wclip (g);
             g.reduceClipRegion (nameW + 2, headH, getWidth() - nameW - 2, getHeight() - headH);
-            g.setColour (juce::Colours::white.withAlpha (c % 2 == 0 ? 0.012f : 0.026f));
-            g.fillRoundedRectangle (well.toFloat(), 6.0f);
+            g.setColour (sceneColour (c).withAlpha (0.045f));   // the scene's identity
+            g.fillRoundedRectangle (well.toFloat(), 6.0f);      // flows down its column
+            g.setGradientFill ({ sceneColour (c).withAlpha (0.06f), 0.0f, (float) headH,
+                                 sceneColour (c).withAlpha (0.0f), 0.0f, (float) headH + 60.0f, false });
+            g.fillRoundedRectangle (well.toFloat().withHeight (60.0f), 6.0f);
         }
         // scene header chips: number badge + name + identity underline
         for (int c = 0; c < cols; ++c)
@@ -7648,6 +8972,29 @@ public:
             g.setFont (theme::ui (11.5f, juce::Font::bold));
             auto nm = c < song->sceneNames.size() ? song->sceneNames[c] : "Scene " + juce::String (c + 1);
             g.drawText (nm, r.reduced (26, 0).withTrimmedRight (2), juce::Justification::centredLeft);
+            {   // THE SCENE KNOWS ITS WEIGHT: one pip per loaded clip, right-
+                // aligned — a full column reads heavier than a sketch before
+                // anything fires (capped at 8 pips + count for dense scenes)
+                int loaded = 0;
+                for (auto& t : song->tracks)
+                    if (c < (int) t.slots.size() && t.slots[(size_t) c].present) ++loaded;
+                if (loaded > 0)
+                {
+                    const int pips = juce::jmin (loaded, 8);
+                    float px = (float) r.getRight() - 9.0f;
+                    if (loaded > 8)
+                    {
+                        g.setColour (sc.withAlpha (0.8f));
+                        g.setFont (theme::mono (7.5f, juce::Font::bold));
+                        g.drawText (juce::String (loaded), (int) px - 14, r.getY() + 2, 16, 10,
+                                    juce::Justification::centredRight);
+                        px -= 18.0f;
+                    }
+                    g.setColour (sc.withAlpha (0.75f));
+                    for (int p2 = 0; p2 < pips; ++p2, px -= 6.0f)
+                        g.fillEllipse (px, (float) r.getY() + 5.0f, 3.2f, 3.2f);
+                }
+            }
         }
         // corner: stop-all + jam-capture chips
         {
@@ -7820,6 +9167,7 @@ public:
                     {
                         int lo = 127, hi = 0;
                         for (auto& n : sl.notes) { lo = juce::jmin (lo, n.pitch); hi = juce::jmax (hi, n.pitch); }
+                        TrackLane::pitchWindow (lo, hi);   // same floor: dots center, not sink
                         const float span = (float) juce::jmax (1, hi - lo);
                         int drawn = 0;
                         for (auto& n : sl.notes)
@@ -7978,7 +9326,7 @@ public:
                                         });
                         m.addSubMenu ("Chance it fires", cm);
                         m.addSeparator();
-                        m.addItem ("Point the agent here", true,
+                        m.addItem ("Point the producer here", true,
                                    selRow == rI && selCol == c,
                                    [this, rI, c]
                                    {
@@ -8156,7 +9504,7 @@ public:
         x += 10.0f;
         g.setColour (theme::textMute);
         g.setFont (theme::ui (9.5f, juce::Font::bold));
-        g.drawText (dropHover ? "PIN AS CONTEXT" : "AGENT SEES", (int) x, 0, 84, getHeight(),
+        g.drawText (dropHover ? "PIN AS CONTEXT" : "PRODUCER SEES", (int) x, 0, 84, getHeight(),
                     juce::Justification::centredLeft);
         x += 88.0f;
         if (bits.isEmpty())
@@ -8247,7 +9595,7 @@ public:
         rects.clear();
         g.setColour (theme::textMute);
         g.setFont (theme::ui (9.5f, juce::Font::bold));
-        g.drawText ("PROPOSAL", 4, 0, 58, getHeight(), juce::Justification::centredLeft);
+        g.drawText ("TAKE", 4, 0, 58, getHeight(), juce::Justification::centredLeft);
         float x = 64.0f;
         for (int i = 0; i < items.size(); ++i)
         {
@@ -8420,21 +9768,263 @@ struct ControllerProfiles
     }
 };
 
+//==============================================================================
+// THE SONG VAULT (Chezy 2026-07-16: "NEED SEARCH+ALPHABETICAL, TIME OF CREATION"):
+// the raw ComboBox popup listed every project in filesystem order — unfindable
+// past a few dozen. songBox stays the DISPLAY (its setText/getText plumbing is
+// everywhere); only its popup is replaced, by an in-window overlay: type-to-
+// filter + A-Z / NEW sort + creation ages. In-window on purpose — the snapshot
+// cameras can see it and there is no nested modal loop (the peerless trap).
+struct SongPickBox : public juce::ComboBox
+{
+    std::function<void()> onPick;
+    void showPopup() override
+    {
+        // ComboBox latches menuActive=true before calling this; a real menu
+        // resets it on dismiss — the vault must too, or the SECOND click is
+        // swallowed forever (Chezy 02:17: "it doesn't open after").
+        hidePopup();
+        if (onPick) onPick();
+    }
+};
+
+// THE PROMPT GROWS (Chezy 2026-07-16: "taller as new lines are added, auto
+// new line at the border, max 3 lines"): the composer word-wraps and rises
+// with its content. Enter still SENDS (the Claude Code contract) — this
+// subclass gives Shift+Enter the manual line break.
+struct GrowPromptBox : public juce::TextEditor
+{
+    bool keyPressed (const juce::KeyPress& k) override
+    {
+        if (k.getKeyCode() == juce::KeyPress::returnKey
+            && k.getModifiers().isShiftDown())
+        {
+            insertTextAtCaret ("\n");
+            return true;
+        }
+        return juce::TextEditor::keyPressed (k);
+    }
+};
+
+// machine sidecars living in songs/ with a .json suit: retune per-note WHY
+// reports (<name>.report.json) and reference decks (<name>.refs.json). The
+// corpus resave court (2026-07-24) proved a .report is the one songs/*.json
+// the engine cannot parse — a picker that lists it hands the user a corpse.
+static bool isMachineSidecarJson (const juce::File& f)
+{
+    const auto n = f.getFileName();
+    return n.endsWith (".report.json") || n.endsWith (".refs.json");
+}
+
+struct SongPicker : public juce::Component, private juce::ListBoxModel
+{
+    struct Row { juce::String name; juce::int64 born = 0; };
+    std::vector<Row> all;
+    std::vector<int> vis;
+    juce::TextEditor filter;
+    juce::TextButton azBtn { "A-Z" }, newBtn { "NEW" };
+    juce::ListBox list;
+    bool byTime = true;                     // fresh work first is the producer default
+    juce::String current;
+    juce::Rectangle<int> anchor, panel;
+    std::function<void (const juce::String&)> onChoose;
+    std::function<void()> onDismiss;
+
+    explicit SongPicker (const juce::String& cur) : current (cur)
+    {
+        setWantsKeyboardFocus (true);
+        auto dir = sotadaw::sotadawRoot().getChildFile ("songs");
+        for (auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.json"))
+            if (! f.getFileName().startsWith ("_prop_") && ! isMachineSidecarJson (f))
+            {
+                auto t = f.getCreationTime().toMilliseconds();
+                if (t <= 0) t = f.getLastModificationTime().toMilliseconds();
+                all.push_back ({ f.getFileNameWithoutExtension(), t });
+            }
+        filter.setTextToShowWhenEmpty ("find a song...", theme::text.withAlpha (0.45f));
+        filter.setTitle ("Find a song");          // THE SPOKEN DESK
+        filter.setFont (juce::Font (13.5f));
+        filter.onTextChange = [this] { refilter(); };
+        filter.onReturnKey  = [this] { chooseSelected(); };
+        filter.onEscapeKey  = [this] { if (onDismiss) onDismiss(); };
+        addAndMakeVisible (filter);
+        addAndMakeVisible (azBtn);
+        addAndMakeVisible (newBtn);
+        azBtn.onClick  = [this] { byTime = false; refilter(); };
+        newBtn.onClick = [this] { byTime = true;  refilter(); };
+        list.setModel (this);
+        list.setRowHeight (24);
+        list.setColour (juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
+        addAndMakeVisible (list);
+        refilter();
+    }
+
+    void setAnchor (juce::Rectangle<int> a) { anchor = a; resized(); }
+
+    void refilter()
+    {
+        const auto q = filter.getText().trim().toLowerCase();
+        std::vector<int> order ((size_t) all.size());
+        for (int i = 0; i < (int) all.size(); ++i) order[(size_t) i] = i;
+        std::sort (order.begin(), order.end(), [this] (int a, int b)
+        {
+            // scratch songs (_rig/_scratch/.take-safety conventions) SINK below
+            // real work in both sorts — reachable by typing, never in the way.
+            // They were the junk that made the raw popup unusable to begin with.
+            const bool sa = all[(size_t) a].name.startsWith ("_") || all[(size_t) a].name.startsWith (".");
+            const bool sb = all[(size_t) b].name.startsWith ("_") || all[(size_t) b].name.startsWith (".");
+            if (sa != sb) return sb;
+            if (byTime && all[(size_t) a].born != all[(size_t) b].born)
+                return all[(size_t) a].born > all[(size_t) b].born;
+            return all[(size_t) a].name.compareIgnoreCase (all[(size_t) b].name) < 0;
+        });
+        vis.clear();
+        for (int i : order)
+            if (q.isEmpty() || all[(size_t) i].name.toLowerCase().contains (q))
+                vis.push_back (i);
+        list.updateContent();
+        int sel = 0;
+        for (int r = 0; r < (int) vis.size(); ++r)
+            if (all[(size_t) vis[(size_t) r]].name == current) { sel = r; break; }
+        if (q.isNotEmpty()) sel = 0;            // a search offers its best hit first
+        list.selectRow (sel);
+        resized();                              // the vault fits what it holds
+        repaint();
+    }
+
+    void chooseSelected()
+    {
+        const int r = juce::jmax (0, list.getSelectedRow());
+        if (r < (int) vis.size() && onChoose)
+            onChoose (all[(size_t) vis[(size_t) r]].name);
+    }
+
+    static juce::String age (juce::int64 born)
+    {
+        if (born <= 0) return {};
+        const auto s = (juce::Time::currentTimeMillis() - born) / 1000;
+        if (s < 90)         return "now";
+        if (s < 3600)       return juce::String (s / 60) + "m";
+        if (s < 86400)      return juce::String (s / 3600) + "h";
+        if (s < 86400 * 30) return juce::String (s / 86400) + "d";
+        return juce::Time (born).formatted ("%d %b");
+    }
+
+    int getNumRows() override { return (int) vis.size(); }
+    void paintListBoxItem (int r, juce::Graphics& g, int w, int h, bool sel) override
+    {
+        if (r < 0 || r >= (int) vis.size()) return;
+        auto& row = all[(size_t) vis[(size_t) r]];
+        if (sel)
+        {
+            g.setColour (theme::accent.withAlpha (0.16f));
+            g.fillRoundedRectangle (2.0f, 1.0f, (float) w - 4.0f, (float) h - 2.0f, 5.0f);
+        }
+        const bool cur = row.name == current;
+        const bool scratch = row.name.startsWith ("_")    // sunk + dimmed, never hidden
+                          || row.name.startsWith (".");
+        g.setColour (cur ? theme::accent
+                         : theme::text.withAlpha (scratch ? 0.42f : (sel ? 0.95f : 0.78f)));
+        g.setFont (juce::Font (13.0f, cur ? juce::Font::bold : juce::Font::plain));
+        g.drawText (row.name, 10, 0, w - 66, h, juce::Justification::centredLeft);
+        g.setColour (theme::text.withAlpha (0.38f));   // when it was born, at a glance
+        g.setFont (juce::Font (11.0f));
+        g.drawText (age (row.born), w - 54, 0, 46, h, juce::Justification::centredRight);
+    }
+    void listBoxItemClicked (int r, const juce::MouseEvent&) override
+    {
+        if (r >= 0 && r < (int) vis.size() && onChoose)
+            onChoose (all[(size_t) vis[(size_t) r]].name);
+    }
+
+    bool keyPressed (const juce::KeyPress& k) override
+    {
+        if (k == juce::KeyPress (juce::KeyPress::escapeKey)) { if (onDismiss) onDismiss(); return true; }
+        if (k == juce::KeyPress (juce::KeyPress::returnKey)) { chooseSelected(); return true; }
+        if (k.getKeyCode() == juce::KeyPress::upKey || k.getKeyCode() == juce::KeyPress::downKey)
+        {
+            const int n = (int) vis.size();
+            if (n > 0)
+                list.selectRow (juce::jlimit (0, n - 1, list.getSelectedRow()
+                                    + (k.getKeyCode() == juce::KeyPress::downKey ? 1 : -1)));
+            return true;
+        }
+        return false;
+    }
+
+    void resized() override
+    {
+        if (getWidth() <= 0) return;
+        const int w = 340;
+        const int rows = juce::jlimit (4, 16, (int) juce::jmax<size_t> (4, vis.size()));
+        const int h = 46 + rows * 24 + 10;
+        const int py = juce::jmin (anchor.getBottom() + 4, juce::jmax (8, getHeight() - h - 8));
+        panel = { juce::jlimit (8, juce::jmax (8, getWidth() - w - 8), anchor.getX()),
+                  py, w, juce::jmin (h, getHeight() - py - 8) };   // NEVER past the floor
+        auto r = panel.reduced (8);
+        auto top = r.removeFromTop (26);
+        newBtn.setBounds (top.removeFromRight (46));
+        top.removeFromRight (4);
+        azBtn.setBounds (top.removeFromRight (46));
+        top.removeFromRight (6);
+        filter.setBounds (top);
+        r.removeFromTop (6);
+        list.setBounds (r);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.setColour (juce::Colours::black.withAlpha (0.45f));   // scrim: focus falls to the vault
+        g.fillAll();
+        // THE GLASS FOLLOWS THE CHILDREN (Chezy 02:14 "da fuck?!" — rows bled
+        // past the card at his window size): the card paints wherever the
+        // filter + list ACTUALLY sit, so no resize-order race can ever strand
+        // rows on bare canvas again. `panel` stays the hit-test truth.
+        panel = filter.getBounds().getUnion (list.getBounds()).expanded (8);
+        theme::card (g, panel.toFloat(), theme::bgHi, 10.0f);
+    }
+    void paintOverChildren (juce::Graphics& g) override
+    {   // the live sort mode wears the accent ring (over the button's own glass)
+        const auto lit = (byTime ? newBtn : azBtn).getBounds().toFloat();
+        g.setColour (theme::accent.withAlpha (0.55f));
+        g.drawRoundedRectangle (lit.reduced (0.5f), 5.0f, 1.2f);
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (! panel.contains (e.getPosition()) && onDismiss) onDismiss();
+    }
+};
+
 class MainComponent : public juce::Component, public juce::DragAndDropContainer,
                       public juce::FileDragAndDropTarget,   // THE THRESHOLD (H21)
                       public juce::DragAndDropTarget,       // G4: the empty canvas takes drops
                       public juce::MenuBarModel,
                       private juce::Timer, private juce::ScrollBar::Listener,
-                      private juce::MidiInputCallback
+                      private juce::MidiInputCallback,
+                      private juce::FocusChangeListener     // P95: the focus ring
 {
 public:
     struct QuietLogger : juce::Logger { void logMessage (const juce::String&) override {} };
     static constexpr int menuH = 26;      // the application menu strip (File/Edit/.../Settings)
+    // 3 CHROME ROWS -> 2 (rebrand 31 §3): wide windows seat the menu strip INSIDE
+    // tier 1 (right of the wordmark) and its standalone row dies; narrow windows
+    // keep the row — the FLIP law degrades, never jumbles. paint() mirrors this.
+    // 1400, not 1600: Chezy's daily window is 1483 LOGICAL (1854 phys / 125%
+    // desktop scale) — the first gate was tuned to the camera, not the user.
+    // In the 1400..1600 band the painted wordmark yields to the sigil alone
+    // (the OS title bar carries the name) so tier 1 never jumbles.
+    bool menuInline() const   { return getWidth() >= 1400; }
+    bool brandCompact() const { return menuInline() && getWidth() < 1600; }
 
     MainComponent()
     {
         juce::Logger::setCurrentLogger (&quietLogger);
         setLookAndFeel (&lnf);
+        // DEFAULT LnF too: Font placeholder names ("<Sans-Serif>"/"<Monospace>")
+        // resolve typefaces through the DEFAULT LookAndFeel — without this the
+        // embedded Inter/JetBrains Mono never load (relight v8)
+        juce::LookAndFeel::setDefaultLookAndFeel (&lnf);
         engine = std::make_unique<te::Engine> ("sotadaw", nullptr, std::make_unique<sotadaw::SotadawEngineBehaviour>());
         sotadaw::registerSotadawPlugins (*engine);
         sotadaw::loadKnownPlugins (*engine);
@@ -8444,12 +10034,13 @@ public:
 
         for (auto* c : std::initializer_list<juce::Component*> {
                  &playButton, &loopButton, &undoButton, &redoButton, &addTrackButton, &exportButton,
+                 &connectButton, &micButton,
                  &songBox, &bpmLabel, &swingSlider, &statusLabel, &promptBox, &sendButton, &chat, &ruler,
                  &loopLabButton, &recButton, &crateButton, &acctButton, &seedButton, &lcd, &snapBox, &chatToggle, &historyButton })
             addAndMakeVisible (c);
         chatToggle.setClickingTogglesState (true);
         chatToggle.setToggleState (true, juce::dontSendNotification);
-        chatToggle.setTooltip ("show/hide the agent panel - F4 flips AGENT MODE (chat-first)");
+        chatToggle.setTooltip ("show/hide the producer panel - F4 flips AGENT MODE (chat-first)");
         chatToggle.onClick = [this]
         {
             if (! chatToggle.getToggleState() && agentMode)
@@ -8457,14 +10048,28 @@ public:
             resized(); repaint();
         };
         addAndMakeVisible (nav);                       // THE NAVIGATOR (fable-uxwave)
+        addAndMakeVisible (navStats);                  // its header-corner: song stats
+        navStats.setJustificationType (juce::Justification::centredLeft);
+        navStats.setInterceptsMouseClicks (false, false);
+        navStats.setFont (theme::caps (8.0f));
+        navStats.setColour (juce::Label::textColourId, theme::textMute.withAlpha (0.85f));
         nav.onView   = [this] (double vs) { viewStart = vs; applyViewport(); };
         nav.onLocate = [this] (double b)
         {
             if (edit == nullptr) return;
-            edit->getTransport().setPosition (
-                edit->tempoSequence.toTime (te::BeatPosition::fromBeats (juce::jmax (0.0, b))));
+            edit->getTransport().setPosition (timeAtQuarter (b));
         };
         nav.onZoom = [this] (double b, float d) { handleWheel (b, (double) d, true); };
+        ruler.onLocate = [this] (double b)     // section chips = the same door
+        {
+            if (edit == nullptr) return;
+            edit->getTransport().setPosition (timeAtQuarter (b));
+            if (viewStart > b || b > viewStart + (getWidth() - 300) / juce::jmax (0.01, viewPpb))
+            {   // the door also brings the room: off-screen jumps recentre the view
+                viewStart = juce::jmax (0.0, b - 8.0);
+                applyViewport();
+            }
+        };
         addChildComponent (stageVeil);
         addChildComponent (factoryPort);
         addChildComponent (patchField);
@@ -8479,8 +10084,7 @@ public:
         factoryPort.onSeekBeats = [this] (double b)
         {
             if (edit == nullptr) return;
-            edit->getTransport().setPosition (
-                edit->tempoSequence.toTime (te::BeatPosition::fromBeats (juce::jmax (0.0, b))));
+            edit->getTransport().setPosition (timeAtQuarter (b));
         };
         factoryPort.onSelectTrack = [this] (int ti, bool add)
         {   // the mixer's own selection idiom: beacon + the wing answers with a card;
@@ -8542,8 +10146,8 @@ public:
             applyLoop();
             refreshContextChips();                     // "bars N-M" rides to the agent
             setStatus (b > a && a >= 0
-                           ? "loop bars " + juce::String ((int) (a / 4.0) + 1) + "-"
-                                 + juce::String ((int) std::ceil (b / 4.0))
+                           ? "loop bars " + juce::String ((int) gridSong().barAtBeat (a) + 1) + "-"
+                                 + juce::String ((int) std::ceil (gridSong().barAtBeat (b) - 1e-9))
                            : juce::String ("loop cleared"));
         };
         factoryPort.onSetGain = [this] (int ti, double v)
@@ -8577,15 +10181,21 @@ public:
         };
         lcd.positionText = [this]
         {
-            double beats = 0, secs = 0;
+            double q = 0, secs = 0;
             if (edit != nullptr)
             {
                 const auto pos = edit->getTransport().getPosition();
                 secs = pos.inSeconds();
-                beats = edit->tempoSequence.toBeats (pos).inBeats();
+                q = quarterAtTime (pos);
             }
-            const int bar = (int) (beats / 4.0) + 1, beat = ((int) beats) % 4 + 1,
-                      six = (int) (beats * 4.0) % 4 + 1;
+            // METER-TRUE COUNTER: bar rides the world grid; "beat" counts the
+            // bar's METRICAL beats (7/8 counts 1..7 eighths); ticks are 16ths
+            const auto& gs = gridSong();
+            const int bar = (int) gs.barAtBeat (q) + 1;
+            const double inBar = juce::jmax (0.0, q - gs.barStartBeat ((double) (bar - 1)));
+            const double unit  = juce::jmax (0.05, gs.beatUnitAt ((double) (bar - 1)));
+            const int beat = (int) (inBar / unit) + 1;
+            const int six  = (int) ((inBar - (double) (beat - 1) * unit) / 0.25) + 1;
             const int m = (int) secs / 60;
             return juce::String (bar) + "." + juce::String (beat) + "." + juce::String (six)
                  + "  |  " + juce::String (m) + ":"
@@ -8612,7 +10222,7 @@ public:
                               + "KG online";
         }
         addAndMakeVisible (keyButton);
-        keyButton.setTooltip ("agent API key (BYOK) - stored locally, never leaves this machine");
+        keyButton.setTooltip ("producer key (BYOK) - stored locally, never leaves this machine");
         keyButton.onClick = [this] { promptForKey(); };
         {
             const bool hasClaude = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
@@ -8623,9 +10233,9 @@ public:
                                       .getChildFile (".codex/auth.json").existsAsFile();
             if (! hasClaude && ! hasByok && ! hasEnv && ! hasCodex)
                 chat.add (ChatPanel::Kind::agent,
-                          "The producer-agent needs a login: use the Key/Acct controls for "
+                          "The producer needs a login: use the Key/Acct controls for "
                           "Claude, or run 'codex login' and pick a GPT model. The engine works "
-                          "without an agent - the agent is what makes this place magic.");
+                          "without a producer - the producer is what makes this place magic.");
         }
         if (std::getenv ("SOTADAW_FIRST_RUN") != nullptr)
             chat.add (ChatPanel::Kind::agent,
@@ -8648,37 +10258,9 @@ public:
             // manual re-pick). An empty/failed output heals here: last known-good name first,
             // then the PipeWire/default bridges (they follow the desktop's sink - Bluetooth
             // included - where raw hw: devices lose the very open-fight that caused the wipe).
-            if (adm.getCurrentAudioDevice() == nullptr
-                || adm.getAudioDeviceSetup().outputDeviceName.isEmpty())
-            {
-                juce::StringArray names;
-                if (auto* type = adm.getCurrentDeviceTypeObject())
-                {
-                    type->scanForDevices();
-                    names = type->getDeviceNames (false);
-                }
-                juce::StringArray picks;
-                const auto lastGood = loadUiPrefString ("lastGoodAudioOut", "");
-                if (lastGood.isNotEmpty())
-                    picks.add (lastGood);
-                for (const auto& n : names) if (n.containsIgnoreCase ("pipewire")) picks.addIfNotAlreadyThere (n);
-                for (const auto& n : names) if (n.containsIgnoreCase ("default"))  picks.addIfNotAlreadyThere (n);
-                for (const auto& n : names) picks.addIfNotAlreadyThere (n);
-                for (const auto& pick : picks)
-                {
-                    if (! names.contains (pick)) continue;
-                    auto healed = adm.getAudioDeviceSetup();
-                    healed.outputDeviceName = pick;
-                    healed.useDefaultOutputChannels = true;
-                    if (adm.setAudioDeviceSetup (healed, true).isEmpty() && adm.getCurrentAudioDevice() != nullptr)
-                    {
-                        chat.add (ChatPanel::Kind::status,
-                                  "audio output was unset (a save-time device storm can wipe it) - healed to '"
-                                  + pick + "'");
-                        break;
-                    }
-                }
-            }
+            // v2 (2026-07-14, "why cant i hear shit": a BT sink died MID-SESSION):
+            // the same heal now also runs from tick() whenever the device is null.
+            healAudioOutputIfDead();
             if (const char* bs = std::getenv ("SOTADAW_BUFFER"))
                 if (juce::String (bs).getIntValue() >= 64)
                 {
@@ -8712,10 +10294,42 @@ public:
                                "composes free.");
         seedButton.setToggleState (loadUiPrefBool ("seedSkeleton", false), juce::dontSendNotification);
         seedButton.onClick = [this] { saveUiPrefBool ("seedSkeleton", seedButton.getToggleState()); };
+        // THE DOCK FOLD's caret: the rest of the producer's desk lives behind it
+        addAndMakeVisible (dockMoreButton);
+        dockMoreButton.setClickingTogglesState (true);
+        dockMoreButton.setTitle ("More producer controls");        // THE SPOKEN DESK
+        // one calm line: the old two-line tooltip painted OVER the model row and
+        // clipped at the screen edge (Chezy's corner-jumble screenshot, 08-08)
+        dockMoreButton.setTooltip ("everything else - or press '/'");
+        dockMoreOpen = loadUiPrefBool ("dockMore", false);
+        dockMoreButton.setToggleState (dockMoreOpen, juce::dontSendNotification);
+        dockMoreButton.onClick = [this]
+        {
+            dockMoreOpen = dockMoreButton.getToggleState();
+            saveUiPrefBool ("dockMore", dockMoreOpen);
+            resized(); repaint();
+        };
+        // PERSISTENT DOORS: the same two doors the coach opens with, alive after
+        // the conversation starts (they zero-size away when the row is narrow)
+        addAndMakeVisible (bringSongButton);
+        bringSongButton.setTooltip ("bring a song - any mp3/wav lands as an editable session");
+        bringSongButton.onClick = [this]
+        {
+            chooseAndImport ("Import any song as editable stems",
+                             "*.mp3;*.wav;*.flac;*.m4a", "stems_import.py");
+        };
+        addAndMakeVisible (finishDoorButton);
+        finishDoorButton.setTooltip ("arrange, mix and master what is already here - lands as a take");
+        finishDoorButton.onClick = [this]
+        {
+            for (auto* b : verbStrip)
+                if (b->getButtonText() == "Finish") { b->triggerClick(); break; }
+        };
         loadCodexModelPicks();
         for (int i = 0; i < (int) modelPicks.size(); ++i)
             modelBox.addItem (modelPicks[i].label, i + 1);
         modelBox.setSelectedId (1, juce::dontSendNotification);
+        modelBox.setTitle ("Producer model");     // THE SPOKEN DESK
         modelBox.setTooltip ("the producer's model: AUTO = agent routing; an explicit pick rides EVERY ask (GPT = your local Codex login; Grok = OpenRouter)");
         modelBox.onChange = [this]
         {
@@ -8734,8 +10348,7 @@ public:
         loopLabButton.onClick = [this]
         {
             const bool on = loopLabButton.getToggleState();
-            promptBox.setTextToShowWhenEmpty (on ? "describe the loop you want (chips below constrain; drag a loop region to seed from it)..."
-                                                 : "tell the producer-agent what to change...", theme::textMute);
+            refreshPromptHint();
             setStatus (on ? "LOOP LAB armed - your next prompt generates 4 loop variations"
                           : "loop lab off - prompts edit the song again");
             resized(); repaint();
@@ -8747,7 +10360,8 @@ public:
         vScroll.addListener (this);
         vScroll.setAutoHide (false);
         vScroll.setVisible (false);          // appears only when rows outgrow the window
-        // THE ROW SIZER: visible density hardware on the ruler's right corner —
+        // THE ROW SIZER: visible density hardware on the ruler's LEFT corner,
+        // above the track headers it resizes —
         // '-' shorter, '=' fit, '+' taller (ctrl+shift+wheel is the gesture twin)
         for (auto* b : std::initializer_list<juce::TextButton*> { &rowsMinusB, &rowsFitB, &rowsPlusB })
             addAndMakeVisible (b);
@@ -8772,6 +10386,14 @@ public:
             if (mc.isNotEmpty()) setModelChoice (mc, false);
         }
         ruler.onWheel = [this] (double b, double d, bool z) { handleWheel (b, d, z); };
+        // THE METER-TRUE RULER: bar<->beat crossings follow the CANVAS song's meter
+        // map (audition shows the proposal's world grid, same source as its shape)
+        ruler.barBeat  = [this] (double b)
+        { return (auditioningProposal ? proposal : song).barStartBeat (b); };
+        ruler.beatBar  = [this] (double q)
+        { return (auditioningProposal ? proposal : song).barAtBeat (q); };
+        ruler.beatUnit = [this] (double b)
+        { return (auditioningProposal ? proposal : song).beatUnitAt (b); };
         ruler.onSectionsEdited = [this]
         {
             snapshot();
@@ -8783,6 +10405,18 @@ public:
             ruler.repaint();
         };
         ruler.onSectionCommand = [this] (juce::String verb, int i) { sectionCommand (verb, i); };   // H16
+        ruler.onMeterEdited = [this]                       // THE METER IS EDITABLE
+        {
+            snapshot();
+            song.meterMap = ruler.meterPoints;
+            std::sort (song.meterMap.begin(), song.meterMap.end(),
+                       [] (auto& a, auto& b) { return a.bar < b.bar; });
+            ruler.meterPoints = song.meterMap;
+            saveNow();
+            reloadEngineKeepUi();                          // bars RE-SHAPE: canvas + engine re-time
+            appendActivity ("[ui] meter map -> " + juce::String ((int) song.meterMap.size())
+                            + " point(s)");
+        };
         ruler.onTempoEdited = [this]                       // G6: the tempo map is hand-editable
         {
             snapshot();
@@ -8823,26 +10457,30 @@ public:
         addChildComponent (deck);
         addChildComponent (roll);
         addChildComponent (mixer);
+        addChildComponent (scorePage);        // THE SCORE TAB (SCORE)
         addChildComponent (mixButton);        // state holders driven by the segmented viewSwitch
         addChildComponent (liveGrid);
         addChildComponent (liveButton);
         addAndMakeVisible (viewSwitch);
-        viewSwitch.getView = [this]      // AGENT-FIRST: 0=agent(F4) 1=arrange 2=mix 3=live
-        { return agentMode ? 0 : liveGrid.isVisible() ? 3 : mixer.isVisible() ? 2 : 1; };
+        viewSwitch.getView = [this]      // AGENT-FIRST: 0=agent(F4) 1=arrange 2=score 3=mix 4=live (SCORE)
+        { return agentMode ? 0 : scorePage.isVisible() ? 2 : liveGrid.isVisible() ? 4 : mixer.isVisible() ? 3 : 1; };
         viewSwitch.onSelect = [this] (int v)
         {
             if (v == 0) { if (! agentMode) setAgentMode (true); return; }
             if (agentMode) setAgentMode (false);      // a canvas segment leaves the agent page
-            setView (v - 1);
+            if (v == 2) { showScore (true); return; }             // SCORE: the notation page
+            setView (v == 1 ? 0 : v == 3 ? 1 : 2);
         };
         liveGrid.song = &song;
         liveGrid.getEdit = [this]() -> te::Edit* { return edit.get(); };
         liveGrid.isTransportPlaying = [this]
         { return edit != nullptr && edit->getTransport().isPlaying(); };
+        liveGrid.barBeat = [this] (double b) { return gridSong().barStartBeat (b); };
+        liveGrid.beatBar = [this] (double q) { return gridSong().barAtBeat (q); };
         liveGrid.getPlayheadBeat = [this]
         {
             return edit != nullptr
-                     ? edit->tempoSequence.toBeats (edit->getTransport().getPosition()).inBeats()
+                     ? quarterAtTime (edit->getTransport().getPosition())
                      : 0.0;
         };
         liveGrid.onWantPlay = [this]
@@ -8898,6 +10536,29 @@ public:
         };
         mixer.onSendBegin  = [this] { snapshot(); };
         mixer.onSendCommit = [this] { saveNow(); reloadEngineKeepUi(); setStatus ("send updated"); };
+        mixer.onBusAdd = [this] (const juce::String& flavor)
+        {
+            snapshot();                                  // one undo step reverts the birth
+            sotadaw::SongBus b;
+            b.id = flavor == "empty" ? juce::String ("bus") : flavor;
+            for (int k = 2; std::any_of (song.buses.begin(), song.buses.end(),
+                                         [&b] (auto& x) { return x.id == b.id; }); ++k)
+                b.id = (flavor == "empty" ? juce::String ("bus") : flavor) + juce::String (k);
+            auto mk = [] (const char* id, std::initializer_list<std::pair<const char*, float>> ps)
+            {
+                sotadaw::SongFx f; f.id = id;
+                for (auto& p : ps) f.params[p.first] = p.second;
+                return f;
+            };
+            if (flavor == "verb")       b.fx.push_back (mk ("fx_reverb",   {{"mix", 0.35f}, {"size", 3.2f},  {"damp", 3600.0f}}));
+            else if (flavor == "space") b.fx.push_back (mk ("fx_reverb",   {{"mix", 0.45f}, {"size", 6.0f},  {"damp", 2800.0f}}));
+            else if (flavor == "delay") b.fx.push_back (mk ("fx_dubdelay", {{"time", 375.0f}, {"feedback", 0.45f}, {"damp", 2600.0f}, {"mix", 0.9f}}));
+            else if (flavor == "drive") b.fx.push_back (mk ("fx_saturate", {{"drive", 6.0f}, {"tone", 0.4f}, {"mix", 0.8f}}));
+            song.buses.push_back (std::move (b));
+            saveNow(); reloadEngineKeepUi();
+            setStatus ("return bus '" + song.buses.back().id
+                       + "' born — feed it from any strip's send row");
+        };
         mixer.onMasterGain = [this] (double v)
         {
             song.masterGainDb = v;
@@ -8990,8 +10651,7 @@ public:
         tunePanel.onSeekBeat = [this] (double b)          // a WHY row is a door to the moment
         {
             if (edit == nullptr) return;
-            edit->getTransport().setPosition (
-                edit->tempoSequence.toTime (te::BeatPosition::fromBeats (juce::jmax (0.0, b - 1.0))));
+            edit->getTransport().setPosition (timeAtQuarter (b - 1.0));
             setStatus ("-> b" + juce::String (b, 1) + " (one beat of runway)");
         };
         // ---- THE TIME MACHINE: full git lineage of every song, preview -> restore ----
@@ -9012,7 +10672,7 @@ public:
         addChildComponent (ghostGlass);
         fxRack.onAskAgent = [this] (const juce::String& brief)
         {
-            if (proposalPending) { appendActivity ("[ui] resolve the pending proposal first"); return; }
+            if (proposalPending) { appendActivity ("[ui] resolve the pending take first"); return; }
             mixer.masterPointed = true;            // the agent's context points at the master chain
             refreshContextChips();
             promptBox.setText (brief, juce::dontSendNotification);
@@ -9060,9 +10720,19 @@ public:
         {
             if (edit == nullptr) return;
             const double beats = (auditioningProposal ? proposal : song).totalBeats() * frac;
-            edit->getTransport().setPosition (
-                edit->tempoSequence.toTime (te::BeatPosition::fromBeats (beats)));
-            setStatus ("-> bar " + juce::String (1 + (int) (beats / 4.0)));
+            edit->getTransport().setPosition (timeAtQuarter (beats));
+            setStatus ("-> bar " + juce::String (1 + (int) gridSong().barAtBeat (beats)));
+        };
+        nav.onViewSelect = [this] (double b0, double span)
+        {   // VAGUE SELECTION NAV (Chezy 2026-07-17): sweep a range on the top
+            // overview -> the world zooms to exactly that span (the wheel's own
+            // zoom clamps apply; a whole-song sweep lands back on fit)
+            if (span <= 0.01) return;
+            const double laneW = ! lanes.isEmpty() && lanes[0]->getWidth() > TrackLane::headerW
+                                   ? (double) (lanes[0]->getWidth() - TrackLane::headerW) : 800.0;
+            viewPpb = juce::jlimit (fitPpb(), 80.0, laneW / span);
+            viewStart = b0;
+            applyViewport();
         };
         addChildComponent (padGrid);
         padGrid.getNumScenes = [this] { return liveGrid.numScenes(); };   // match the grid, not just named scenes
@@ -9131,6 +10801,17 @@ public:
             assignSourceToTrack (row, section, id);
         };
         chat.onAudition = [this] { if (proposalPending) auditionButton.triggerClick(); };
+        chat.onRetry = [this]
+        {   // P64: the SAME ask, one click — legal only when the agent is idle
+            // (the prompt-refusal law: never queue silently behind a run)
+            if (agentBusy) { setStatus ("producer mid-take - retry when it goes idle"); return; }
+            if (lastAskText.isEmpty()) return;
+            promptBox.setText (lastAskText, juce::dontSendNotification);
+            chat.add (ChatPanel::Kind::status,
+                      "retrying: " + lastAskText.substring (0, 80)
+                        + (lastAskText.length() > 80 ? "..." : ""));
+            sendPrompt();
+        };
         chat.onPlayTake = [this]        // #17: the EARS card plays the render it measured
         {
             if (preview == nullptr) return;
@@ -9165,6 +10846,22 @@ public:
             promptBox.grabKeyboardFocus();
             promptBox.moveCaretToEnd();
         };
+        chat.onDoor = [this] (int which)   // THE DOORS: coach doors ACT, never just type
+        {
+            if (which == 0)
+                chooseAndImport ("Import any song as editable stems",
+                                 "*.mp3;*.wav;*.flac;*.m4a", "stems_import.py");
+            else if (which == 1)
+            {   // the FULL-TAKE rail (make_track), NOT the MAKE button — that
+                // button is audio->MIDI by the dock law and ERRORS on empty rooms
+                chat.add (ChatPanel::Kind::user, "MAKE A TRACK");
+                setStatus ("MAKE: a full take is landing (free, instant, offline)...");
+                requestMakeTrack();
+            }
+            else
+                for (auto* b : verbStrip)
+                    if (b->getButtonText() == "Finish") { b->triggerClick(); break; }
+        };
         mixButton.setClickingTogglesState (true);
         mixButton.setTooltip ("mixer view: faders, pans, live meters");
         mixButton.onClick = [this]
@@ -9184,7 +10881,11 @@ public:
         };
         addChildComponent (backButton);
 
-        promptBox.setTextToShowWhenEmpty ("tell the producer-agent what to change   (/ = command palette)", theme::textMute);
+        promptBox.setTitle ("The talkback");          // THE SPOKEN DESK: the front door speaks
+        promptBox.setMultiLine (true, true);           // wrap AT the border = auto new line
+        promptBox.setReturnKeyStartsNewLine (false);   // Enter SENDS; Shift+Enter breaks a line
+        promptBox.setScrollbarsShown (false);          // past 3 rows the caret scrolls inside
+        refreshPromptHint();                           // width-aware; resized() re-picks the band
         promptBox.onReturnKey = [this]
         {
             const auto t = promptBox.getText().trim();
@@ -9201,7 +10902,19 @@ public:
             }
             sendPrompt();
         };
-        promptBox.onTextChange = [this] { refreshPalette(); };   // live "/" dropdown (H27+H10)
+        promptBox.onTextChange = [this]
+        {
+            if (! histRecallGuard && histCursor >= 0)     // P71: an edit DETACHES the recall
+            { histCursor = -1; updateHistChip(); }
+            refreshPalette(); maybeGrowPrompt();          // live "/" dropdown (H27+H10)
+        };
+        promptBox.addKeyListener (&promptHistKeys);        // P71: the terminal inheritance
+        histChip.setFont (theme::caps (7.5f));
+        histChip.setJustificationType (juce::Justification::centred);
+        histChip.setColour (juce::Label::backgroundColourId, theme::inset.withAlpha (0.92f));
+        histChip.setColour (juce::Label::textColourId, theme::accent.withAlpha (0.9f));
+        histChip.setInterceptsMouseClicks (false, false);
+        addChildComponent (histChip);
         addChildComponent (paletteDrop);
         paletteDrop.onPick = [this] (int i) { runPalette (i); };
         inlineAsk.setMultiLine (false);
@@ -9231,23 +10944,147 @@ public:
         exportButton.setTooltip ("bounce the master to wav - C2PA-signed provenance");
         presetsButton.setTooltip ("the preset rail: 4,366 factory sounds - drag one onto any lane");
         filesButton.setTooltip ("your library: samples, kits, instruments, loops");
-        sendButton.setTooltip ("send to the producer-agent  -  enter");
-        makeTrackButton.setTooltip ("one-button track: pick a genre, the graph builds it - zero tokens");
-        humButton.setTooltip ("hum or beatbox into the mic - the agent voices it as an instrument");
-        auditionButton.setTooltip ("A/B the proposal against the current song");
-        acceptButton.setTooltip ("accept the proposal - committed to git");
-        rejectButton.setTooltip ("reject - the base song stays untouched");
+        sendButton.setTooltip ("send to the producer  -  enter");
+        makeTrackButton.setTooltip ("one-button track: pick a genre - free, instant, offline");
+        humButton.setTooltip ("hum or beatbox into the mic - the producer voices it as an instrument");
+        auditionButton.setTooltip ("A/B the take against the current song");
+        acceptButton.setTooltip ("KEEP the take - it lands in your Time Machine");
+        rejectButton.setTooltip ("PASS - the base song stays untouched; say why and the next take obeys");
         snapBox.setTooltip ("grid snap  -  G flips GRID <-> SLIP");
+        snapBox.setTitle ("Grid snap");           // THE SPOKEN DESK
         swingSlider.setTooltip ("swing");
         songBox.setTooltip ("switch song");
+        songBox.setTitle ("Song picker");         // THE SPOKEN DESK
         newSongButton.setTooltip ("start a new song");
         genreBox.setTooltip ("the genre brain: 131 styles from the knowledge graph");
         promptBox.setJustification (juce::Justification::centredLeft);
-        promptBox.setIndents (12, 0);
+        promptBox.setIndents (12, 5);          // multiline top-aligns: seat line 1 centred
         sendButton.setComponentID ("primary");
         sendButton.onClick = [this] { sendPrompt(); };
+        // ATTACH — the paperclip + the tray (THE INBOX's chat-side hands)
+        attachButton.setTooltip ("attach files to the chat - ANY type becomes producer context "
+                                 "(docs, tables, midi, scores, images, audio w/ ears numbers)");
+        attachButton.onClick = [this]
+        {
+            chooser = std::make_unique<juce::FileChooser> (
+                "Attach files to the chat (any type)",
+                juce::File::getSpecialLocation (juce::File::userHomeDirectory), "*");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::canSelectMultipleItems,
+                [this] (const juce::FileChooser& fc)
+                {
+                    juce::StringArray files;
+                    for (auto& f : fc.getResults()) files.add (f.getFullPathName());
+                    if (! files.isEmpty()) attachFilesToChat (files);
+                });
+        };
+        addAndMakeVisible (attachButton);
+        addChildComponent (attachTray);
+        attachTray.onOpen = [this] (const juce::File& f)
+        {
+            f.startAsProcess();
+            setStatus ("opened " + f.getFileName() + " (system viewer)");
+        };
+        attachTray.onRemove = [this] (const juce::File& f)
+        {
+            f.deleteFile();                      // the inbox copy only - originals untouched
+            attachTray.refresh (sotadaw::sotadawRoot().getChildFile ("songs/.attach/" + songName));
+            resized();
+            narrate (1, "THE INBOX: removed " + f.getFileName());
+        };
+        // THE VOICE MODE (Chezy 2026-07-16, v3 contract): words paint into the
+        // prompt in REALTIME while speaking; Send stays the user's. Local whisper.
+        micButton.setRoot (sotadaw::sotadawRoot());
+        micButton.onNote = [this] (const juce::String& n)
+        {
+            appendActivity (n);
+            setStatus (n.fromFirstOccurrenceOf ("] ", false, false));
+        };
+        // VOICE MODE v4 — THE LEDGER (Chezy live 2026-07-16: "IT OVERRIDES NEW
+        // INCOMING STT! capture 100% of the words, not sentence-per-sentence!"):
+        // the words appear in the PROMPT BAR IN REALTIME while you speak and
+        // APPEND FOREVER — every utterance is a segment; the live tail folds
+        // into the ledger the moment its final is SENT, and the beam-5 answer
+        // upgrades exactly its own segment whenever it lands (a slow final used
+        // to lose the race to the next utterance's partials and its whole
+        // sentence vanished). NOTHING is sent until the user presses Send.
+        micButton.onPartial = [this] (const juce::String& t)
+        {
+            voiceRebaseIfEdited();
+            voiceTail = t;                          // the live utterance repaints in place
+            rigVoicePartials = rigVoicePartials + 1;
+            voicePaint();
+        };
+        micButton.onFinalSent = [this] (int gen)
+        {   // the pause: fold the on-screen words into the ledger NOW — the
+            // ear's answer may be slow, out-raced, or never come; words stay
+            voiceRebaseIfEdited();
+            voiceSegs.push_back ({ gen, voiceTail });
+            voiceTail.clear();
+            rigVoiceFolds = rigVoiceFolds + 1;
+            voicePaint();
+        };
+        micButton.onFinal = [this] (int gen, const juce::String& t)
+        {
+            voiceRebaseIfEdited();
+            if (t.isNotEmpty())
+            {
+                bool hit = false;
+                for (auto& s : voiceSegs)
+                    if (s.gen == gen) { s.text = t; hit = true; break; }   // beam-5 upgrades ITS segment
+                if (! hit)                     // THE LEDGER NEVER DROPS DELIVERED WORDS:
+                    voiceSegs.push_back ({ gen, t });   // whatever wiped the fold, the answer lands
+            }
+            rigVoiceFinals = rigVoiceFinals + 1;
+            voicePaint();
+            if (t.isNotEmpty())
+                appendActivity ("[voice] \"" + t.substring (0, 90)
+                                + (t.length() > 90 ? "..." : "") + "\"");
+        };
+        micButton.onStateChange = [this]
+        {
+            refreshPromptHint();
+            promptBox.repaint();
+        };
+        micButton.prewarm();   // THE WARM BOOT: the ear loads with the app, not the first word
+        // THE CONNECTOR BAY: bridges as tiles (the menu stays; this is the face)
+        connectButton.setTooltip ("connectors: import a world / export this song - "
+                                  "Ableton, FL, REAPER, DAWproject, MIDI, stems, Rekordbox");
+        connectButton.onClick = [this]
+        {
+            connectorBay.setSongName (songName);
+            connectorBay.setVisible (true);
+            connectorBay.toFront (true);
+            connectorBay.grabKeyboardFocus();
+        };
+        addChildComponent (connectorBay);
+        // Z-GUARD (Chezy's screenshot 2026-07-16: lanes painted THROUGH the sheet):
+        // lanes are re-added on every song load and assertCanvasZ/toFront storms
+        // re-stack the canvas per tick — a one-time toFront on open always loses.
+        // alwaysOnTop is the only rank the storms can't outbid (GhostGlass' law).
+        connectorBay.setAlwaysOnTop (true);
+        connectorBay.onClose = [this] { connectorBay.setVisible (false); };
+        connectorBay.onAction = [this] (const juce::String& id)
+        {
+            connectorBay.setVisible (false);
+            if      (id == "in_als")         chooseAndImport ("Import Ableton Live set", "*.als", "als_import.py");
+            else if (id == "in_flp")         chooseAndImport ("Import FL Studio project", "*.flp", "flp_import.py");
+            else if (id == "in_dawproject")  chooseAndImport ("Import DAWproject", "*.dawproject", "dawproject_import.py");
+            else if (id == "in_rpp")         chooseAndImport ("Import REAPER project", "*.rpp;*.RPP", "reaper_bridge.py");
+            else if (id == "in_midi")        importMidiViaChooser();
+            else if (id == "in_audio")       chooseAndImport ("Import any song as editable stems",
+                                                              "*.mp3;*.wav;*.flac;*.m4a", "stems_import.py");
+            else if (id == "in_rekordbox")   importRekordboxViaChooser();
+            else if (id == "out_master")     startExport();
+            else if (id == "out_als")        exportVia ("als_export.py", ".als");
+            else if (id == "out_dawproject") exportVia ("dawproject_export.py", ".dawproject");
+            else if (id == "out_rpp")        exportVia ("reaper_bridge.py", ".rpp", "export");
+            else if (id == "out_midi")       exportMidiFile();
+        };
         // THE ONE-BUTTON TRACK: pick a genre, hit MAKE — a full arranged song lands
         // as a proposal in seconds, zero tokens (deterministic DNA rail).
+        genreBox.setTitle ("Genre");                   // THE SPOKEN DESK
         addAndMakeVisible (genreBox);
         {
             // every KG genre with loop DNA (compiled by tools/kg_seed_semantic_maps.py era
@@ -9334,7 +11171,7 @@ public:
             b->onClick = [this, verb, label, mutating]
             {
                 if (mutating && proposalPending)
-                { appendActivity ("[ui] resolve the pending proposal first (Accept/Reject)"); return; }
+                { appendActivity ("[ui] resolve the pending take first (KEEP/PASS)"); return; }
                 writeRequest ("verb", "\"verb\": " + juce::JSON::toString (juce::var (verb))
                               + ", \"args\": {},");
                 setStatus (label + " (zero tokens)...");
@@ -9353,7 +11190,7 @@ public:
             b->onClick = [this, word, label]
             {
                 if (proposalPending)
-                { appendActivity ("[ui] resolve the pending proposal first (Accept/Reject)"); return; }
+                { appendActivity ("[ui] resolve the pending take first (KEEP/PASS)"); return; }
                 writeRequest ("verb", "\"verb\": \"color\", \"args\": {\"word\": "
                               + juce::JSON::toString (juce::var (word)) + ", \"amount\": 0.4},");
                 setStatus (label + " (zero tokens)...");
@@ -9368,7 +11205,7 @@ public:
         restyleButton.onClick = [this]
         {
             if (proposalPending)
-            { appendActivity ("[ui] resolve the pending proposal first (Accept/Reject)"); return; }
+            { appendActivity ("[ui] resolve the pending take first (KEEP/PASS)"); return; }
             const auto genre = currentGenre();
             if (genre.isEmpty())
             {   // restyle NEEDS a destination: (auto) has nothing to morph toward
@@ -9387,8 +11224,8 @@ public:
             if (propDropped.count (i)) propDropped.erase (i); else propDropped.insert (i);
             propBar.setItems (propItems, propDropped);
             const int kept = propItems.size() - (int) propDropped.size();
-            acceptButton.setButtonText (propDropped.empty() ? "Accept"
-                                        : "Accept " + juce::String (kept) + "/" + juce::String (propItems.size()));
+            acceptButton.setButtonText (propDropped.empty() ? "KEEP"
+                                        : "KEEP " + juce::String (kept) + "/" + juce::String (propItems.size()));
         };
         addAndMakeVisible (contextChips);
         contextChips.onPin = [this] (juce::String type, juce::String label)
@@ -9419,13 +11256,15 @@ public:
                 // no region drawn: loop 8 bars around wherever you are (or song start)
                 double ph = 0;
                 if (edit != nullptr)
-                    ph = edit->tempoSequence.toBeats (edit->getTransport().getPosition()).inBeats();
-                loopA = juce::jmax (0.0, std::floor (ph / 4.0) * 4.0);
-                loopB = juce::jmin (song.totalBeats(), loopA + 32.0);
+                    ph = quarterAtTime (edit->getTransport().getPosition());
+                const double phBar = std::floor (gridSong().barAtBeat (ph));
+                loopA = juce::jmax (0.0, gridSong().barStartBeat (phBar));
+                loopB = juce::jmin (song.totalBeats(), gridSong().barStartBeat (phBar + 8.0));
                 ruler.loopStart = loopA; ruler.loopEnd = loopB;
                 ruler.repaint();
-                setStatus ("looping bars " + juce::String ((int) (loopA / 4) + 1) + "-"
-                           + juce::String ((int) (loopB / 4)) + " (drag the ruler to change)");
+                setStatus ("looping bars " + juce::String ((int) gridSong().barAtBeat (loopA) + 1) + "-"
+                           + juce::String ((int) std::ceil (gridSong().barAtBeat (loopB) - 1e-9))
+                           + " (drag the ruler to change)");
             }
             applyLoop();
         };
@@ -9456,6 +11295,8 @@ public:
             int jvi = 1;
             for (auto* v : { "build", "peak", "breakdown", "wave", "steady" })
                 jamVibeBox.addItem (v, jvi++);
+            jamVibeBox.setTitle ("Jam vibe");         // THE SPOKEN DESK
+            jamGenreBox.setTitle ("Jam genre");
         }
         jamVibeBox.setSelectedId (1, juce::dontSendNotification);
         {   // the pod remembers ITS style/arc across sessions (genreBox = the
@@ -9540,7 +11381,7 @@ public:
         };
         historyButton.setTooltip ("THE TIME MACHINE - every take of every song: accepts (green), "
                                   "rejected takes (red), revisions (amber). Preview any row -> "
-                                  "audition it -> Accept = restore. History is never rewritten.");
+                                  "audition it -> KEEP = restore. History is never rewritten.");
         // a TOGGLE like its neighbour Agent: lit = the drawer is open (state as material)
         historyButton.setClickingTogglesState (true);
         historyButton.onClick = [this]
@@ -9555,7 +11396,7 @@ public:
         rejectButton.onClick = [this] { requestReject(); };
         deck.onRejectCommit = [this] (juce::String r)
         {
-            rejectButton.setButtonText ("Reject");
+            rejectButton.setButtonText ("PASS");
             decideProposal (false, r);
         };
         // THE DECK RETIRES: its exit is a FADE, not a cut — the stage reclaims the
@@ -9563,6 +11404,19 @@ public:
         // instant you decide (the deck stays layoutAlive() through the fade).
         deck.onExitDone = [this] { resized(); };
         auditionButton.onClick = [this] { toggleAudition(); };
+        explainButton.setTooltip ("walk me through this take (read-only - the prop never moves)");
+        explainButton.onClick = [this]
+        {   // P78: a read-only walk-through rides the reply-court lane
+            // (a message is not an edit - the prop fence stays planted)
+            if (! proposalPending) return;
+            if (agentBusy) { setStatus ("agent is mid-run - explain when it goes idle"); return; }
+            explainButton.setEnabled (false);
+            explainButton.setButtonText ("Explained");
+            promptBox.setText ("Do NOT change the take. Explain the pending take: what "
+                               "changed vs the base, why, and what to listen for - 6 lines max.",
+                               juce::dontSendNotification);
+            sendPrompt();
+        };
         backButton.onClick = [this] { closeRoll(); };
         roll.onSnapshot = [this] { snapshot(); };            // PRE-edit state (correct undo)
         roll.onChanged  = [this] { scheduleSave(); engineDirty = true; };   // save-only now
@@ -9588,9 +11442,95 @@ public:
                 at->turnOffGuideNotes();
         };
 
+        // THE SCORE TAB (SCORE): notation rides the exact same rails as the roll —
+        // snapshot/save contract, guide-note auditions through the REAL chain,
+        // selection mirrored into the lane-selection context the agent reads.
+        scorePage.song = &song;
+        scorePage.onSnapshot = [this] { snapshot(); };
+        scorePage.onChanged  = [this] { scheduleSave(); engineDirty = true; };
+        scorePage.onAudition = [this] (int ti, int pitch, float vel)
+        {
+            if (edit == nullptr) return;
+            auto ats = te::getAudioTracks (*edit);
+            if (ti >= 0 && ti < (int) ats.size())
+                ats[(size_t) ti]->playGuideNote (pitch, te::MidiChannel (1),
+                    (int) juce::jlimit (1.0f, 127.0f, vel * 127.0f), true, true, false);
+        };
+        scorePage.onAuditionOff = [this]
+        {
+            if (edit == nullptr) return;
+            for (auto* at : te::getAudioTracks (*edit))
+                at->turnOffGuideNotes();
+        };
+        scorePage.onSelectionMirror = [this] (const std::map<int, std::set<size_t>>& m)
+        {
+            laneNoteSel = m;                       // SELECTION = CONTEXT: same address book
+            for (int i = 0; i < lanes.size(); ++i)
+            {
+                auto it = laneNoteSel.find (i);
+                lanes[i]->setNoteSelection (it != laneNoteSel.end() ? it->second
+                                                                    : std::set<size_t>());
+            }
+            refreshContextChips();
+        };
+        scorePage.onCompose = [this] (const juce::String& text)
+        {
+            promptBox.setText (text, false);
+            sendPrompt();                          // the ask travels the user's own door
+        };
+        scorePage.onExport = [this] (const juce::String& kind)
+        {
+            if (kind == "midi") exportVia ("midi_bridge.py", ".mid", "export");
+            else if (kind == "pdf")                         // SCORE: the print door (pure C++)
+            {
+                saveNow();
+                const auto out = sotadaw::sotadawRoot()
+                                     .getChildFile ("songs/" + songName + "_score.pdf");
+                if (scorePage.exportPdf (out)) narrate (1, "score PDF -> " + out.getFileName());
+                else                           narrate (2, "score PDF failed");
+            }
+            else                exportVia ("musicxml_export.py", ".musicxml");
+        };
+        scorePage.trackColourOf = [this] (int i)
+        {
+            return i >= 0 && i < (int) song.tracks.size()
+                     ? channelColour (song.tracks[(size_t) i], i) : theme::accent;
+        };
+        scorePage.getPlayheadBeats = [this]
+        { return edit != nullptr ? quarterAtTime (edit->getTransport().getPosition()) : -1.0; };
+        scorePage.getIsPlaying = [this]
+        { return edit != nullptr && edit->getTransport().isPlaying(); };
+        scorePage.getSongName = [this] { return songName; };
+        scorePage.onSeek = [this] (double b)               // SCORE: a click on paper seeks
+        {
+            if (edit != nullptr) edit->getTransport().setPosition (timeAtQuarter (b));
+        };
+        scorePage.getLoop = [this]                          // SCORE: the loop brace
+        { return std::pair<double, double> (ruler.loopStart, ruler.loopEnd); };
+        scorePage.onSetMute = [this] (int ti, bool m)       // SCORE: staff M dot = lane M
+        {
+            if (ti < 0 || ti >= (int) song.tracks.size()) return;
+            m ? (void) muted.insert (ti) : (void) muted.erase (ti);
+            song.tracks[(size_t) ti].muted = m;
+            scheduleSave();
+            applyFlags();
+            if (ti < lanes.size()) lanes[ti]->setFlags (muted.count (ti) > 0, soloed.count (ti) > 0);
+        };
+        scorePage.onSetSolo = [this] (int ti, bool s)       // SCORE: staff S dot = lane S
+        {
+            if (ti < 0 || ti >= (int) song.tracks.size()) return;
+            s ? (void) soloed.insert (ti) : (void) soloed.erase (ti);
+            applyFlags();
+            if (ti < lanes.size()) lanes[ti]->setFlags (muted.count (ti) > 0, soloed.count (ti) > 0);
+        };
+        scorePage.isMuted  = [this] (int ti) { return muted.count (ti) > 0; };
+        scorePage.isSoloed = [this] (int ti) { return soloed.count (ti) > 0; };
+
         bpmLabel.setEditable (true, true);   // single OR double click edits (was double-only = "broken")
         bpmLabel.setTooltip ("click to edit tempo");
-        bpmLabel.setFont (theme::mono (15.0f, juce::Font::bold));      // tempo reads like the LCD
+        bpmLabel.setComponentID ("sevenseg");   // instrument furniture: a REAL LCD
+        bpmLabel.setName ("BPM");               // the engraved unit on the glass
+        bpmLabel.setFont (theme::mono (15.0f, juce::Font::bold));      // editor font while typing
         bpmLabel.setColour (juce::Label::textColourId, theme::accent.brighter (0.12f));
         bpmLabel.setJustificationType (juce::Justification::centred);
         statusLabel.setFont (theme::ui (11.0f));
@@ -9612,13 +11552,24 @@ public:
                 const double beat = t.containsChar ('.')
                     ? juce::jmax (1.0, t.fromFirstOccurrenceOf (".", false, false).getDoubleValue()) : 1.0;
                 const double beats = juce::jlimit (0.0, song.totalBeats(),
-                                                   (bar - 1.0) * 4.0 + (beat - 1.0));
-                tp.setPosition (edit->tempoSequence.toTime (te::BeatPosition::fromBeats (beats)));
+                                                   song.barStartBeat (bar - 1.0)
+                                                       + (beat - 1.0) * song.beatUnitAt (bar - 1.0));
+                tp.setPosition (timeAtQuarter (beats));
             }
             lcd.repaint();
             setStatus ("-> " + t);
         };
         addAndMakeVisible (tapButton);
+        tapButton.setComponentID ("keycap");     // the readout row is hardware (alive wave)
+        clickButton.setComponentID ("keycap");
+        playButton.pulsePhase = [this]() -> float
+        {   // THE BEAT LIGHT: the play tile breathes with the actual tempo
+            if (edit == nullptr) return -1.0f;
+            auto& t = edit->getTransport();
+            if (! t.isPlaying()) return -1.0f;
+            const double b = quarterAtTime (t.getPosition());
+            return b <= 0.0 ? -1.0f : (float) (b - std::floor (b));
+        };
         tapButton.setTooltip ("tap the tempo (3+ taps)");
         tapButton.onClick = [this]
         {
@@ -9684,6 +11635,7 @@ public:
         swingSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         swingSlider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
         swingSlider.setTooltip ("swing");
+        swingSlider.setTitle ("Swing amount");        // THE SPOKEN DESK
         swingSlider.onDragEnd = [this]
         {
             snapshot();
@@ -9717,12 +11669,26 @@ public:
             refreshSongList();
             loadSong (f);
             appendActivity ("[ui] new project: " + nm + " (4 starter voices, agent-ready)");
+            // THE BIRTH (rebrand 31 F0/F1) — DEFAULT OFF (Chezy verdict 2026-08-07
+            // "thats horrible!" on the auto-fire: a take he never asked for is
+            // presumption, not magic). The rail stays one click away (the MAKE A
+            // TRACK door); uiPref "birthOnNew" true re-arms the auto-birth for
+            // whoever wants it. Cameras must never drop requests into live ipc.
+            if (loadUiPrefBool ("birthOnNew", false)
+                && std::getenv ("SOTADAW_SNAPSHOT") == nullptr)
+            {
+                chat.add (ChatPanel::Kind::status,
+                          "a first take is being born, unasked - KEEP it, PASS it, "
+                          "or comp it down when it lands");
+                requestMakeTrack();
+            }
         };
         songBox.onChange = [this]
         {
             const auto f = sotadaw::sotadawRoot().getChildFile ("songs/" + songBox.getText() + ".json");
             if (f.existsAsFile() && songBox.getText() != songName) loadSong (f);
         };
+        songBox.onPick = [this] { openSongPicker(); };   // THE SONG VAULT, never the raw menu
         ruler.onLoopRegion = [this] (double a, double b)
         {
             loopA = a; loopB = b;
@@ -9736,7 +11702,7 @@ public:
         ruler.onIntensify = [this] (juce::String section, float amount)
         {
             if (proposalPending)
-            { appendActivity ("[ui] resolve the pending proposal first (Accept/Reject)"); return; }
+            { appendActivity ("[ui] resolve the pending take first (KEEP/PASS)"); return; }
             writeRequest ("verb", "\"verb\": \"intensify\", \"args\": {\"section\": "
                           + juce::JSON::toString (juce::var (section))
                           + ", \"amount\": " + juce::String (amount, 2) + "},");
@@ -9884,11 +11850,39 @@ public:
         checkMidiHotplug();   // PRIME NOW: the boot list is not news — but a
                               // cable seconds after boot must be (a lazy first
                               // poll was eating the first real plug-in)
+        // P90: the save chip joins the header (near songBox)
+        addAndMakeVisible (saveChip);
+        saveChip.isDirty    = [this] { return saveCountdown > 0; };
+        saveChip.dirtyTicks = [this] { return saveCountdown; };
+        saveChip.savedAt    = [this] { return lastSaveMs; };
+        saveChip.onSave     = [this] { saveNow(); setStatus ("saved"); };
+        addChildComponent (dropVeil);              // P94 (visible only mid-drag)
+        addChildComponent (errorStack);            // P89 (visible only while testifying)
+        errorStack.onLayout = [this] { resized(); };
+        // P95 FOCUS-VISIBLE: keyboard travel wears a ring, the mouse never does.
+        // Modality = "no click in the last 400ms" at focus-change time; a global
+        // mouse spy (separate object — MainComponent's own mouseDown must not
+        // hear every child's events) stamps the clock.
+        juce::Desktop::getInstance().addFocusChangeListener (this);
+        juce::Desktop::getInstance().addGlobalMouseListener (&modalitySpy);
+        // P95 tab order: transport -> header -> composer (rest follow creation order)
+        playButton.setExplicitFocusOrder (1);
+        recButton.setExplicitFocusOrder (2);
+        loopButton.setExplicitFocusOrder (3);
+        undoButton.setExplicitFocusOrder (4);
+        redoButton.setExplicitFocusOrder (5);
+        songBox.setExplicitFocusOrder (6);
+        newSongButton.setExplicitFocusOrder (7);
+        genreBox.setExplicitFocusOrder (8);
+        promptBox.setExplicitFocusOrder (9);
+        sendButton.setExplicitFocusOrder (10);
         startTimerHz (30);
     }
 
     ~MainComponent() override
     {
+        juce::Desktop::getInstance().removeFocusChangeListener (this);      // P95 (dying-
+        juce::Desktop::getInstance().removeGlobalMouseListener (&modalitySpy);   // callback law: FIRST)
         menuBar.setModel (nullptr);
         for (auto& d : juce::MidiInput::getAvailableDevices())
             engine->getDeviceManager().deviceManager.removeMidiInputDeviceCallback (d.identifier, this);
@@ -9918,6 +11912,7 @@ public:
         sidecar.kill();
         jamProc.kill();                        // the band leaves with the room
         if (earProc.isRunning()) earProc.kill();
+        juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
         setLookAndFeel (nullptr);
         juce::Logger::setCurrentLogger (nullptr);
     }
@@ -9929,8 +11924,33 @@ public:
         auto dir = sotadaw::sotadawRoot().getChildFile ("songs");
         int id = 1;
         for (auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.json"))
-            if (! f.getFileName().startsWith ("_prop_"))
+            if (! f.getFileName().startsWith ("_prop_") && ! isMachineSidecarJson (f))
                 songBox.addItem (f.getFileNameWithoutExtension(), id++);
+    }
+
+    void openSongPicker()
+    {   // THE SONG VAULT: search + A-Z / NEW (creation time) over the raw popup
+        if (songPicker != nullptr) { closeSongPicker(); return; }
+        songPicker = std::make_unique<SongPicker> (songName);
+        songPicker->onChoose = [this] (const juce::String& nm)
+        {
+            closeSongPicker();
+            const auto f = sotadaw::sotadawRoot().getChildFile ("songs/" + nm + ".json");
+            if (f.existsAsFile() && nm != songName) loadSong (f);
+        };
+        songPicker->onDismiss = [this] { closeSongPicker(); };
+        addAndMakeVisible (songPicker.get());
+        songPicker->setBounds (getLocalBounds());
+        songPicker->setAnchor (getLocalArea (&songBox, songBox.getLocalBounds()));
+        songPicker->toFront (true);
+        songPicker->filter.grabKeyboardFocus();
+    }
+    void closeSongPicker()
+    {   // the close usually arrives from INSIDE the picker's own ListBox
+        // callback — defer the delete (the callback-rebuild trap)
+        if (songPicker == nullptr) return;
+        songPicker->setVisible (false);
+        juce::MessageManager::callAsync ([sp = songPicker.release()] { delete sp; });
     }
 
     void loadSong (const juce::File& f)
@@ -9955,7 +11975,7 @@ public:
                               "the journal keeps your last 15 saves per song.");
                     break;
                 }
-            if (song.tracks.empty()) { setStatus ("failed to parse " + f.getFileName()); return; }
+            if (song.tracks.empty()) { narrate (2, "failed to parse " + f.getFileName()); return; }
         }
         // heal songs saved before THE WORLD GROWS (2026-07-10): audio that landed
         // past the declared end opens its bars on load. Audio clips ONLY — note
@@ -10013,23 +12033,20 @@ public:
             {
                 propF.deleteFile();
                 sotadaw::sotadawRoot().getChildFile ("songs/_prop_" + songName + ".wav").deleteFile();
-                appendActivity ("[ui] cleared a no-op leftover proposal (identical to the song)");
+                appendActivity ("[ui] cleared a no-op leftover take (identical to the song)");
             }
             else if (propF.existsAsFile())
             {
-                appendActivity ("[ui] found a pending proposal for " + songName);
+                appendActivity ("[ui] found a pending take for " + songName);
                 propSurgical = juce::var();     // restored proposal: no live verdict to wear
                 onProposal ("_prop_" + songName);
             }
             else
                 flagF.deleteFile();             // stale marker with no prop: hygiene
         }
-        // open a song, SEE its shape: paint the hear strip from an existing render if one's on disk
-        {
-            auto wav = sotadaw::sotadawRoot().getChildFile ("songs/" + songName + ".wav");
-            if (wav.existsAsFile())
-                hearStrip.loadWav (wav, song.bpm, songName, sotadaw::sotadawRoot());
-        }
+        // (the hear strip already retargeted inside clearProposal above — THE STRIP
+        // FOLLOWS THE PROJECT; a pending prop's own wav, queued by onProposal just
+        // above, lands after the song's and rightly wins the slot)
         if (auto* top = getTopLevelComponent()) top->setName ("SOTA DAW - " + songName);
         setStatus (songName + "  |  " + juce::String ((int) song.tracks.size()) + " tracks");
         songSeenMtime = songFile.existsAsFile()
@@ -10066,13 +12083,39 @@ public:
         swapEngine (song);
         rebuildLanes();
         refreshTransportLabels();
-        {   // the accepted take usually just rendered: the strip re-reads the disk truth
-            auto wav = sotadaw::sotadawRoot().getChildFile ("songs/" + songName + ".wav");
-            if (wav.existsAsFile())
-                hearStrip.loadWav (wav, song.bpm, songName, sotadaw::sotadawRoot());
-        }
+        // the accepted take usually just rendered: the strip re-reads the disk truth
+        // (and a render-less accept clears the PROPOSAL tensor to the song's own well)
+        hearStripShowSong();
         refreshEnergy();
         refreshChords();
+    }
+
+    // THE STRIP FOLLOWS THE PROJECT (2026-07-17, Chezy live: the bottom strip wore
+    // untitled_56's tensor on entheogenic AND jam_spiritual_jazz_1, and a fresh
+    // boot showed a bare anonymous well): every subject change RETARGETS the sound
+    // tensor — the dormant well returns instantly wearing THIS song's chip, and
+    // the best render on disk (signed master > plain render) analyzes in behind
+    // it. A project with no render shows its OWN sleeping ears, never the last
+    // project's bar; an in-flight analysis of the old subject is epoch-dropped
+    // inside the strip itself.
+    void hearStripShowSong()
+    {
+        if (songName.isEmpty()) return;
+        auto root = sotadaw::sotadawRoot();
+        hearStrip.clear (songName);
+        const auto master = root.getChildFile ("songs/" + songName + "_master.wav");
+        const auto plain  = root.getChildFile ("songs/" + songName + ".wav");
+        if (master.existsAsFile() || plain.existsAsFile())
+            hearStrip.loadWav (master.existsAsFile() ? master : plain,
+                               song.bpm, songName, root);
+        else if (! songName.startsWith ("_") && std::getenv ("SOTADAW_SNAPSHOT") == nullptr)
+            // NO RENDER IS NOT NO SOUND (Chezy 2026-07-17 "not fixed!"): a project
+            // with sounding tracks and no render on disk renders ITSELF through the
+            // content-addressed cache (measured: 23s first fill on a 5-min imported
+            // record, ~2s on a jam; repeat opens are instant HITs) — scratch/_prop_
+            // subjects stay out of the render lane (their own feeds dress them),
+            // and deterministic camera rigs never spawn background renders
+            hearStrip.loadRender (songFile, song.bpm, songName, root);
     }
 
     // THE ENERGY LANE's data: run the kernel (tools/energy_curve.py — the ONE truth,
@@ -10150,7 +12193,8 @@ public:
         for (auto line : juce::StringArray::fromLines (chordBuf))
             if (line.startsWith ("CHORDS_JSON "))
                 if (auto v = juce::JSON::parse (line.substring (12)); v.isObject())
-                    ruler.chords = chordRunsFromVar (v.getProperty ("chords", juce::var()));
+                    ruler.chords = chordRunsFromVar (v.getProperty ("chords", juce::var()),
+                        [this] (double bar) { return proposal.barStartBeat (bar); });
         ruler.repaint();
     }
 
@@ -10390,6 +12434,47 @@ public:
         f.getParentDirectory().createDirectory();
         f.replaceWithText (juce::JSON::toString (juce::var (obj.get()), true));
     }
+
+    // THE SOUND CANNOT DIE v2 (2026-07-14, "why cant i hear shit": the default
+    // sink was a Bluetooth device that died MID-SESSION — the boot-time heal
+    // never saw it). Null/unset output -> re-pick: last known-good, then the
+    // PipeWire/default bridges, then anything. Boot calls this once; tick()
+    // re-calls on the beat whenever the device is null. Cheap when healthy.
+    void healAudioOutputIfDead()
+    {
+        if (engine == nullptr) return;
+        auto& adm = engine->getDeviceManager().deviceManager;
+        if (adm.getCurrentAudioDevice() != nullptr
+            && adm.getAudioDeviceSetup().outputDeviceName.isNotEmpty())
+            return;
+        juce::StringArray names;
+        if (auto* type = adm.getCurrentDeviceTypeObject())
+        {
+            type->scanForDevices();
+            names = type->getDeviceNames (false);
+        }
+        juce::StringArray picks;
+        const auto lastGood = loadUiPrefString ("lastGoodAudioOut", "");
+        if (lastGood.isNotEmpty())
+            picks.add (lastGood);
+        for (const auto& n : names) if (n.containsIgnoreCase ("pipewire")) picks.addIfNotAlreadyThere (n);
+        for (const auto& n : names) if (n.containsIgnoreCase ("default"))  picks.addIfNotAlreadyThere (n);
+        for (const auto& n : names) picks.addIfNotAlreadyThere (n);
+        for (const auto& pick : picks)
+        {
+            if (! names.contains (pick)) continue;
+            auto healed = adm.getAudioDeviceSetup();
+            healed.outputDeviceName = pick;
+            healed.useDefaultOutputChannels = true;
+            if (adm.setAudioDeviceSetup (healed, true).isEmpty() && adm.getCurrentAudioDevice() != nullptr)
+            {
+                chat.add (ChatPanel::Kind::status,
+                          "audio output was dead (device unplugged / save-time storm) - healed to '"
+                          + pick + "'");
+                break;
+            }
+        }
+    }
     static void saveUiPrefDouble (const juce::String& key, double val)
     {
         auto f = uiPrefsFile();
@@ -10499,6 +12584,7 @@ public:
         // change; a click into a stale menu after an agent event was the async
         // twin of the colour crash)
         juce::PopupMenu::dismissAllActiveMenus();
+        refreshNavStats();                      // track count is part of the corner line
         for (auto* l : lanes) l->detachMeter();
         // THE GRAVEYARD (the channel-colour crash, symbolized 2026-07-10 11:07):
         // lane gestures END here — menu actions, drops, clip edits all call back
@@ -10518,6 +12604,10 @@ public:
             juce::MessageManager::callAsync ([grave] { delete grave; });
         }
         laneNoteSel.clear();               // note+clip indices go stale on any reload
+        scorePage.song = &song;            // SCORE: re-engrave the fresh world
+        scorePage.songChanged();
+        attachTray.refresh (sotadaw::sotadawRoot()   // ATTACH: the inbox follows the song
+                                .getChildFile ("songs/.attach/" + songName));
         laneClipSel.clear();
         marqueeOn = false;
         // CANVAS FOLLOWS THE EARS: auditioning renders the PROPOSAL as the solid
@@ -10528,9 +12618,14 @@ public:
         for (size_t i = 0; i < cs.tracks.size(); ++i)
         {
             auto* lane = lanes.add (new TrackLane());
+            lane->barBeat = [this] (double b_) { return (auditioningProposal ? proposal : song).barStartBeat (b_); };
+            lane->beatBar = [this] (double q_) { return (auditioningProposal ? proposal : song).barAtBeat (q_); };
             const int ti = (int) i;
             lane->colourIndex = ti;              // BEFORE set(): the label wears the channel colour
             lane->set (&cs.tracks[i], cs.totalBeats());
+            for (auto& sec : cs.sections)        // the song's form rides every lane's cache
+                if (sec.startBar > 0)
+                    lane->sectionSeams.push_back (cs.barStartBeat (sec.startBar));
             if (i < diff.tracks.size()) lane->setDiff (&diff.tracks[i]);
             lane->resolveModel = [this, ti]() -> const SongTrack*
             {   // resolver law: entry points re-resolve — a reassigned vector
@@ -10547,10 +12642,11 @@ public:
             lane->setFlags (muted.count ((int) i) > 0, soloed.count ((int) i) > 0);
             lane->bpm = cs.bpm;
             lane->onToggleCell = [this, ti] (double beat) { toggleCell (ti, beat); };
-            lane->selected = (ti == selectedTrack || selTracks.count (ti) > 0);
+            lane->setSelected (ti == selectedTrack || selTracks.count (ti) > 0);
             lane->onSelect = [this, ti] (bool add) { selectTrack (ti, add); };
             lane->onMarquee = [this] (const juce::MouseEvent& e, int phase) { laneMarquee (e, phase); };
             lane->onBlockDrag = [this] (const juce::MouseEvent& e, int phase) { laneBlockDrag (e, phase); };
+            lane->onNotePick = [this, ti] (int ni) { toggleLaneNote (ti, ni); };
             lane->clipSnap = juce::jmax (laneSnapBeats(), 0.25);   // clips snap on the shared grid (H4)
             lane->onClipEdit = [this, ti] (int ci, int op, double v) { editClip (ti, ci, op, v); };
             lane->onClipGroupMove = [this, ti] (const std::vector<int>& cis, double d, bool cl)
@@ -10576,7 +12672,8 @@ public:
             {
                 if (section == "CRATE")     // loop dropped on a lane = land AT the drop bar
                     placeLoopIntoTrack (ti, crateDir().getChildFile (id + ".json"),
-                                        std::floor (dropBeat / 4.0) * 4.0);
+                                        song.barStartBeat (std::floor (song.barAtBeat (
+                                            juce::jmax (0.0, dropBeat)))));
                 else if (section == "PRESETS")   // preset dropped straight onto THIS lane
                     applyPresetToTrack (ti, id.upToFirstOccurrenceOf ("|", false, false),
                                         id.fromFirstOccurrenceOf ("|", false, false));
@@ -10629,7 +12726,7 @@ public:
                         add.push_back ({ n.start + span, n.len, n.pitch, n.vel });
                 tr.notes.insert (tr.notes.end(), add.begin(), add.end());
                 std::sort (tr.notes.begin(), tr.notes.end(), [] (auto& a, auto& b) { return a.start < b.start; });
-                song.lengthBars = juce::jmax (song.lengthBars, (loopB + span) / 4.0);
+                song.lengthBars = juce::jmax (song.lengthBars, song.barAtBeat (loopB + span));
                 saveNow();
                 reloadEngineKeepUi();
                 appendActivity ("[ui] duplicated " + juce::String ((int) add.size()) + " notes after the region");
@@ -10672,7 +12769,7 @@ public:
             };
             if (preview)                        // ghost take = READ-ONLY canvas: every
             {                                   // mutating gesture explains itself instead
-                auto say = [this] { setStatus ("this is the PROPOSAL preview - Accept to apply it, then edit"); };
+                auto say = [this] { setStatus ("this is the TAKE preview - KEEP to apply it, then edit"); };
                 lane->onToggleCell  = [say] (double) { say(); };
                 lane->onDropAssign  = [say] (const juce::String&, const juce::String&, double) { say(); };
                 lane->onDelete      = [say] { say(); };
@@ -10707,6 +12804,8 @@ public:
                 gt.notes.clear();                 // the diff carries every note as a ghost
                 ghostModels.push_back (std::move (gt));
                 auto* lane = lanes.add (new TrackLane());
+                lane->barBeat = [this] (double b_) { return (auditioningProposal ? proposal : song).barStartBeat (b_); };
+                lane->beatBar = [this] (double q_) { return (auditioningProposal ? proposal : song).barAtBeat (q_); };
                 lane->colourIndex = (int) i;      // born wearing its future channel colour
                 lane->set (&ghostModels.back(), juce::jmax (song.totalBeats(), proposal.totalBeats()));
                 lane->bpm = proposal.bpm;
@@ -10723,7 +12822,7 @@ public:
                 auto say = [this]
                 {
                     setStatus (proposalPending
-                                 ? "this layer arrives with the proposal - Accept to make it real"
+                                 ? "this layer arrives with the take - KEEP to make it real"
                                  : "the agent is still composing this layer - it lands with the proposal");
                 };
                 lane->onToggleCell   = [say] (double) { say(); };
@@ -10768,6 +12867,8 @@ public:
             bt.fx = bus.fx;
             busModels.push_back (std::move (bt));
             auto* lane = lanes.add (new TrackLane());
+            lane->barBeat = [this] (double b_) { return (auditioningProposal ? proposal : song).barStartBeat (b_); };
+            lane->beatBar = [this] (double q_) { return (auditioningProposal ? proposal : song).barAtBeat (q_); };
             lane->set (&busModels.back(), song.totalBeats());
             const size_t bk = busModels.size() - 1;
             lane->resolveModel = [this, bk]() -> const SongTrack*
@@ -10797,6 +12898,7 @@ public:
         ruler.totalBeats = viewTotalBeats();   // a longer proposal opens the bars it needs
         ruler.sections = cs.sections;          // canvas follows ears: audition shows ITS shape
         ruler.tempoPoints = cs.tempoMap;
+        ruler.meterPoints = cs.meterMap;       // ...and ITS world grid (time-sig chips)
         ruler.chords = chordRuns (cs);         // ...and ITS harmony (THE CHORD RAIL)
         ruler.baseBpm = cs.bpm;                // new tempo points inherit the song's pulse
         for (auto* l : lanes) l->totalBeats = viewTotalBeats();
@@ -10810,6 +12912,7 @@ public:
         attachMeters();
         applyViewport();
         showRoll (roll.isVisible());
+        if (scorePage.isVisible()) showScore (true);   // SCORE: fresh lanes re-hide (rebuild re-shows them)
         assertAgentModeZ();     // fresh lanes must NOT rise over the veil/column
         resized(); repaint();
     }
@@ -10826,6 +12929,8 @@ public:
                  &rowsMinusB, &rowsFitB, &rowsPlusB })
             c->toFront (false);
         ghostGlass.toFront (false);        // the frosted panes ride above everything canvas
+        if (songPicker != nullptr)         // THE VAULT IS MODAL: a streaming take's lane
+            songPicker->toFront (false);   // rebuilds must never bury the open picker
     }
 
     // AGENT MODE z-law: any addAndMakeVisible after mode-entry (lane rebuilds,
@@ -10842,9 +12947,11 @@ public:
         // EVERY widget the composer column wears MUST join this list — the veil
         // buries absentees in F4 (the FABLE pill was invisible all evening, 2026-07-10)
         for (auto* c : std::initializer_list<juce::Component*> {
-                 &chat, &contextChips, &promptBox, &sendButton, &crateButton,
+                 &chat, &contextChips, &promptBox, &sendButton, &micButton, &crateButton,
                  &loopLabButton, &modelBox, &seedButton, &genreBox, &makeTrackButton, &humButton,
-                 &restyleButton, &historyPanel })   // F4 TIME MACHINE: the drawer is column material
+                 &restyleButton, &dockMoreButton,   // THE DOCK FOLD caret joins or the veil eats it
+                 &bringSongButton, &finishDoorButton,   // persistent doors: same law
+                 &historyPanel })   // F4 TIME MACHINE: the drawer is column material
             c->toFront (false);
         for (auto* b : verbStrip)   b->toFront (false);
         for (auto* b : colorStrip)  b->toFront (false);
@@ -10852,6 +12959,8 @@ public:
         chatsButton.toFront (false);           // F4 absentee law: fronted or invisible
         for (auto* c : loopCards)   c->toFront (false);
         refreshGhostGlass();
+        if (songPicker != nullptr)             // the open vault outranks the veil AND
+            songPicker->toFront (false);       // the glass: the modal gets the last word
     }
 
     void toggleCell (int ti, double beat)
@@ -10930,8 +13039,7 @@ public:
         auto& t = edit->getTransport();
         if (loopButton.getToggleState() && loopB > loopA)
         {
-            t.setLoopRange ({ edit->tempoSequence.toTime (te::BeatPosition::fromBeats (loopA)),
-                              edit->tempoSequence.toTime (te::BeatPosition::fromBeats (loopB)) });
+            t.setLoopRange ({ timeAtQuarter (loopA), timeAtQuarter (loopB) });
             t.looping = true;
         }
         else
@@ -10943,40 +13051,55 @@ public:
     {
         theme::backdrop (g, getLocalBounds());               // deep space + brand blooms
         // ---- header: menu strip above; tier 1 = brand + transport, tier 2 = workspace chrome
-        const float headerB = (float) menuH + 10.0f + 44.0f + 2.0f + 30.0f + 5.0f;   // mirrors resized()
-        auto bar = juce::Rectangle<float> (0, (float) menuH, (float) getWidth(), headerB - (float) menuH);
+        const float menuTop = menuInline() ? 0.0f : (float) menuH;   // 3 rows -> 2 on wide windows
+        const float headerB = menuTop + 10.0f + 52.0f + 2.0f + 34.0f + 5.0f;   // mirrors resized()
+        auto bar = juce::Rectangle<float> (0, menuTop, (float) getWidth(), headerB - menuTop);
         g.setGradientFill ({ theme::panelHi.withAlpha (0.55f), bar.getTopLeft(),
                              theme::panel.withAlpha (0.16f), bar.getBottomLeft(), false });
         g.fillRect (bar);                                              // glass: the aurora shows through
+        {   // relight v7 THE CROWN: the nebula's sweep echoes INSIDE the header glass —
+            // blue at the wordmark rising to violet under the agent door
+            juce::ColourGradient ec (theme::accent.withAlpha (0.05f), bar.getX(), bar.getCentreY(),
+                                     theme::accentB.withAlpha (0.10f), bar.getRight(), bar.getY(), false);
+            ec.addColour (0.55, theme::accent.withAlpha (0.045f));
+            g.setGradientFill (ec);
+            g.fillRect (bar);
+        }
         if (! transportWellRect.isEmpty())
         {   // light leak behind the transport hardware — the stage is lit
-            juce::ColourGradient ll (theme::accent.withAlpha (0.07f),
+            juce::ColourGradient ll (theme::accent.withAlpha (0.14f),
                                      transportWellRect.toFloat().getCentreX(), bar.getCentreY(),
                                      theme::accent.withAlpha (0.0f),
-                                     transportWellRect.toFloat().getCentreX() + 420.0f, bar.getCentreY(), true);
+                                     transportWellRect.toFloat().getCentreX() + 460.0f, bar.getCentreY(), true);
             g.setGradientFill (ll);
             g.fillRect (bar);
         }
         g.setColour (juce::Colours::white.withAlpha (0.05f));
         g.drawHorizontalLine ((int) headerB - 1, 0.0f, (float) getWidth());
-        g.setGradientFill (theme::brand ({ 0.0f, headerB - 2.0f, (float) getWidth(), 2.0f }, 0.4f));
+        g.setGradientFill (theme::brand ({ 0.0f, headerB - 2.0f, (float) getWidth(), 2.0f }, 0.6f));
         g.fillRect (0.0f, headerB - 2.5f, (float) getWidth(), 1.6f);   // the signature hairline
-        // wordmark
-        const float wy = (float) menuH;
-        g.setColour (theme::agent.withAlpha (0.14f));
+        // wordmark: the sigil is a lit jewel that BREATHES (relight v7 — the agent's
+        // presence is a slow 3.2s glow, never the tempo; tick repaints its box only)
+        const float wy = menuTop;
+        g.setColour (theme::agent.withAlpha (0.07f + 0.07f * sigilBreath));
+        g.fillEllipse (2.0f, wy + 1.0f, 43.0f, 43.0f);                 // outer bloom
+        g.setColour (theme::agent.withAlpha (0.22f + 0.08f * sigilBreath));
         g.fillEllipse (10.0f, wy + 9.0f, 27.0f, 27.0f);                // spark halo
         theme::spark (g, { 16.0f, wy + 15.0f, 15.0f, 15.0f }, theme::agent);
-        g.setColour (theme::text);
-        g.setFont (theme::ui (18.0f, juce::Font::bold));
-        g.drawText ("SOTA DAW", 44, (int) wy + 7, 130, 22, juce::Justification::centredLeft);
-        if (proposalPending)                                           // state pill, not grey text
-            theme::chip (g, { 44.0f, wy + 30.0f, 82.0f, 13.0f }, theme::good, "PROPOSAL",
-                         theme::caps (7.5f), 0.18f, 0.7f);
-        else
-        {
-            g.setColour (theme::textMute);
-            g.setFont (theme::caps (7.5f));
-            g.drawText ("AI-NATIVE WORKSTATION", 44, (int) wy + 30, 160, 12, juce::Justification::centredLeft);
+        if (! brandCompact())   // 1400..1600: the sigil alone carries the brand —
+        {                       // the menu needs the room and the OS title has the name
+            g.setColour (theme::text);
+            g.setFont (theme::ui (18.0f, juce::Font::bold));
+            g.drawText ("SOTA DAW", 44, (int) wy + 7, 130, 22, juce::Justification::centredLeft);
+            if (proposalPending)                                       // state pill, not grey text
+                theme::chip (g, { 44.0f, wy + 30.0f, 82.0f, 13.0f }, theme::good, "TAKE",
+                             theme::caps (7.5f), 0.18f, 0.7f);
+            else
+            {
+                g.setColour (theme::textMute);
+                g.setFont (theme::caps (7.5f));
+                g.drawText ("A SESSION STUDIO", 44, (int) wy + 30, 160, 12, juce::Justification::centredLeft);
+            }
         }
         // transport well: one recessed hardware cluster (play/rec/loop | LCD | bpm | swing)
         if (! transportWellRect.isEmpty())
@@ -10988,8 +13111,10 @@ public:
                                  juce::Colours::black.withAlpha (0.0f),
                                  { w.getX(), w.getY() + 9.0f }, false });
             g.fillRoundedRectangle (w, 12.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.06f));
+            g.setColour (juce::Colours::white.withAlpha (0.09f));
             g.drawRoundedRectangle (w.reduced (0.5f), 12.0f, 1.0f);
+            g.setColour (theme::accent.withAlpha (0.10f));             // accent kiss on the crown rim
+            g.drawHorizontalLine ((int) w.getY() + 1, w.getX() + 12.0f, w.getRight() - 12.0f);
             g.setColour (juce::Colours::white.withAlpha (0.05f));      // bottom rim light
             g.drawHorizontalLine ((int) w.getBottom() - 1, w.getX() + 10.0f, w.getRight() - 10.0f);
             auto sw = swingSlider.getBounds().toFloat();               // swing: micro-caps overline
@@ -10997,26 +13122,104 @@ public:
             g.setFont (theme::caps (7.0f));
             g.drawText ("SWING", (int) sw.getX(), (int) w.getY() + 3, (int) sw.getWidth(), 9,
                         juce::Justification::centred);
+            {   // TEMPO wears the LCD's glass (alive wave): a recessed twin well —
+                // the readout row is ONE hardware family, not a number floating on felt
+                auto br = bpmLabel.getBounds().toFloat().expanded (1.0f, 0.0f);
+                g.setColour (theme::inset);
+                g.fillRoundedRectangle (br, 6.0f);
+                g.setGradientFill ({ juce::Colours::black.withAlpha (0.4f), br.getTopLeft(),
+                                     juce::Colours::black.withAlpha (0.0f),
+                                     { br.getX(), br.getY() + 8.0f }, false });
+                g.fillRoundedRectangle (br, 6.0f);
+                g.setColour (theme::accent.withAlpha (0.08f));         // phosphor wash
+                g.fillRoundedRectangle (br.reduced (2.0f), 4.5f);
+                g.setColour (theme::line);
+                g.drawRoundedRectangle (br, 6.0f, 1.0f);
+            }
         }
         // master meter: LED column with -12/-3 ticks (the bus that never lies)
         if (! masterMeterRect.isEmpty())
         {
             auto m = masterMeterRect.toFloat().withTrimmedBottom (10.0f);
-            const float frac = juce::jlimit (0.0f, 1.0f, (masterDb + 48.0f) / 48.0f);
-            const auto hot = masterDb > -1.5f ? theme::bad : masterDb > -8.0f ? theme::meterHi : theme::meterLo;
-            theme::ledMeter (g, m, frac, theme::meterLo, hot);
-            g.setColour (theme::line.brighter (0.14f));            // frame: present even at silence
-            g.drawRoundedRectangle (m.expanded (1.5f), 4.0f, 1.0f);
-            g.setColour (theme::textMute.withAlpha (0.8f));
-            for (float db : { -12.0f, -3.0f })
+            // DEVICE-DEATH HONESTY (2026-07-14): engine level with NO physical
+            // output is the UI lying about sound — dead device = red hollow +
+            // slash until the tick-side heal re-picks one.
+            const bool devDead = engine != nullptr
+                && engine->getDeviceManager().deviceManager.getCurrentAudioDevice() == nullptr;
+            if (devDead)
             {
-                const float ty = m.getY() + m.getHeight() * (1.0f - (db + 48.0f) / 48.0f);
-                g.drawHorizontalLine ((int) ty, m.getX() - 4.5f, m.getX() - 2.0f);
+                g.setColour (theme::bad.withAlpha (0.85f));
+                g.drawRoundedRectangle (m.expanded (1.5f), 4.0f, 1.2f);
+                g.drawLine (m.getX() + 1.0f, m.getBottom() - 1.0f,
+                            m.getRight() - 1.0f, m.getY() + 1.0f, 1.4f);
             }
-            g.setColour (theme::textDim);
+            else if (masterMeterRect.getWidth() >= 90)
+            {   // THE MASTER LAMP: stereo pair, peak-hold ticks, scale marks, live
+                // readout — the output bus reads at a glance from anywhere
+                auto lampL = m.removeFromTop (m.getHeight() * 0.5f).reduced (0.0f, 1.0f);
+                auto lampR = m.reduced (0.0f, 1.0f);
+                auto bar = [&] (juce::Rectangle<float> b, float db, float pk)
+                {
+                    g.setColour (theme::inset);
+                    g.fillRoundedRectangle (b, 2.5f);
+                    const float frac = juce::jlimit (0.0f, 1.0f, (db + 48.0f) / 48.0f);
+                    const auto hot = db > -1.5f ? theme::bad : db > -8.0f ? theme::meterHi : theme::meterLo;
+                    if (frac > 0.004f)
+                    {
+                        auto f = b.withWidth (b.getWidth() * frac);
+                        g.setGradientFill ({ theme::meterLo.withAlpha (0.9f), b.getTopLeft(),
+                                             hot, b.getTopRight(), false });
+                        g.fillRoundedRectangle (f, 2.5f);
+                    }
+                    const float pf = juce::jlimit (0.0f, 1.0f, (pk + 48.0f) / 48.0f);
+                    if (pf > 0.01f)
+                    {
+                        g.setColour (hot.brighter (0.25f).withAlpha (0.95f));
+                        g.fillRect (b.getX() + b.getWidth() * pf - 1.2f, b.getY(), 1.6f, b.getHeight());
+                    }
+                };
+                bar (lampL, masterDbL, peakHoldL);
+                bar (lampR, masterDbR, peakHoldR);
+                g.setColour (theme::textMute.withAlpha (0.55f));   // -12 / -3 scale marks
+                for (float db : { -12.0f, -3.0f })
+                {
+                    const float tx = lampL.getX() + lampL.getWidth() * (db + 48.0f) / 48.0f;
+                    g.drawVerticalLine ((int) tx, lampL.getY(), lampR.getBottom());
+                }
+                g.setColour (theme::line.brighter (0.14f));
+                g.drawRoundedRectangle (masterMeterRect.toFloat().withTrimmedBottom (10.0f)
+                                            .expanded (1.5f), 4.0f, 1.0f);
+            }
+            else
+            {
+                const float frac = juce::jlimit (0.0f, 1.0f, (masterDb + 48.0f) / 48.0f);
+                const auto hot = masterDb > -1.5f ? theme::bad : masterDb > -8.0f ? theme::meterHi : theme::meterLo;
+                theme::ledMeter (g, m, frac, theme::meterLo, hot);
+                g.setColour (theme::line.brighter (0.14f));        // frame: present even at silence
+                g.drawRoundedRectangle (m.expanded (1.5f), 4.0f, 1.0f);
+                g.setColour (theme::textMute.withAlpha (0.55f));   // -12 / -3 across the body:
+                for (float db : { -12.0f, -3.0f })                 // the idle sliver reads as an
+                {                                                  // instrument, not a black pill
+                    const float ty = m.getY() + m.getHeight() * (1.0f - (db + 48.0f) / 48.0f);
+                    g.drawHorizontalLine ((int) ty, m.getX() + 1.5f, m.getRight() - 1.5f);
+                }
+            }
+            g.setColour (devDead ? theme::bad : theme::textDim);
             g.setFont (theme::caps (6.5f));
-            g.drawText ("OUT", masterMeterRect.withTrimmedTop (masterMeterRect.getHeight() - 9)
-                                  .expanded (6, 0), juce::Justification::centred);
+            {   // label row: OUT + (lamp only) the live number the mixer strips speak
+                auto lab = masterMeterRect.withTrimmedTop (masterMeterRect.getHeight() - 9)
+                               .expanded (6, 0);
+                if (masterMeterRect.getWidth() >= 90 && ! devDead)
+                {
+                    g.drawText ("OUT", lab, juce::Justification::centredLeft);
+                    g.setFont (theme::mono (7.0f, juce::Font::bold));
+                    g.drawText (masterDb <= -99.0f ? juce::String ("-inf")
+                                                   : juce::String (masterDb, 1) + " dB",
+                                lab, juce::Justification::centredRight);
+                }
+                else
+                    g.drawText ("OUT", lab, juce::Justification::centred);
+            }
         }
         // R6 THE RELIABILITY CHIP: fresh xruns (amber) / hot cpu (red) from the
         // ears bus — material that appears only when the audio thread suffered.
@@ -11072,7 +13275,8 @@ public:
                                         .fromLastOccurrenceOf ("/", false, false);
             g.setColour (theme::textMute);
             g.setFont (theme::ui (8.0f));
-            g.drawText (file.isNotEmpty() ? file : bridgeDesc,
+            g.drawText (importDetail.isNotEmpty() ? importDetail       // the job's own words
+                            : file.isNotEmpty() ? file : bridgeDesc,
                         mid.removeFromTop (10.0f).toNearestInt(), juce::Justification::centredLeft);
             mid.removeFromTop (2.0f);
             auto bar = mid.removeFromTop (5.0f);
@@ -11107,25 +13311,35 @@ public:
             g.setGradientFill (theme::brand (c.withHeight (1.5f), 0.25f));
             g.fillRect (c.getX() + 8.0f, c.getY(), c.getWidth() - 16.0f, 1.2f);
         }
-        // leftover arrange void: a ghost drop-target that coaches, never dead black
-        if (! roll.isVisible() && ! mixer.isVisible() && ! liveGrid.isVisible() && ! lanes.isEmpty())
+        // THE OPEN LAND (relight v7's landing pad, re-grounded 2026-07-17): the
+        // leftover arrange void is a lit drop-stage, never dead black. Geometry
+        // = openLand (the resized() lane-cursor truth) — the old gate read
+        // lanes.getLast(), and a FOLDED last family zero-sizes its lanes, so the
+        // pad vanished exactly when folding freed the most space (Chezy live).
+        // Small voids DEGRADE to the slim form (the FLIP law), never vanish.
+        if (! roll.isVisible() && ! mixer.isVisible() && ! liveGrid.isVisible()
+            && ! openLand.isEmpty())
         {
-            auto* last = lanes.getLast();
-            const int top = last->getBottom() + 10;
-            const int bot = (hScroll.getHeight() > 0 ? hScroll.getY() - 4 : getHeight()) - 8;
-            if (bot - top > 96 && last->getWidth() > 200
-                && g.clipRegionIntersects ({ last->getX(), top, last->getWidth(), bot - top }))
+            const int top = openLand.getY() + 8;
+            const int bot = openLand.getBottom() - 6;
+            const bool slim = bot - top <= 96;      // low headroom: well + one line only
+            if (bot - top > 24 && openLand.getWidth() > 200
+                && g.clipRegionIntersects ({ openLand.getX(), top, openLand.getWidth(), bot - top }))
             {
-                juce::Rectangle<float> z ((float) last->getX() + 1.0f, (float) top,
-                                          (float) last->getWidth() - 2.0f, (float) (bot - top));
-                {   // the void is DESIGNED SPACE, not dead black: a whisper of inset
-                    // panel + a low brand bloom pooling at the floor (vault taste)
-                    g.setColour (juce::Colours::white.withAlpha (0.012f));
+                juce::Rectangle<float> z ((float) openLand.getX() + 1.0f, (float) top,
+                                          (float) openLand.getWidth() - 2.0f, (float) (bot - top));
+                const bool warm = fileHover && openLand.contains (fileHoverPos);
+                {   // relight v7 THE LANDING PAD: the void is a lit stage waiting for
+                    // its first sound — glass floor + brand bloom pooling under the pad
+                    g.setColour (juce::Colours::white.withAlpha (0.018f));
                     g.fillRoundedRectangle (z, 9.0f);
-                    juce::ColourGradient bloom (theme::accent.withAlpha (0.045f),
+                    // ONE light: the floor bloom under the pad. (A second corner glow
+                    // collapsed into a smudge-rectangle on SHORT voids — Chezy live,
+                    // 2026-07-15. Atmosphere must scale with its room or die.)
+                    juce::ColourGradient bloom (theme::accent.withAlpha (0.10f),
                                                 z.getCentreX(), z.getBottom() + 40.0f,
                                                 theme::accent.withAlpha (0.0f),
-                                                z.getCentreX(), z.getY() + z.getHeight() * 0.35f, true);
+                                                z.getCentreX(), z.getY() + z.getHeight() * 0.30f, true);
                     g.setGradientFill (bloom);
                     g.fillRoundedRectangle (z, 9.0f);
                 }
@@ -11133,25 +13347,78 @@ public:
                 outline.addRoundedRectangle (z, 9.0f);
                 const float dashes[] = { 5.0f, 6.0f };
                 juce::PathStrokeType (1.0f).createDashedStroke (dash, outline, dashes, 2);
-                g.setColour (juce::Colours::white.withAlpha (0.055f));
+                g.setColour (warm ? theme::accent.withAlpha (0.45f)     // a hovering hand
+                                  : juce::Colours::white.withAlpha (0.11f));    // lights the rim
                 g.fillPath (dash);
                 const float cx = z.getCentreX(), cy = z.getCentreY() - 4.0f;
-                g.setColour (juce::Colours::white.withAlpha (0.10f));
-                g.drawEllipse (cx - 12.0f, cy - 21.0f, 24.0f, 24.0f, 1.2f);
-                g.setColour (juce::Colours::white.withAlpha (0.32f));
-                g.setFont (theme::ui (16.0f));
-                g.drawText ("+", (int) cx - 12, (int) cy - 22, 24, 24, juce::Justification::centred);
-                g.setColour (theme::textMute.withAlpha (0.8f));
-                g.setFont (theme::ui (11.0f));
-                g.drawText ("drop a sound or loop here - or ask the producer for one",
-                            (int) z.getX(), (int) cy + 10, (int) z.getWidth(), 16,
-                            juce::Justification::centred);
+                if (slim)
+                {   // the slim form: one coaching line, centered — no jewel to squash
+                    g.setColour (theme::text.withAlpha (0.75f));
+                    g.setFont (theme::ui (12.0f));
+                    g.drawText ("drop a sound or loop here - or click for a new track",
+                                z.toNearestInt(), juce::Justification::centred);
+                }
+                else
+                {   // pass 4: the jewel gets the full glow treatment (halo ring +
+                    // richer core) and the coaching line speaks at full voice
+                    g.setColour (theme::accent.withAlpha (0.08f));
+                    g.fillEllipse (cx - 30.0f, cy - 39.0f, 60.0f, 60.0f);
+                    g.setColour (theme::accent.withAlpha (0.20f));
+                    g.fillEllipse (cx - 22.0f, cy - 31.0f, 44.0f, 44.0f);
+                    g.setColour (theme::accent.withAlpha (0.70f));
+                    g.drawEllipse (cx - 14.0f, cy - 23.0f, 28.0f, 28.0f, 1.4f);
+                    g.setColour (juce::Colours::white.withAlpha (0.92f));
+                    g.setFont (theme::ui (19.0f));
+                    g.drawText ("+", (int) cx - 14, (int) cy - 24, 28, 28, juce::Justification::centred);
+                    g.setColour (theme::text.withAlpha (0.80f));
+                    g.setFont (theme::ui (12.5f));
+                    g.drawText ("drop a sound or loop here - or ask the producer for one",
+                                (int) z.getX(), (int) cy + 14, (int) z.getWidth(), 17,
+                                juce::Justification::centred);
+                }
             }
         }
     }
 
     void paintOverChildren (juce::Graphics& g) override   // marquee + gesture map ride ABOVE all
     {
+        {   // pass 6 TOOLBAR RHYTHM: quiet vertical ticks in the natural gaps
+            // between control FAMILIES — the row stops reading as sixteen equal
+            // boxes without a single button moving. Guards make every tick
+            // self-cancel when a layout tier folds/reorders its neighbours.
+            auto tick = [&g, this] (juce::Component& a, juce::Component& b)
+            {
+                if (! a.isVisible() || ! b.isVisible()) return;
+                const auto ra = a.getBounds(), rb = b.getBounds();
+                const int gap = rb.getX() - ra.getRight();
+                if (gap < 4 || gap > 34) return;                       // not neighbours here
+                if (std::abs (ra.getCentreY() - rb.getCentreY()) > 8) return;
+                const float x = (float) ra.getRight() + (float) gap * 0.5f;
+                const float y0 = (float) juce::jmax (ra.getY(), rb.getY()) + 3.0f;
+                const float y1 = (float) juce::jmin (ra.getBottom(), rb.getBottom()) - 3.0f;
+                if (y1 - y0 < 6.0f) return;
+                g.setColour (juce::Colours::white.withAlpha (0.08f));
+                g.fillRoundedRectangle (x - 0.5f, y0, 1.0f, y1 - y0, 0.5f);
+            };
+            tick (presetsButton, undoButton);
+            tick (redoButton, songBox);
+            tick (newSongButton, addTrackButton);
+            tick (acctButton, snapBox);
+        }
+        // P95 THE FOCUS RING (:focus-visible): keyboard-driven focus wears an
+        // accent ring +2px outside the control — ONE paint for every widget,
+        // never on mouse focus, never in the way (outline only).
+        if (auto* f = focusRingTarget.getComponent();
+            f != nullptr && kbdModality && f->isVisible() && isParentOf (f))
+            // isVisible, NOT isShowing: the unmapped snap rig shoots the ring too
+            // (wings-are-air law) — a live desk hides rings via focus loss anyway
+        {
+            const auto rr = getLocalArea (f, f->getLocalBounds().toFloat()).expanded (2.0f);
+            g.setColour (theme::accent.withAlpha (0.85f));
+            g.drawRoundedRectangle (rr, 5.0f, 1.5f);
+            g.setColour (theme::accent.withAlpha (0.22f));   // soft halo, no fill
+            g.drawRoundedRectangle (rr.expanded (1.5f), 6.5f, 1.2f);
+        }
         if (marqueeOn)
         {
             const auto r = juce::Rectangle<int> (marqueeA, marqueeB);
@@ -11255,7 +13522,7 @@ public:
             { 1, "LIVE (session grid)", "cap",         "capture -> notes in the song" },
             { 1, "LIVE (session grid)", "2x-click",    "seed empty cell - header = rename scene" },
             { 2, "PIANO ROLL", "ctrl+drag",    "marquee notes" },
-            { 2, "PIANO ROLL", "drag / edge",  "move / resize a note" },
+            { 2, "PIANO ROLL", "drag / edges", "move - right edge = length, left = start" },
             { 2, "PIANO ROLL", "ctrl+A C V D", "all / copy / paste-at-playhead / dup" },
             { 2, "PIANO ROLL", "arrows",       "nudge / transpose (shift = fine / octave)" },
             { 2, "PIANO ROLL", "del",          "delete selection" },
@@ -11265,6 +13532,12 @@ public:
             { 2, "PIANO ROLL", "hold B",       "brush: paint notes (stamps ride it)" },
             { 2, "PIANO ROLL", "hold K",       "knife: click a note = split" },
             { 2, "PIANO ROLL", "ctrl+B",       "repeat selection right" },
+            { 2, "PIANO ROLL", "alt+wheel",    "scale selected velocities (shift = fine)" },
+            { 2, "PIANO ROLL", "Z / shift+Z",  "zoom to selection (Z again = back) / fit song" },
+            { 2, "PIANO ROLL", "ctrl+L",       "legato: each note reaches the next" },
+            { 2, "PIANO ROLL", "F / pill",     "follow on-off - CHASE chip = open on NOW" },
+            { 2, "PIANO ROLL", "props strip",  "PITCH VEL AT LEN - drag scrubs, 2x-click types" },
+            { 2, "PIANO ROLL", "SCALE chip",   "ALL - TINT - FOLD (in-key rows; blue notes keep a red tick)" },
             { 2, "PIANO ROLL", "2x-click",     "select same pitch (note or key)" },
             { 2, "PIANO ROLL", "ctrl+rclick",  "OPS: legato mirror retro stretch stamps" },
             { 2, "PIANO ROLL", "key chip",     "toggle SCALE LOCK (in-key hands)" },
@@ -11297,7 +13570,12 @@ public:
                         rowsTable.push_back ({ groupCol[grp], gr.key, gr.what });
             }
         }
-        const float colW = 252.0f, pad = 22.0f;
+        // HELP NEVER CLIPS: the card breathes with the window (the old fixed 252
+        // gave descriptions 148px ≈ 27 chars — long gestures truncated mid-sentence
+        // on a 1920 screen that had 1100px to spare). Both 1920 and 1366 reach the
+        // full column; smaller windows squeeze gracefully via drawFittedText.
+        const float colW = juce::jlimit (252.0f, 356.0f, (full.getWidth() - 200.0f) / 3.0f);
+        const float pad = 22.0f;
         // AUTO-HEIGHT: the old fixed 540 clipped the tallest column (ARRANGE +
         // LIVE overflowed off the bottom onto the scrim). Measure the columns
         // the same way the draw loop advances, and size the card to fit.
@@ -11312,7 +13590,14 @@ public:
             }
         }
         const float bodyH = juce::jmax (colH[0], juce::jmax (colH[1], colH[2]));
-        const float cardH = juce::jlimit (360.0f, full.getHeight() - 40.0f, 48.0f + bodyH + 44.0f);
+        // SHORT WINDOWS SQUEEZE, NEVER CLIP: a 768-tall window can't hold the
+        // tallest column at full 22px pitch — scale the pitch (fonts ride it at
+        // half-speed) so the WHOLE map stays on screen. Degrade, never hide.
+        const float rs = juce::jlimit (0.68f, 1.0f,
+                                       (full.getHeight() - 132.0f) / juce::jmax (1.0f, bodyH));
+        const float rowP = 22.0f * rs, gapP = 10.0f * rs;
+        const float fs  = 0.5f + 0.5f * rs;
+        const float cardH = juce::jlimit (360.0f, full.getHeight() - 40.0f, 48.0f + bodyH * rs + 44.0f);
         auto card = juce::Rectangle<float> (0.0f, 0.0f, colW * 3.0f + pad * 2.0f + 24.0f, cardH)
                         .withCentre (full.getCentre());
         theme::card (g, card, theme::panel, 14.0f);
@@ -11335,18 +13620,18 @@ public:
             if (y == 0.0f) y = card.getY() + 48.0f;
             if (row.key.isEmpty())                                       // group title
             {
-                if (y > card.getY() + 50.0f) y += 10.0f;
+                if (y > card.getY() + 50.0f) y += gapP;
                 g.setColour (theme::accent.withAlpha (0.85f));
-                g.setFont (theme::caps (9.5f));
+                g.setFont (theme::caps (9.5f * fs));
                 g.drawText (row.what, (int) cx, (int) y, (int) colW, 14, juce::Justification::centredLeft);
                 g.setColour (juce::Colours::white.withAlpha (0.07f));
-                g.drawHorizontalLine ((int) y + 16, cx, cx + colW - 8.0f);
-                y += 22.0f;
+                g.drawHorizontalLine ((int) (y + 16.0f * rs), cx, cx + colW - 8.0f);
+                y += rowP;
                 continue;
             }
-            const auto kf = theme::mono (9.5f, juce::Font::bold);
+            const auto kf = theme::mono (9.5f * fs, juce::Font::bold);
             const float kw = juce::jmin (96.0f, theme::measure (kf, row.key) + 13.0f);
-            juce::Rectangle<float> chip (cx, y + 1.5f, kw, 16.0f);
+            juce::Rectangle<float> chip (cx, y + 1.5f * rs, kw, juce::jmax (12.0f, 16.0f * rs));
             g.setColour (theme::inset.withAlpha (0.85f));                // the keycap
             g.fillRoundedRectangle (chip, 4.5f);
             g.setColour (juce::Colours::white.withAlpha (0.10f));
@@ -11357,10 +13642,11 @@ public:
             g.setFont (kf);
             g.drawText (row.key, chip.toNearestInt(), juce::Justification::centred);
             g.setColour (theme::textDim);
-            g.setFont (theme::ui (11.0f));
-            g.drawText (row.what, (int) (cx + 104.0f), (int) y, (int) (colW - 104.0f), 19,
-                        juce::Justification::centredLeft);
-            y += 22.0f;
+            g.setFont (theme::ui (11.0f * fs));
+            g.drawFittedText (row.what, (int) (cx + 104.0f), (int) y,
+                              (int) (colW - 104.0f), (int) juce::jmax (13.0f, rowP - 3.0f),
+                              juce::Justification::centredLeft, 1, 0.82f);
+            y += rowP;
         }
         g.setColour (theme::agent.withAlpha (0.75f));                    // the product's real answer
         g.setFont (theme::ui (11.0f));
@@ -11368,37 +13654,74 @@ public:
                     card.toNearestInt().removeFromBottom (30), juce::Justification::centred);
     }
 
+    juce::String promptHint() const
+    {   // THE HINT BREATHES: a placeholder that truncates mid-word ("what to
+        // ch...") reads as a broken UI — pick the richest invitation that
+        // MEASURES into the box (18px = the editor's own insets).
+        const float w = (float) promptBox.getWidth() - 18.0f;
+        const auto  f = theme::ui (13.5f);
+        auto fit = [&] (const juce::String& rich, const juce::String& tight)
+        { return theme::measure (f, rich) <= w ? rich : tight; };
+        const auto ph = micButton.state();
+        if (ph == VoiceMicButton::Phase::speaking)  return "hearing you...";
+        if (ph == VoiceMicButton::Phase::thinking)  return "transcribing your words...";
+        if (ph == VoiceMicButton::Phase::waiting)
+            return fit ("voice mode - just talk; your words land here; Send is yours",
+                        "voice mode - just talk");
+        if (loopLabButton.getToggleState())
+            return fit ("describe the loop you want (chips below constrain; drag a loop region to seed from it)...",
+                        "describe the loop you want...");
+        return fit ("talkback - tell the producer what to change   (/ = command palette)",
+                    fit ("tell the producer what you want", "ask the producer..."));
+    }
+    void refreshPromptHint() { promptBox.setTextToShowWhenEmpty (promptHint(), theme::textMute); }
+
     void resized() override
     {
         auto full = getLocalBounds();
-        menuBar.setBounds (full.removeFromTop (menuH));
+        connectorBay.setBounds (getLocalBounds());   // the bay veils the whole floor, every mode
+        dropVeil.setBounds (getLocalBounds());       // P94: the drop promise covers it too
+        if (! menuInline())
+            menuBar.setBounds (full.removeFromTop (menuH));    // narrow: the strip keeps its row
         auto r = full.reduced (10);
         // ---- tier 1: brand | transport hardware well | status | master meter + agent ----
-        auto t1 = r.removeFromTop (44);
-        t1.removeFromLeft (200);                               // wordmark (painted)
-        auto well = t1.removeFromLeft (560);   // +36 for CLK (I8)
+        // THE PRESENCE PASS: the chrome grows into a real console — taller
+        // tiers, bigger hardware, type to match (the cramped 44/30 tiers read
+        // as a 2003 utility; a flagship's controls have mass)
+        auto t1 = r.removeFromTop (52);
+        t1.removeFromLeft (brandCompact() ? 52 : 200);         // wordmark (painted; sigil-only compact)
+        if (menuInline())
+        {   // 3 rows -> 2: the menus ride tier 1, right of the wordmark
+            menuBar.setBounds (t1.removeFromLeft (380).reduced (0, 12));
+            t1.removeFromLeft (6);
+        }
+        auto well = t1.removeFromLeft (600);
         transportWellRect = well;
         auto wi = well.reduced (8, 4);
-        playButton.setBounds (wi.removeFromLeft (38).reduced (1));
-        recButton.setBounds (wi.removeFromLeft (38).reduced (1));
-        loopButton.setBounds (wi.removeFromLeft (38).reduced (1));
+        playButton.setBounds (wi.removeFromLeft (44).reduced (1));
+        recButton.setBounds (wi.removeFromLeft (44).reduced (1));
+        loopButton.setBounds (wi.removeFromLeft (44).reduced (1));
         wi.removeFromLeft (6);
-        lcd.setBounds (wi.removeFromLeft (170).reduced (0, 1));
+        lcd.setBounds (wi.removeFromLeft (182).reduced (0, 1));
         wi.removeFromLeft (6);
-        bpmLabel.setBounds (wi.removeFromLeft (80).reduced (0, 3));
-        tapButton.setBounds (wi.removeFromLeft (36).reduced (1, 4));
-        clickButton.setBounds (wi.removeFromLeft (36).reduced (1, 4));
-        swingSlider.setBounds (wi.reduced (4, 8).withTrimmedTop (5));
-        chatToggle.setBounds (t1.removeFromRight (78).reduced (2, 7));
-        historyButton.setBounds (t1.removeFromRight (78).reduced (2, 7));   // TIME MACHINE, beside Agent
-        masterMeterRect = t1.removeFromRight (30).reduced (7, 3);
+        bpmLabel.setBounds (wi.removeFromLeft (90).reduced (0, 3));
+        tapButton.setBounds (wi.removeFromLeft (38).reduced (1, 5));
+        clickButton.setBounds (wi.removeFromLeft (38).reduced (1, 5));
+        swingSlider.setBounds (wi.reduced (4, 10).withTrimmedTop (5));
+        chatToggle.setBounds (t1.removeFromRight (84).reduced (2, 9));
+        historyButton.setBounds (t1.removeFromRight (84).reduced (2, 9));   // TIME MACHINE, beside Agent
+        // THE MASTER LAMP: the transport's dead middle belongs to the output bus —
+        // wide windows get a stereo lamp (L/R + peak-hold + readout), crowded ones
+        // keep the classic sliver; the status text always keeps its ~420px.
+        masterMeterRect = t1.removeFromRight (juce::jlimit (30, 210, t1.getWidth() - 420))
+                            .reduced (7, 3);
         t1.removeFromRight (4);
         xrunChipRect = t1.removeFromRight (62).reduced (0, 12);   // R6: silent when healthy
         statusLabel.setBounds (t1.reduced (12, 6));
         r.removeFromTop (2);
         // ---- tier 2: view switch | rails | edit | song | actions | proposal verdicts ----
-        auto t2 = r.removeFromTop (30);
-        viewSwitch.setBounds (t2.removeFromLeft (284).reduced (0, 1));
+        auto t2 = r.removeFromTop (34);
+        viewSwitch.setBounds (t2.removeFromLeft (360).reduced (0, 1));   // 5 segments (SCORE)
         t2.removeFromLeft (10);
         filesButton.setBounds (t2.removeFromLeft (56).reduced (2, 2));
         presetsButton.setBounds (t2.removeFromLeft (64).reduced (2, 2));
@@ -11407,9 +13730,18 @@ public:
         redoButton.setBounds (t2.removeFromLeft (34).reduced (2, 2));
         t2.removeFromLeft (10);
         songBox.setBounds (t2.removeFromLeft (150).reduced (2, 2));
+        if (songPicker != nullptr)                       // the vault rides the window
+        {
+            songPicker->setBounds (getLocalBounds());
+            songPicker->setAnchor (getLocalArea (&songBox, songBox.getLocalBounds()));
+        }
         newSongButton.setBounds (t2.removeFromLeft (58).reduced (2, 2));
+        // P90: the chip degrades (zero-size) before the row jumbles (FLIP law)
+        saveChip.setBounds (t2.getWidth() > 420 ? t2.removeFromLeft (46).reduced (2, 4)
+                                                : juce::Rectangle<int>());
         addTrackButton.setBounds (t2.removeFromLeft (72).reduced (2, 2));
         exportButton.setBounds (t2.removeFromLeft (64).reduced (2, 2));
+        connectButton.setBounds (t2.removeFromLeft (68).reduced (2, 2));   // the bay's door
         keyButton.setBounds (t2.removeFromLeft (44).reduced (2, 2));
         acctButton.setBounds (t2.removeFromLeft (52).reduced (2, 2));
         snapBox.setBounds (t2.removeFromLeft (96).reduced (2, 3));
@@ -11432,18 +13764,27 @@ public:
         promptBox.setVisible (dockOn);
         contextChips.setVisible (dockOn);
         sendButton.setVisible (dockOn);
-        loopLabButton.setVisible (dockOn);
-        crateButton.setVisible (dockOn);
-        chatsButton.setVisible (dockOn);   // dock hardware: never parked mid-canvas
-        modelBox.setVisible (dockOn);   // the model pick is composer hardware — it was
+        micButton.setVisible (dockOn);     // the voice rides the composer, always beside Send
+        // THE DOCK FOLD (rebrand 31 §3, disclosure law: furniture folds,
+        // capability stays — '/' + the palette reach every verb regardless).
+        // Folded hardware exists only while the caret is lit; visibility rides
+        // BOTH gates or a closed fold parks live buttons mid-canvas.
+        const bool deskOn = dockOn && dockMoreOpen;
+        loopLabButton.setVisible (deskOn);
+        crateButton.setVisible (deskOn);
+        chatsButton.setVisible (deskOn);   // dock hardware: never parked mid-canvas
+        modelBox.setVisible (deskOn);   // the model pick is composer hardware — it was
                                         // missing from this list and stayed parked
                                         // mid-canvas after the dock closed (2026-07-11)
         genreBox.setVisible (dockOn);
         makeTrackButton.setVisible (dockOn); humButton.setVisible (dockOn);
-        seedButton.setVisible (dockOn);
-        for (auto* b : verbStrip) b->setVisible (dockOn);
-        for (auto* b : colorStrip) b->setVisible (dockOn);
-        restyleButton.setVisible (dockOn);
+        dockMoreButton.setVisible (dockOn);
+        bringSongButton.setVisible (dockOn);    // persistent doors (zero-size when narrow)
+        finishDoorButton.setVisible (dockOn);
+        seedButton.setVisible (deskOn);
+        for (auto* b : verbStrip) b->setVisible (deskOn);
+        for (auto* b : colorStrip) b->setVisible (deskOn);
+        restyleButton.setVisible (deskOn);
         if (dockOn)
         {
             juce::Rectangle<int> dock;
@@ -11586,34 +13927,58 @@ public:
             else
                 for (auto* chip : chipButtons) chip->setVisible (false);
             const int dockX = dock.getX(), dockRight = dock.getRight();
-            auto promptRow = dock.removeFromBottom (50);
+            // THE PROMPT GROWS: the row rises with the ask (max 3 lines); the
+            // buttons stay seated on the BOTTOM line like the Claude Code bar
+            auto promptRow = dock.removeFromBottom (promptRowH());
             const int composerBottom = promptRow.getBottom();
             auto pr = promptRow.reduced (6, 0);
-            sendButton.setBounds (pr.removeFromRight (64).reduced (2, 7));
+            sendButton.setBounds (pr.removeFromRight (64).withTop (pr.getBottom() - 50).reduced (2, 7));
+            micButton.setBounds (pr.removeFromRight (40).withTop (pr.getBottom() - 50).reduced (2, 7));
+            attachButton.setBounds (pr.removeFromLeft (28)                       // ATTACH: paperclip
+                                      .withTop (pr.getBottom() - 50).reduced (2, 13));
+            attachButton.setVisible (true);
             promptBox.setBounds (pr.reduced (2, 6));
+            // ATTACH: the inbox tray rides directly above the composer
+            const int trayH = attachTray.preferredHeight (dock.getWidth() - 12);
+            attachTray.setVisible (trayH > 0);
+            if (trayH > 0) attachTray.setBounds (dock.removeFromBottom (trayH).reduced (6, 0));
+            refreshPromptHint();                       // the hint re-picks its band per width
             // MODEL/CHAT HARDWARE GETS ITS OWN ROW. Packing five controls beside
             // Send collapsed the actual prompt to ~40px in a 400px Agent dock
             // once GPT labels widened the selector. The chat input is the primary
             // instrument: reserve the whole prompt row for it + Send, forever.
-            auto modelRow = dock.removeFromBottom (30).reduced (6, 0);
-            modelBox.setBounds (modelRow.removeFromLeft (132).reduced (2, 2));
-            loopLabButton.setBounds (modelRow.removeFromLeft (44).reduced (2, 2));
-            chatsButton.setBounds (modelRow.removeFromLeft (56).reduced (2, 2));
-            crateButton.setBounds (modelRow.removeFromLeft (52).reduced (2, 2));
-            auto quickRow = dock.removeFromBottom (30).reduced (6, 0);   // the one-button track row
+            // THE DOCK FOLD: two calm rows by default — the door row (style ·
+            // MAKE · HUM · "...") over the talkback. The lit caret blooms the
+            // full desk ABOVE the door row (the caret never jumps underfoot),
+            // and the freed rows go to the transcript.
+            auto quickRow = dock.removeFromBottom (30).reduced (6, 0);   // the door row
+            const bool doorsWide = quickRow.getWidth() >= 490;   // FLIP: doors degrade first
             genreBox.setBounds (quickRow.removeFromLeft (146).reduced (2, 2));
             makeTrackButton.setBounds (quickRow.removeFromLeft (68).reduced (2, 2));
             humButton.setBounds (quickRow.removeFromLeft (54).reduced (2, 2));
-            seedButton.setBounds (quickRow.removeFromLeft (52).reduced (2, 2));
-            auto verbRow = dock.removeFromBottom (26).reduced (6, 0);    // THE VERB STRIP
-            const int vw = verbRow.getWidth() / juce::jmax (1, verbStrip.size());
-            for (auto* b : verbStrip)
-                b->setBounds (verbRow.removeFromLeft (vw).reduced (2, 2));
-            auto colorRow = dock.removeFromBottom (26).reduced (6, 0);   // COLOR + RESTYLE
-            const int cw = colorRow.getWidth() / (colorStrip.size() + 1);
-            for (auto* b : colorStrip)
-                b->setBounds (colorRow.removeFromLeft (cw).reduced (2, 2));
-            restyleButton.setBounds (colorRow.reduced (2, 2));
+            bringSongButton.setBounds (doorsWide ? quickRow.removeFromLeft (70).reduced (2, 2)
+                                                 : juce::Rectangle<int>());
+            finishDoorButton.setBounds (doorsWide ? quickRow.removeFromLeft (64).reduced (2, 2)
+                                                  : juce::Rectangle<int>());
+            dockMoreButton.setBounds (quickRow.removeFromLeft (44).reduced (2, 2));
+            if (dockMoreOpen)
+            {
+                auto modelRow = dock.removeFromBottom (30).reduced (6, 0);
+                modelBox.setBounds (modelRow.removeFromLeft (132).reduced (2, 2));
+                loopLabButton.setBounds (modelRow.removeFromLeft (44).reduced (2, 2));
+                chatsButton.setBounds (modelRow.removeFromLeft (56).reduced (2, 2));
+                crateButton.setBounds (modelRow.removeFromLeft (52).reduced (2, 2));
+                auto verbRow = dock.removeFromBottom (26).reduced (6, 0);    // THE VERB STRIP
+                const int vw = verbRow.getWidth() / juce::jmax (1, verbStrip.size());
+                for (auto* b : verbStrip)
+                    b->setBounds (verbRow.removeFromLeft (vw).reduced (2, 2));
+                auto colorRow = dock.removeFromBottom (26).reduced (6, 0);   // COLOR + RESTYLE + SEED
+                const int cw = colorRow.getWidth() / (colorStrip.size() + 2);
+                for (auto* b : colorStrip)
+                    b->setBounds (colorRow.removeFromLeft (cw).reduced (2, 2));
+                restyleButton.setBounds (colorRow.removeFromLeft (cw).reduced (2, 2));
+                seedButton.setBounds (colorRow.reduced (2, 2));
+            }
             auto chipsRow = dock.removeFromBottom (24);
             contextChips.setBounds (chipsRow.reduced (12, 1));
             const int composerTop = chipsRow.getY();   // propBar moved to the DECK
@@ -11641,6 +14006,8 @@ public:
             masterRail.setVisible (false);
             stageVeil.board = {};
             for (auto* chip : chipButtons) chip->setVisible (false);
+            attachTray.setVisible (false);           // ATTACH: no chat = no tray/clip
+            attachButton.setVisible (false);
         }
         // AGENT SURFACE: the fullscreen console (covers the DAW at mix=1)
         stageVeil.setBounds (stageArea);
@@ -11698,6 +14065,18 @@ public:
         // shot: 28px-pitch corner tabs at the OLD rail edge; pending takes emit no
         // further stream events, so nothing ever recomputed the panes).
         ghostGlass.setBounds (getLocalBounds());
+        // ARRANGE-ONLY FURNITURE dies with the view (Chezy 2026-07-17, "scrollbar
+        // in mix window aint work": the ARRANGE h-scrollbar stayed armed + visible
+        // over the mixer — a dead bar exactly where the desk's own bar belongs,
+        // wired to a hidden view; drags did nothing). Same leak for the vScroll
+        // and the nav's corner stats.
+        if (roll.isVisible() || mixer.isVisible() || liveGrid.isVisible()
+            || scorePage.isVisible())                             // SCORE
+        {
+            hScroll.setBounds ({});
+            vScroll.setVisible (false);
+            openLand = {};
+        }
         if (roll.isVisible())
         {
             auto bar = r.removeFromTop (26);
@@ -11716,6 +14095,19 @@ public:
         else if (mixer.isVisible())
         {
             mixer.setBounds (r);
+            hearStrip.setBounds ({});
+            padGrid.setVisible (false);
+            jamStrip.setVisible (false);
+            jamButton.setVisible (false);
+            jamVibeBox.setVisible (false);
+            jamGenreBox.setVisible (false);
+            jamLevel.setVisible (false);
+            jamMicButton.setVisible (false);
+            jamKeepButton.setVisible (false);
+        }
+        else if (scorePage.isVisible())                           // SCORE: full-canvas page
+        {
+            scorePage.setBounds (r);
             hearStrip.setBounds ({});
             padGrid.setVisible (false);
             jamStrip.setVisible (false);
@@ -11753,6 +14145,22 @@ public:
             jamGenreBox.setVisible (true);
             jamLevel.setVisible (true);
             jamMicButton.setVisible (true);
+            // THE PADS SIT ON THEIR COLUMNS (2026-07-17): the pad row and the
+            // grid below share one rhythm — pads start above column 1 (the name
+            // gutter skipped) and the row ends where the column run ends, so the
+            // two rows read as ONE instrument instead of two widths of the same
+            // four scenes. Overflowing sets (pads paginate, columns scroll) keep
+            // the full row exactly as before.
+            {
+                const int nSc = liveGrid.numScenes();
+                if (nSc >= 1 && nSc <= sotadaw::PadGrid::maxPads)
+                {
+                    const int cw  = LiveGrid::cellWFor (r.getWidth(), nSc);
+                    padRow.removeFromLeft (LiveGrid::nameW + LiveGrid::gap);
+                    const int run = nSc * (cw + LiveGrid::gap) - LiveGrid::gap + 2;
+                    if (padRow.getWidth() > run) padRow = padRow.withWidth (run);
+                }
+            }
             padGrid.setBounds (padRow);
             r.removeFromTop (4);
             if (jamStrip.hasData())             // the set's conversation, full width
@@ -11777,22 +14185,35 @@ public:
             jamMicButton.setVisible (false);
             jamKeepButton.setVisible (false);
             ruler.setBounds (r.removeFromTop (24));
-            {   // THE ROW SIZER rides the ruler's right corner
-                auto rb = ruler.getBounds().removeFromRight (62).reduced (0, 3);
-                rowsPlusB.setBounds (rb.removeFromRight (19));
-                rb.removeFromRight (1);
-                rowsFitB.setBounds (rb.removeFromRight (19));
-                rb.removeFromRight (1);
-                rowsMinusB.setBounds (rb.removeFromRight (19));
+            {   // THE ROW SIZER rides the ruler's LEFT corner — the header column's
+                // own hardware (Chezy 2026-07-16: "the zoom for track height needs
+                // a more strategic place" — the right corner collided with the
+                // section flags; the left corner is the dead space ABOVE the
+                // headers it actually resizes)
+                auto rb = ruler.getBounds().removeFromLeft (TrackLane::headerW)
+                               .reduced (4, 3).removeFromLeft (59);
+                rowsMinusB.setBounds (rb.removeFromLeft (19));
+                rb.removeFromLeft (1);
+                rowsFitB.setBounds (rb.removeFromLeft (19));
+                rb.removeFromLeft (1);
+                rowsPlusB.setBounds (rb.removeFromLeft (19));
             }
             r.removeFromTop (2);
-            nav.setBounds (r.removeFromTop (30));      // THE NAVIGATOR: the song at a glance
+            {   // ONE TIME COLUMN (2026-07-17, "fix the misalignments"): the
+                // navigator + sound tensor share the LANES' time column — the
+                // header column under them carries IDENTITY (song stats, ears
+                // corner) instead of time drawn at a different origin than the
+                // rows it claims to mirror.
+                auto navRow = r.removeFromTop (30);
+                navStats.setBounds (navRow.removeFromLeft (TrackLane::headerW).reduced (8, 1));
+                nav.setBounds (navRow);
+            }
             r.removeFromTop (2);
+            hearStrip.cornerW = TrackLane::headerW;
             hearStrip.setBounds (r.removeFromBottom (46));   // the sound tensor, always visible
             r.removeFromBottom (3);
             auto scrollRow = r.removeFromBottom (10);
             scrollRow.removeFromLeft (TrackLane::headerW + 4);
-            hScroll.setBounds (scrollRow);
             // rows are CLAY: auto height packs the window; a dragged row keeps its
             // chosen height and the rest scroll (vScroll appears only on overflow).
             // MANY-TRACKS: folded families hide behind their GROUP BARS; the
@@ -11821,7 +14242,13 @@ public:
                 vScroll.setRangeLimits (0.0, (double) total, juce::dontSendNotification);
                 vScroll.setCurrentRange (vScroll.getCurrentRangeStart(),
                                          (double) r.getHeight(), juce::dontSendNotification);
+                // ONE TIME COLUMN, right edge: the nav/tensor/scrollbar end where
+                // the lanes' time ends — they used to run 10px under the vScroll
+                scrollRow.removeFromRight (10);
+                nav.setBounds (nav.getBounds().withTrimmedRight (10));
+                hearStrip.setBounds (hearStrip.getBounds().withTrimmedRight (10));
             }
+            hScroll.setBounds (scrollRow);
             laneArea = r;                      // the rows' one viewport truth (clip law)
             int y = r.getY() - (needV ? (int) vScroll.getCurrentRangeStart() : 0);
             size_t gi = 0;                     // bars interleave at their family's first lane
@@ -11864,6 +14291,16 @@ public:
                 }
                 y += h;
             }
+            // THE OPEN LAND (2026-07-17, "utilise the freed space"): rows that
+            // underfill the viewport leave an inviting well, not dead air —
+            // paintOverChildren draws the promise, mouseDown/drops keep it
+            openLand = {};
+            if (! needV)
+            {
+                const int yEnd = juce::jlimit (r.getY(), r.getBottom(), y);
+                if (r.getBottom() - yEnd >= 40)
+                    openLand = { r.getX(), yEnd, r.getWidth(), r.getBottom() - yEnd };
+            }
             applyViewport();
         }
         // THE VIEW LAW: lanes show ONLY on the arrange canvas. This line used to
@@ -11873,7 +14310,8 @@ public:
         // over it (the census live.png bug the JamStrip rig exposed).
         const bool fullConsole = dockOn && agentMix > 0.6f;
         const bool lanesOn = ! fullConsole && ! roll.isVisible()
-                             && ! mixer.isVisible() && ! liveGrid.isVisible();
+                             && ! mixer.isVisible() && ! liveGrid.isVisible()
+                             && ! scorePage.isVisible();               // SCORE is a page too
         for (int li = 0; li < lanes.size(); ++li)
             lanes[li]->setVisible (lanesOn && ! (li < (int) laneFoldHidden.size()
                                                  && laneFoldHidden[(size_t) li]));
@@ -11883,7 +14321,16 @@ public:
         rowsPlusB.setVisible (lanesOn);
         ruler.setVisible (lanesOn);
         nav.setVisible (lanesOn);                       // the overview lives on the canvas only
+        navStats.setVisible (lanesOn);                  // ...and its corner stats with it
         if (! lanesOn) vScroll.setVisible (false);
+        {   // P89: the error stack pins bottom-right, above the composer
+            const int w = 360, h = errorStack.wantedHeight();
+            const int yBase = promptBox.isVisible() && promptBox.getY() > 100
+                                ? promptBox.getY() : getHeight() - 12;
+            errorStack.setBounds (h > 0
+                ? juce::Rectangle<int> (getWidth() - w - 10, juce::jmax (40, yBase - h - 6), w, h)
+                : juce::Rectangle<int>());
+        }
         refreshGhostGlass();   // AFTER the lane layout: the glass rides the NEW bounds
     }
 
@@ -11907,8 +14354,197 @@ public:
 
     // rig: raise/lower the gesture-map overlay for a headless PNG
     void snapHelp (bool on) { helpOn = on; repaint(); }
+    void snapNoteToggle()
+    {   // rig: the ctrl-toggle census — one lit note leaves the block, then returns
+        const int n0 = laneSelCount();
+        if (laneNoteSel.empty()) { std::printf ("NOTETOGGLE empty\n"); std::fflush (stdout); return; }
+        const int ti = laneNoteSel.begin()->first;
+        const int ni = (int) *laneNoteSel.begin()->second.begin();
+        toggleLaneNote (ti, ni);
+        const int n1 = laneSelCount();
+        toggleLaneNote (ti, ni);
+        const int n2 = laneSelCount();
+        std::printf ("NOTETOGGLE before=%d after=%d back=%d lane=%d note=%d\n", n0, n1, n2, ti, ni);
+        std::fflush (stdout);
+    }
+    void snapPromptGrow()
+    {   // rig: a 3-line ask in the composer — the row's growth photographed
+        promptBox.setText ("Make the drop hit harder with a wider stereo image, "
+                           "then darken the pads across the whole bridge section and "
+                           "keep the sung vocal glued tight to the new groove please.",
+                           juce::sendNotification);
+    }
+    void snapSongPickReopen()
+    {   // rig: the menuActive latch swallowed every second click (Chezy 02:17).
+        // The private path can't be driven headlessly — assert the OBSERVABLE:
+        // after an open the latch must already be CLEAR (stuck true = the bug,
+        // ComboBox::showPopupIfNotActive refuses while it's set), twice over.
+        songBox.showPopup();
+        const bool first  = songPicker != nullptr;
+        const bool latch1 = songBox.isPopupActive();
+        closeSongPicker();          // pointer nulls NOW; the delete lands on the
+                                    // next natural pump (a nested pump here hung
+                                    // the peerless loop — the childprocess trap)
+        songBox.showPopup();
+        const bool second = songPicker != nullptr;
+        const bool latch2 = songBox.isPopupActive();
+        std::printf ("SONGPICK first=%d latch1=%d second=%d latch2=%d\n",
+                     first ? 1 : 0, latch1 ? 1 : 0, second ? 1 : 0, latch2 ? 1 : 0);
+        std::fflush (stdout);
+        closeSongPicker();          // leave the canvas clean for the shots
+    }
+    void snapSongPick (const char* q)
+    {   // SONG VAULT camera: the picker open (optionally filtered) for the rig.
+        // setText's change message is POSTED (async) — filter synchronously or
+        // the shot photographs the stale list.
+        openSongPicker();
+        if (q != nullptr && songPicker != nullptr)
+        {
+            songPicker->filter.setText (q, juce::dontSendNotification);
+            songPicker->refilter();
+        }
+    }
+    void snapAlive()
+    {   // ALIVE-WAVE camera: deterministic energy on every lane spine + a mid-beat
+        // pulse on the play tile — the motion states, frozen for the rig's eye.
+        // The beam parks mid-song so THE NOTES CATCH FIRE is photographable.
+        int i = 0;
+        const double fireBeat = juce::jmax (4.0, song.totalBeats() * 0.35);
+        for (auto* lane : lanes)
+        {
+            lane->rigAlive (-4.0f - 5.0f * (float) (i++ % 5));
+            lane->setPlayheadBeats (fireBeat);
+        }
+        playButton.setButtonText ("Stop");
+        playButton.pulsePhase = [] { return 0.22f; };
+        repaint();
+    }
     void snapReorder (int a, int b) { moveTrack (a, b, false); }   // rig: never persists
     void snapRailFilter (const juce::String& q) { browser.setFilter (q); }
+    void rigOpenBay()                                         // rig: the connector bay, open
+    {
+        connectorBay.setSongName (songName);
+        connectorBay.setVisible (true);
+        connectorBay.toFront (true);
+    }
+    // VOICE COMPOSE v4 — THE LEDGER (Chezy live 2026-07-16: "capture 100% of
+    // the words! not sentence per sentence and delete the one before!"): the
+    // prompt = the hands' text + every folded utterance (in speech order) + the
+    // live tail. Partials repaint only the tail; a final's SEND folds the tail
+    // into the ledger (order-independent from then on — the beam-5 answer
+    // upgrades its own segment by gen whenever it lands, or never, and the
+    // words stay either way). If the prompt no longer holds what voice last
+    // painted (the user typed, edited, or SENT), rebase off the real text —
+    // the hands always outrank the ear.
+    struct VoiceSeg { int gen; juce::String text; };
+    std::vector<VoiceSeg> voiceSegs;   // folded utterances, speech order
+    juce::String voiceTyped;           // the hands' prefix (typed/edited text)
+    juce::String voiceTail;            // the current utterance, live
+    juce::String voiceLastSet;         // last text WE painted (drift detector)
+
+    juce::String voiceJoin() const
+    {
+        juce::StringArray parts;
+        if (voiceTyped.isNotEmpty()) parts.add (voiceTyped);
+        for (auto& s : voiceSegs)
+            if (s.text.isNotEmpty()) parts.add (s.text);
+        if (voiceTail.isNotEmpty()) parts.add (voiceTail);
+        return parts.joinIntoString (" ");
+    }
+    void voiceRebaseIfEdited()
+    {
+        if (promptBox.getText() == voiceLastSet) return;
+        const bool lostWords = (! voiceSegs.empty() || voiceTail.isNotEmpty())
+                               && promptBox.getText().trim().isEmpty();
+        voiceTyped = promptBox.getText().trim();   // the hands' truth is the new base
+        voiceSegs.clear();                         // late upgrades self-heal (push, never drop)
+        voiceTail.clear();
+        rigVoiceRebases = rigVoiceRebases + 1;
+        if (lostWords && micButton.inVoiceMode())  // the live forensic: NAME the wipe moment
+            appendActivity ("[voice] the prompt was cleared from outside - the word ledger starts fresh");
+    }
+    void voiceLedgerReset()
+    {   // a LEGIT clear (send / palette verb): the spoken words were consumed —
+        // reset the ledger so the clear is never mistaken for an outside wipe
+        voiceSegs.clear();
+        voiceTail.clear();
+        voiceTyped.clear();
+        voiceLastSet = promptBox.getText();
+    }
+    void voicePaint()
+    {
+        const auto shown = voiceJoin();
+        promptBox.setText (shown, juce::dontSendNotification);
+        promptBox.moveCaretToEnd();
+        maybeGrowPrompt();                 // spoken words grow the composer too
+        voiceLastSet = shown;
+    }
+
+    // THE VOICE MODE rig (SOTADAW_SNAP_VOICE + SOTADAW_VOICE_FAKEREC): the camera
+    // feeds a spoken raw (SOTADAW_VOICE_FEED) into the take file in real-time-ish
+    // chunks, then silence — three rounds proving the v4 contract: PARTIALS paint
+    // the prompt DURING speech (warm round), utterances APPEND — round 3 starts
+    // while round 2's final is STILL IN FLIGHT (the live override race: a slow
+    // final must never delete its sentence), and NOTHING is sent.
+    juce::int64 rigVoiceFed = 0;
+    int rigVoicePartials = 0, rigVoiceFinals = 0, rigVoiceFolds = 0, rigVoiceRebases = 0;
+    int rigVoiceRound = 0, rigVoiceBaseLen = 0;
+    bool rigVoicePartialLive = false;              // words visible while still feeding
+    void rigVoiceBegin() { micButton.triggerClick(); }
+    int rigVoicePump (int tick)
+    {
+        juce::ignoreUnused (tick);
+        const char* fp = std::getenv ("SOTADAW_VOICE_FEED");
+        if (fp == nullptr) return 1;
+        juce::File feed { juce::String (fp) };
+        const bool feeding = rigVoiceFed < feed.getSize();
+        if (feeding && rigVoiceRound == 1
+            && promptBox.getText().length() > rigVoiceBaseLen + 4)
+            rigVoicePartialLive = true;            // REALTIME proof: painted mid-speech (warm round)
+        if (! feeding && micButton.state() == VoiceMicButton::Phase::waiting)
+        {
+            const auto flip = [&]
+            {
+                ++rigVoiceRound;
+                rigVoiceFed = 0;
+                rigVoiceBaseLen = promptBox.getText().length();
+            };
+            if (rigVoiceRound == 0 && rigVoiceFinals >= 1)   // cold round answered: warm now
+            { flip(); return 1; }
+            if (rigVoiceRound == 1 && rigVoiceFolds >= 2)    // round 2 FOLDED, its final still
+            { flip(); return 1; }                            // in flight -> round 3 races it
+            if (rigVoiceRound == 2 && rigVoiceFinals >= 3)
+                return 2;                                    // three sentences kept, nothing sent
+        }
+        auto take = micButton.takeFile();
+        juce::FileOutputStream os (take);          // append mode by default
+        if (! os.openedOk()) return 1;
+        if (feeding)
+        {   // ~50ms of real speech per pump (1600 bytes at 16k mono s16)
+            juce::FileInputStream in (feed);
+            in.setPosition (rigVoiceFed);
+            juce::HeapBlock<char> buf (1600);
+            const int got = in.read (buf.getData(), 1600);
+            if (got > 0) { os.write (buf.getData(), (size_t) got); rigVoiceFed += got; }
+            return 0;
+        }
+        static const char zeros[1600] = { 0 };     // the pause that FREEZES (never sends)
+        os.write (zeros, sizeof (zeros));
+        return 1;
+    }
+    juce::String rigVoiceDump() const
+    {
+        return "mode=" + juce::String (micButton.inVoiceMode() ? 1 : 0)
+             + " busy=" + juce::String (agentBusy ? 1 : 0)
+             + " partials=" + juce::String (rigVoicePartials)
+             + " folds=" + juce::String (rigVoiceFolds)
+             + " finals=" + juce::String (rigVoiceFinals)
+             + " rebases=" + juce::String (rigVoiceRebases)
+             + " realtime=" + juce::String (rigVoicePartialLive ? 1 : 0)
+             + " prompt=\"" + promptBox.getText() + "\""
+             + " request=" + juce::String (ipcDir.getChildFile ("request.json").existsAsFile()
+                                           || ipcDir.getChildFile ("request.json.working").existsAsFile() ? 1 : 0);
+    }
     void snapImportDock()                                     // rig: the import dock, lit
     {
         bridging = true; bridgeWasStarted = false;             // no real proc: poll must not fire
@@ -12279,6 +14915,83 @@ public:
              + " vibeIdx=" + juce::String (jamVibeBox.getSelectedItemIndex());
     }
 
+    // ---- THE SPOKEN DESK census (a11y, 2026-07-25): walk the live tree and
+    // count what a screen reader can NAME. Interactive = the widget classes
+    // JUCE gives real handlers (buttons/sliders/combos/editors). A control's
+    // spoken name = getTitle() > button text > getName(); empty = invisible
+    // to orca/NVDA. The unnamed list printed below IS the debt worklist.
+    void snapForceFocusRing()   // P95 camera rig ONLY: the peerless root has no real
+    {                           // key focus — force the state, prove the PAINT path
+        kbdModality = true;
+        focusRingTarget = &playButton;
+        refreshFocusRing();
+    }
+    void snapFeedDropVeil (const juce::StringArray& files)   // P94 rig door (veil is private)
+    { dropVeil.feed (files); }
+    void snapPushErrors()   // P89 rig door (narrate is private; rig hooks are PUBLIC — 3rd hit)
+    {
+        narrate (2, "export failed: render returned 1", "Log", [] {});
+        narrate (2, "can't read vocals.m4a (install ffmpeg)");
+        narrate (2, "REAPER bridge: parse error at line 40");
+        narrate (2, "no audio input device on this machine");
+    }
+    juce::String a11yCensusDump()
+    {
+        int interactive = 0, named = 0, walked = 0;
+        juce::StringArray unnamed;
+        std::function<void (juce::Component&, bool)> walk =
+            [&] (juce::Component& c, bool shownPath)
+        {
+            ++walked;
+            const bool shown = shownPath && c.isVisible();
+            if (shown)
+            {
+                const bool widget = dynamic_cast<juce::Button*> (&c) != nullptr
+                                 || dynamic_cast<juce::Slider*> (&c) != nullptr
+                                 || dynamic_cast<juce::ComboBox*> (&c) != nullptr
+                                 || dynamic_cast<juce::TextEditor*> (&c) != nullptr;
+                if (widget)
+                {
+                    ++interactive;
+                    auto label = c.getTitle();
+                    if (label.isEmpty())
+                        if (auto* b = dynamic_cast<juce::Button*> (&c))
+                            label = b->getButtonText();
+                    if (label.isEmpty()) label = c.getName();
+                    if (label.isNotEmpty()) ++named;
+                    else unnamed.add (juce::String (typeid (c).name())
+                                          .removeCharacters ("0123456789N")
+                                      + " @" + c.getBounds().toString());
+                }
+            }
+            for (auto* ch : c.getChildren()) walk (*ch, shown);
+        };
+        // the peerless snapshot root is UNMAPPED (isVisible()=false without a
+        // window) — its flag says nothing about the desk; walk the children
+        for (auto* ch : getChildren()) walk (*ch, true);
+        int focusable = 0;                    // P95 companion: keyboard-reachable count
+        std::function<void (juce::Component&, bool)> walkF =
+            [&] (juce::Component& c, bool shownPath)
+        {
+            const bool shown = shownPath && c.isVisible();
+            if (shown && c.getWantsKeyboardFocus()
+                && (dynamic_cast<juce::Button*> (&c) != nullptr
+                    || dynamic_cast<juce::Slider*> (&c) != nullptr
+                    || dynamic_cast<juce::ComboBox*> (&c) != nullptr
+                    || dynamic_cast<juce::TextEditor*> (&c) != nullptr))
+                ++focusable;
+            for (auto* ch : c.getChildren()) walkF (*ch, shown);
+        };
+        for (auto* ch : getChildren()) walkF (*ch, true);
+        juce::String out = "walked=" + juce::String (walked)
+                         + " interactive=" + juce::String (interactive)
+                         + " named=" + juce::String (named)
+                         + " unnamed=" + juce::String (interactive - named)
+                         + " focusable=" + juce::String (focusable);
+        for (auto& u : unnamed) out += "\n[a11y-unnamed] " + u;
+        return out;
+    }
+
     void rigRecAudioArm()
     {
         int idx = -1;
@@ -12628,6 +15341,7 @@ public:
     // snapshot rig: switch the main view so the peerless render can capture each
     bool snapStagedFlow = false;   // rig: a synthetic composing take backs the agent shot
 
+    void snapScorePdf (const juce::File& f) { scorePage.exportPdf (f); }   // SCORE: camera print proof
     void snapSetView (const juce::String& v)
     {
         if (roll.isVisible() && ! v.startsWith ("roll")) showRoll (false);   // views are exclusive
@@ -12644,7 +15358,9 @@ public:
         {   // ...nor does the synthetic take (never persists)
             snapStagedFlow = false;
             clearProposal();
-        }
+            deck.finishExitNow();   // the camera list runs in ONE callback — the exit
+            resized();              // fade can never tick, so land it now or every
+        }                           // later face wears a dead 48px reserve band
         if (v == "live")
         {
             liveButton.setToggleState (true, juce::sendNotification);
@@ -12663,10 +15379,19 @@ public:
                 song.tracks[2].slots[0].follow = "stop";
         }
         else if (v == "mix") { mixButton.setToggleState (true, juce::sendNotification); }
+        else if (v == "score")                              // SCORE camera face
+        {
+            liveButton.setToggleState (false, juce::sendNotification);
+            mixButton.setToggleState (false, juce::sendNotification);
+            showScore (true);
+        }
         else { liveButton.setToggleState (false, juce::sendNotification);
-               mixButton.setToggleState (false, juce::sendNotification); }
+               mixButton.setToggleState (false, juce::sendNotification);
+               if (scorePage.isVisible()) showScore (false); }   // SCORE leaves w/ other faces
         if (v == "rack")                                    // arrange + track rack drawer
         {
+            historyOn = false;   // cameras are ORDERED — an earlier face's drawer
+            historyButton.setToggleState (false, juce::dontSendNotification);
             int ti = 0;                                     // prefer a track that HAS a chain
             for (int i = 0; i < (int) song.tracks.size(); ++i)
                 if (! song.tracks[(size_t) i].fx.empty()) { ti = i; break; }
@@ -12674,6 +15399,8 @@ public:
         }
         else if (v == "rackmaster")                         // mixer + master rack + verdict card
         {
+            historyOn = false;
+            historyButton.setToggleState (false, juce::dontSendNotification);
             mixButton.setToggleState (true, juce::sendNotification);
             openRack (FxRackPanel::Kind::master, 0);
             fxRack.setReport (juce::JSON::parse (           // canned verdict: the card must paint
@@ -12729,6 +15456,33 @@ public:
             if (v == "rollbot")                 // KEYS SOUND leg: a lit key + a REAL guide-note
                 roll.auditionOn (12, 0.8);      // call through the engine, in-frame at the floor
             roll.repaint();
+        }
+        else if (v == "tune")    // TUNE LAB camera: the drawer joins the audit loop
+        {
+            rackOn = false;
+            historyOn = false;   // shot order: the history camera runs first — its
+            historyButton.setToggleState (false, juce::dontSendNotification);
+            openTuneLab();       // drawer must not stack into THIS face's frame
+        }
+        else if (v == "sounds")  // the preset rail (4,366 sounds) joins the audit loop
+        {
+            rackOn = false;
+            tuneOn = false;                                 // shot order: tune runs first
+            historyOn = false;
+            historyButton.setToggleState (false, juce::dontSendNotification);
+            presetsButton.setToggleState (true, juce::dontSendNotification);
+            filesButton.setToggleState (false, juce::dontSendNotification);
+            presetBrowser.loadLibrary (sotadaw::sotadawRoot().getChildFile ("library.json"));
+            resized(); repaint();
+        }
+        else if (v == "bay")     // THE CONNECTOR BAY: bridges as tiles, the import/export face
+        {
+            rackOn = false; tuneOn = false;
+            historyOn = false;
+            historyButton.setToggleState (false, juce::dontSendNotification);
+            connectorBay.setSongName (songName);
+            connectorBay.setVisible (true);
+            connectorBay.toFront (true);
         }
         else if (v == "agent")   // AGENT MODE beauty shot: chat-first over a composing take
         {
@@ -12885,9 +15639,30 @@ public:
     }
     void menuItemSelected (int, int) override {}   // actions live on the items
 
+    void showScore (bool on)                       // SCORE: the notation page (5th segment)
+    {
+        if (on && roll.isVisible()) showRoll (false);
+        if (on)
+        {
+            if (mixButton.getToggleState())
+            { mixButton.setToggleState (false, juce::dontSendNotification); mixButton.onClick(); }
+            if (liveButton.getToggleState())
+            { liveButton.setToggleState (false, juce::dontSendNotification); liveButton.onClick(); }
+        }
+        scorePage.song = &song;
+        scorePage.setVisible (on);
+        if (on) { scoreGhostSync(); scorePage.songChanged(); }
+        const bool lanesOn = ! on && ! mixer.isVisible() && ! liveGrid.isVisible();
+        ruler.setVisible (lanesOn);
+        hScroll.setVisible (lanesOn && effViewPpb() > 0);
+        for (auto* l : lanes) l->setVisible (lanesOn);
+        resized(); repaint();
+    }
+
     void setView (int v)                           // 0=arrange 1=mix 2=live
     {
         if (roll.isVisible()) closeRoll();
+        if (scorePage.isVisible()) showScore (false);   // SCORE leaves with any canvas pick
         const bool wantMix = v == 1, wantLive = v == 2;
         if (mixButton.getToggleState() != wantMix)
         { mixButton.setToggleState (wantMix, juce::dontSendNotification); mixButton.onClick(); }
@@ -12925,13 +15700,15 @@ public:
                     juce::File loadAfter = {}, juce::File revealAfter = {}, bool rescanAfter = false)
     {
         if (bridging) { setStatus ("a connector job is already running - wait for it"); return false; }
-        if (! bridgeProc.start (cmd)) { setStatus ("failed to start: " + desc); return false; }
+        if (! bridgeProc.start (cmd)) { narrate (2, "failed to start: " + desc); return false; }
         bridgeDrain.begin (bridgeProc);        // demucs progress alone exceeds 64K
         bridging = true;
         bridgeWasStarted = true;               // the completion poll needs a REAL proc
         bridgeDesc = desc;
         importPhase = "STARTING"; importPct = -1.0f;   // THE IMPORT DOCK arms
+        importDetail.clear();
         importT0 = juce::Time::getMillisecondCounter();
+        importEpoch0 = juce::Time::getCurrentTime().toMilliseconds() / 1000.0;
         bridgePendingLoad = loadAfter;
         bridgeReveal = revealAfter;
         bridgeRescan = rescanAfter;
@@ -12940,6 +15717,17 @@ public:
         return true;
     }
 
+    void importDroppedProject (const juce::File& src, const juce::String& tool)
+    {   // P94: a dropped project file runs the SAME bridge its bay tile runs —
+        // one route table, one dispatch (chooser skipped; the hand already chose)
+        const auto out = freshSongFile (src.getFileNameWithoutExtension());
+        juce::StringArray cmd { pyPath(),
+            sotadaw::sotadawRoot().getChildFile ("tools").getChildFile (tool).getFullPathName() };
+        if (tool == "reaper_bridge.py") cmd.add ("import");
+        cmd.add (src.getFullPathName());
+        cmd.add (out.getFullPathName());
+        runBridge (cmd, tool.upToFirstOccurrenceOf (".", false, false) + ": " + src.getFileName(), out);
+    }
     void chooseAndImport (const juce::String& title, const juce::String& patterns,
                           const juce::String& tool, const juce::String& suffix = {})
     {
@@ -13045,7 +15833,8 @@ public:
                 auto files = dir.findChildFiles (juce::File::findFiles, false, "*.json");
                 files.sort();
                 for (auto& f : files)
-                    if (! f.getFileName().startsWith ("_prop_") && ! f.getFileName().startsWith ("_"))
+                    if (! f.getFileName().startsWith ("_prop_") && ! f.getFileName().startsWith ("_")
+                        && ! isMachineSidecarJson (f))
                     {
                         Item it (f.getFileNameWithoutExtension());
                         it.isTicked = f.getFileNameWithoutExtension() == songName;
@@ -13127,6 +15916,9 @@ public:
         {
             const int cur = liveGrid.isVisible() ? 2 : mixer.isVisible() ? 1 : 0;
             add ("Arrange", [this] { setView (0); }, true, cur == 0 && ! roll.isVisible(), "F5");
+            add ("Score (notation editor)", [this]                          // SCORE
+                 { if (agentMode) setAgentMode (false); showScore (true); },
+                 true, scorePage.isVisible(), "F8");
             add ("Mixer",   [this] { setView (1); }, true, cur == 1, "F6");
             add ("Live (session grid)", [this] { setView (2); }, true, cur == 2, "F7");
             add ("Piano Roll (selected track)", [this] { if (! proposalPending) openRoll (selectedTrack); },
@@ -13194,11 +15986,11 @@ public:
             add ("Stop Current Run", [this]
                  { ipcDir.getChildFile ("cancel").replaceWithText ("1");
                    appendActivity ("[ui] stop requested..."); }, agentBusy);
-            add (proposalPending ? "Accept Proposal" : "Accept Proposal (none pending)",
+            add (proposalPending ? "Keep Take" : "Keep Take (none pending)",
                  [this] { decideProposal (true); }, proposalPending);
-            add (proposalPending ? "Reject Proposal" : "Reject Proposal (none pending)",
+            add (proposalPending ? "Pass on Take" : "Pass on Take (none pending)",
                  [this] { requestReject(); }, proposalPending);
-            add ("Audition Proposal A/B", [this] { toggleAudition(); }, proposalPending,
+            add ("Audition Take A/B", [this] { toggleAudition(); }, proposalPending,
                  auditioningProposal);
             m.addSeparator();
             juce::PopupMenu personas;
@@ -13247,51 +16039,16 @@ public:
                  { chooseAndImport ("Import DAWproject", "*.dawproject", "dawproject_import.py"); });
             add ("REAPER (.rpp)...", [this]
                  { chooseAndImport ("Import REAPER project", "*.rpp;*.RPP", "reaper_bridge.py"); });
-            add ("Standard MIDI File (.mid)...", [this]
-            {
-                chooser = std::make_unique<juce::FileChooser> ("Import MIDI file",
-                    juce::File::getSpecialLocation (juce::File::userHomeDirectory), "*.mid;*.midi");
-                chooser->launchAsync (juce::FileBrowserComponent::openMode
-                                      | juce::FileBrowserComponent::canSelectFiles,
-                    [this] (const juce::FileChooser& fc)
-                    {
-                        const auto src = fc.getResult();
-                        if (src == juce::File()) return;
-                        const auto out = freshSongFile (src.getFileNameWithoutExtension());
-                        runBridge ({ pyPath(), sotadaw::sotadawRoot().getChildFile ("tools/midi_bridge.py").getFullPathName(),
-                                     "import", src.getFullPathName(), out.getFullPathName() },
-                                   "midi: " + src.getFileName(), out);
-                    });
-            });
+            add ("Standard MIDI File (.mid)...", [this] { importMidiViaChooser(); });
             add ("Song Audio -> Stems Session (mp3/wav, GPU demucs)...", [this]
                  { chooseAndImport ("Import any song as editable stems", "*.mp3;*.wav;*.flac;*.m4a",
                                     "stems_import.py"); });
-            add ("Rekordbox Collection (collection.xml)...", [this]
-            {
-                chooser = std::make_unique<juce::FileChooser> ("Import Rekordbox collection",
-                    juce::File::getSpecialLocation (juce::File::userHomeDirectory), "*.xml");
-                chooser->launchAsync (juce::FileBrowserComponent::openMode
-                                      | juce::FileBrowserComponent::canSelectFiles,
-                    [this] (const juce::FileChooser& fc)
-                    {
-                        const auto src = fc.getResult();
-                        if (src == juce::File()) return;
-                        runBridge ({ pyPath(), sotadaw::sotadawRoot().getChildFile ("tools/rekordbox_import.py").getFullPathName(),
-                                     src.getFullPathName() }, "rekordbox: " + src.getFileName());
-                    });
-            });
+            add ("Rekordbox Collection (collection.xml)...", [this] { importRekordboxViaChooser(); });
             m.addSectionHeader ("EXPORT THIS SONG");
             add ("Ableton Live (.als)", [this] { exportVia ("als_export.py", ".als"); });
             add ("DAWproject (.dawproject)", [this] { exportVia ("dawproject_export.py", ".dawproject"); });
             add ("REAPER (.rpp)", [this] { exportVia ("reaper_bridge.py", ".rpp", "export"); });
-            add ("Standard MIDI File (.mid)", [this]
-            {
-                saveNow();
-                const auto out = sotadaw::sotadawRoot().getChildFile ("songs/" + songName + ".mid");
-                runBridge ({ pyPath(), sotadaw::sotadawRoot().getChildFile ("tools/midi_bridge.py").getFullPathName(),
-                             "export", songFile.getFullPathName(), out.getFullPathName() },
-                           songName + " -> " + out.getFileName(), {}, out);
-            });
+            add ("Standard MIDI File (.mid)", [this] { exportMidiFile(); });
         }
         else if (idx == 5)   // ---- Settings ----
         {
@@ -13440,9 +16197,9 @@ public:
             {
                 juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::NoIcon,
                     "SOTA DAW",
-                    "The AI-native workstation.\n\n"
+                    "A session studio - with a producer inside.\n\n"
                     "Version " + juce::JUCEApplication::getInstance()->getApplicationVersion() + "\n"
-                    "Everything the agent makes is symbolic: .dsp sources, song.json, engine edits.\n"
+                    "Everything the producer makes is symbolic: .dsp sources, song.json, engine edits.\n"
                     "No black-box audio generation.");
             });
         }
@@ -13499,6 +16256,7 @@ private:
         auto s = undoStack.back(); undoStack.pop_back();
         restore (s);
         refreshUndoButtons();
+        if (scorePage.isVisible()) scorePage.songChanged();   // SCORE re-engraves
         appendActivity ("[ui] undo");
     }
     void redo()
@@ -13507,11 +16265,34 @@ private:
         undoStack.push_back (juce::JSON::toString (sotadaw::songToVar (song)));
         auto s = redoStack.back(); redoStack.pop_back();
         restore (s);
+        if (scorePage.isVisible()) scorePage.songChanged();   // SCORE re-engraves
         appendActivity ("[ui] redo");
     }
     void scheduleSave() { saveCountdown = 30; }   // ~1s at 30Hz
+    juce::String lastTitle;                       // P93: change-gated title pushes
+    void refreshTitle()
+    {   // P93 WINDOW TITLE: [dot] <song> - <bpm>bpm <key> - SOTA DAW. The task
+        // switcher orients instantly; the dot is the platform dirty convention.
+        // Peerless rigs have no DocumentWindow -> early null = stable rig title.
+        auto* top = dynamic_cast<juce::DocumentWindow*> (getTopLevelComponent());
+        if (top == nullptr) return;
+        juce::String t;
+        if (saveCountdown > 0) t << juce::String::fromUTF8 ("\xe2\x97\x8f ");
+        t << (songName.isNotEmpty() ? songName : juce::String ("SOTA DAW"));
+        if (song.bpm > 0)
+            t << juce::String::fromUTF8 (" \xe2\x80\x94 ")
+              << (std::abs (song.bpm - std::round (song.bpm)) < 0.05
+                      ? juce::String ((int) std::round (song.bpm))
+                      : juce::String (song.bpm, 1)) << "bpm";
+        if (song.key.isNotEmpty()) t << " " << song.key;
+        t << juce::String::fromUTF8 (" \xe2\x80\x94 SOTA DAW");
+        if (t == lastTitle) return;               // zero churn (some WMs flicker)
+        lastTitle = t;
+        top->setName (t);
+    }
     void saveNow()
     {
+        lastSaveMs = juce::Time::getMillisecondCounter();   // P90: the chip's truth
         if (songFile.existsAsFile() || songFile != juce::File())
         {
             sotadaw::saveSong (song, songFile);
@@ -13535,6 +16316,18 @@ private:
     {
         bpmLabel.setText (juce::String (song.bpm, 0) + " BPM", juce::dontSendNotification);
         swingSlider.setValue (song.swingAmount, juce::dontSendNotification);
+        refreshNavStats();
+    }
+
+    void refreshNavStats()
+    {   // the nav corner's one glance line: how much song, how long, how many voices
+        const int secs = (int) std::lround (song.totalBeats() * 60.0
+                                            / juce::jmax (1.0, song.bpm));
+        navStats.setText (juce::String ((int) song.lengthBars) + " BARS | "
+                          + juce::String (secs / 60) + ":"
+                          + juce::String (secs % 60).paddedLeft ('0', 2)
+                          + " | " + juce::String ((int) song.tracks.size()) + " TRACKS",
+                          juce::dontSendNotification);
     }
 
     // ====================================================================== W8 THE BENCH v2: FACES
@@ -13837,7 +16630,7 @@ private:
         // hopping between VERSIONS is free (they are reproducible from git);
         // only unresolved AGENT work blocks time-travel
         if (proposalPending && historyPreviewSha.isEmpty())
-        { setStatus ("resolve the pending proposal first (Accept/Reject), then time-travel"); return; }
+        { setStatus ("resolve the pending take first (KEEP/PASS), then time-travel"); return; }
         if (songName.isEmpty()) return;
         const auto p = path.isNotEmpty() ? path : "songs/" + songName + ".json";
         const auto content = sha.startsWith ("journal")    // crash-net moment: disk-backed,
@@ -13863,7 +16656,7 @@ private:
         // no second gesture owed. Canvas + transport swap to the version (read-only).
         if (! auditioningProposal) toggleAudition();
         if (edit != nullptr && ! edit->getTransport().isPlaying()) togglePlay();
-        setStatus ("TIME MACHINE: " + sha + " on canvas + transport - Accept = RESTORE "
+        setStatus ("TIME MACHINE: " + sha + " on canvas + transport - KEEP = RESTORE "
                    "(a new commit; history is never rewritten) - click another row to hop versions");
         appendActivity ("[ui] time machine: version " + sha + " on the storyline, playing");
     }
@@ -13928,7 +16721,7 @@ private:
         const auto srcRel = clip.tuning.getProperty ("source", juce::var (clip.file)).toString();
         const auto root = sotadaw::sotadawRoot();        // ALWAYS from the original: no double-tune
         auto srcF = juce::File::isAbsolutePath (srcRel) ? juce::File (srcRel) : root.getChildFile (srcRel);
-        if (! srcF.existsAsFile()) { setStatus ("tune lab: clip source missing: " + srcRel); return; }
+        if (! srcF.existsAsFile()) { narrate (2, "tune lab: clip source missing: " + srcRel); return; }
         const auto stem = srcF.getFileNameWithoutExtension().toLowerCase()
                               .retainCharacters ("abcdefghijklmnopqrstuvwxyz0123456789_");
         tuneOutWav     = root.getChildFile ("songs/_tuned_" + stem + "_" + style + ".wav");
@@ -13961,7 +16754,7 @@ private:
         const auto out = tuneDrain.finish() + tuneProc.readAllProcessOutput();
         if (! tuneOutWav.existsAsFile() || ! tuneReportFile.existsAsFile())
         {
-            setStatus ("tune lab: FAILED - see activity");
+            narrate (2, "tune lab: FAILED - see activity");
             appendActivity ("[ui] tune failed: " + out.substring (juce::jmax (0, out.length() - 400)));
             return;
         }
@@ -14086,7 +16879,7 @@ private:
         fxRack.setChecking (false);
         if (! v.isObject() || v.hasProperty ("error"))
         {
-            setStatus ("master check failed - see activity");
+            narrate (2, "master check failed - see activity");
             appendActivity ("[ui] master check: " + (v.isObject()
                             ? v.getProperty ("error", "?").toString() : out.substring (0, 240)));
             return;
@@ -14152,7 +16945,7 @@ private:
         autoTmpJson.withFileExtension ("wav").deleteFile();
         if (! v.isObject() || v.hasProperty ("error"))
         {
-            setStatus ("auto-master failed - see activity");
+            narrate (2, "auto-master failed - see activity");
             appendActivity ("[ui] auto-master: " + (v.isObject()
                             ? v.getProperty ("error", "?").toString() : out.substring (0, 240)));
             return;
@@ -14611,10 +17404,75 @@ private:
             appendActivity ("[ui] WARNING: could not launch sidecar (python3 missing?)");
     }
 
-    // read the connector's own words (demucs tqdm %, [stems] phase lines) into
-    // an honest phase + percent — the dock never invents progress
+    // THE CONNECTOR BAY + the Connectors menu share these (one dispatch, two faces)
+    void importMidiViaChooser()
+    {
+        chooser = std::make_unique<juce::FileChooser> ("Import MIDI file",
+            juce::File::getSpecialLocation (juce::File::userHomeDirectory), "*.mid;*.midi");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc)
+            {
+                const auto src = fc.getResult();
+                if (src == juce::File()) return;
+                const auto out = freshSongFile (src.getFileNameWithoutExtension());
+                runBridge ({ pyPath(), sotadaw::sotadawRoot().getChildFile ("tools/midi_bridge.py").getFullPathName(),
+                             "import", src.getFullPathName(), out.getFullPathName() },
+                           "midi: " + src.getFileName(), out);
+            });
+    }
+    void importRekordboxViaChooser()
+    {
+        chooser = std::make_unique<juce::FileChooser> ("Import Rekordbox collection",
+            juce::File::getSpecialLocation (juce::File::userHomeDirectory), "*.xml");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc)
+            {
+                const auto src = fc.getResult();
+                if (src == juce::File()) return;
+                runBridge ({ pyPath(), sotadaw::sotadawRoot().getChildFile ("tools/rekordbox_import.py").getFullPathName(),
+                             src.getFullPathName() }, "rekordbox: " + src.getFileName());
+            });
+    }
+    void exportMidiFile()
+    {
+        saveNow();
+        const auto out = sotadaw::sotadawRoot().getChildFile ("songs/" + songName + ".mid");
+        runBridge ({ pyPath(), sotadaw::sotadawRoot().getChildFile ("tools/midi_bridge.py").getFullPathName(),
+                     "export", songFile.getFullPathName(), out.getFullPathName() },
+                   songName + " -> " + out.getFileName(), {}, out);
+    }
+
+    // read the connector's own words into an honest phase + percent — the dock
+    // never invents progress. THE HEARTBEAT FIRST (Chezy 2026-07-16: "it just
+    // says STARTING for however long it takes"): stems_import.py stamps
+    // agent/ipc/import_progress.json at every rung — roformer chunks, STREAMED
+    // demucs percent, per-stem transcription — so the bar rides the actual work.
+    // Freshness-gated: a stale heartbeat from last week's import cannot lie.
+    // The stdout keyword scan stays as the fallback for the other connectors.
     void parseImportProgress()
     {
+        {
+            auto hb = ipcDir.getChildFile ("import_progress.json");
+            if (hb.existsAsFile())
+            {
+                juce::var v = juce::JSON::parse (hb.loadFileAsString());   // NAMED var (lifetime law)
+                if (auto* obj = v.getDynamicObject())
+                {
+                    const double ts = (double) obj->getProperty ("ts");
+                    if (ts >= importEpoch0 - 2.0)
+                    {
+                        const auto stage = obj->getProperty ("stage").toString();
+                        const double pct = (double) obj->getProperty ("pct");
+                        if (stage.isNotEmpty()) importPhase = stage.toUpperCase();
+                        if (pct >= 0.0) importPct = juce::jlimit (0.0f, 1.0f, (float) pct);
+                        importDetail = obj->getProperty ("detail").toString();
+                        return;
+                    }
+                }
+            }
+        }
         auto tail = bridgeDrain.peekTail();
         if (tail.isEmpty()) return;
         struct Ph { const char* key; const char* label; float at; };
@@ -14717,7 +17575,7 @@ private:
                     if (crashLog.existsAsFile())
                     {
                         auto lines = juce::StringArray::fromLines (crashLog.loadFileAsString().trim());
-                        appendActivity ("[ui] agent CRASHED: "
+                        appendActivity ("[ui] your producer lost the room: "
                                         + (lines.isEmpty() ? juce::String ("?") : lines[lines.size() - 1].substring (0, 140))
                                         + "  (full log: agent/ipc/sidecar_crash.log) - restarting");
                     }
@@ -14779,6 +17637,11 @@ private:
             lanes[i]->setNoteSelection (it != laneNoteSel.end() ? it->second : std::set<size_t>());
         }
         pushClipViews();
+        announceLaneSelection();
+    }
+
+    void announceLaneSelection()
+    {
         if (! laneNoteSel.empty() || ! laneClipSel.empty())
         {
             int nn = 0, kc = 0;
@@ -14795,6 +17658,23 @@ private:
                        + (lt.size() == 1 ? " track" : " tracks") + " - the agent sees them (esc clears)");
         }
         refreshContextChips();
+    }
+
+    void toggleLaneNote (int ti, int ni)
+    {   // ctrl+click on a lane note: membership toggle — de-select ONE, the
+        // rest stays lit (Chezy law 2026-07-16); an unlit note joins instead
+        if (ti < 0 || ti >= (int) song.tracks.size()
+            || ni < 0 || ni >= (int) song.tracks[(size_t) ti].notes.size()) return;
+        auto& s = laneNoteSel[ti];
+        if (s.erase ((size_t) ni) == 0) s.insert ((size_t) ni);
+        if (s.empty()) laneNoteSel.erase (ti);
+        if (ti < lanes.size())
+        {
+            auto it = laneNoteSel.find (ti);
+            lanes[ti]->setNoteSelection (it != laneNoteSel.end() ? it->second
+                                                                 : std::set<size_t>());
+        }
+        announceLaneSelection();
     }
 
     void clearLaneSelection()
@@ -14926,6 +17806,7 @@ private:
         const auto* a = paletteShown[(size_t) i];
         appendActivity ("[palette] " + a->name);
         promptBox.clear();
+        voiceLedgerReset();                        // a verb ran: spoken words consumed
         paletteDrop.setVisible (false);
         setStatus (a->name);
         if (a->run) a->run();
@@ -15304,7 +18185,7 @@ private:
     double playheadBeatNow() const
     {
         if (edit == nullptr) return viewStart;
-        const double b = edit->tempoSequence.toBeats (edit->getTransport().getPosition()).inBeats();
+        const double b = quarterAtTime (edit->getTransport().getPosition());
         return b >= 0 ? b : viewStart;
     }
     void blockPaste()
@@ -15470,15 +18351,16 @@ private:
                         hi = juce::jmax (hi, n.start + n.len);
                     }
         if (hi <= lo) return;
-        loopA = std::floor (lo / 4.0) * 4.0;
-        loopB = juce::jmin (song.totalBeats(), std::ceil (hi / 4.0) * 4.0);
+        loopA = song.barStartBeat (std::floor (song.barAtBeat (lo)));
+        loopB = juce::jmin (song.totalBeats(),
+                            song.barStartBeat (std::ceil (song.barAtBeat (hi) - 1e-9)));
         ruler.loopStart = loopA; ruler.loopEnd = loopB;
         roll.loopA = loopA;      roll.loopB = loopB;
         loopButton.setToggleState (true, juce::dontSendNotification);
         applyLoop();
         ruler.repaint();
-        setStatus ("loop -> the selection (bars " + juce::String ((int) (loopA / 4) + 1)
-                   + "-" + juce::String ((int) (loopB / 4)) + ")");
+        setStatus ("loop -> the selection (bars " + juce::String ((int) song.barAtBeat (loopA) + 1)
+                   + "-" + juce::String ((int) std::ceil (song.barAtBeat (loopB) - 1e-9)) + ")");
     }
 
     //---- THE THRESHOLD (H21): the OS drag-and-drop matrix --------------------------
@@ -15488,20 +18370,44 @@ private:
             || ext == "ogg" || ext == "mp3" || ext == "m4a" || ext == "aac"
             || ext == "opus" || ext == "wma" || ext == "mp4" || ext == "oga";
     }
-    bool isInterestedInFileDrag (const juce::StringArray& files) override
+    // P94 ONE TABLE: the veil's label IS the dispatch route — the promise the
+    // card makes and the branch the drop takes read the same row, so the label
+    // can never lie. Unknown = an honest refusal (never a silent no-op).
+    struct DropRoute { bool ok; juce::String kind, label; };
+    static DropRoute dropRoute (const juce::String& extIn)
     {
-        for (auto& f : files)
-        {
-            const auto e = juce::File (f).getFileExtension().substring (1).toLowerCase();
-            if (thresholdAudio (e) || e == "mid" || e == "midi" || e == "json" || e == "dsp")
-                return true;
-        }
-        return false;
+        const auto e = extIn.toLowerCase();
+        if (thresholdAudio (e))        return { true, "audio", "audio onto a lane (drop ON the lane you want)" };
+        if (e == "mid" || e == "midi") return { true, "midi", "MIDI notes -> lanes (byte-idempotent bridge)" };
+        if (e == "json")               return { true, "json", "song / loop json -> the canvas" };
+        if (e == "dsp")                return { true, "dsp", "Faust voice -> instruments/ (JIT: plays instantly)" };
+        if (e == "als")                return { true, "als", "Ableton Live set import" };
+        if (e == "flp")                return { true, "flp", "FL Studio project import" };
+        if (e == "rpp")                return { true, "rpp", "REAPER project import" };
+        if (e == "dawproject")         return { true, "dawproject", "DAWproject import (Bitwig/Cubase/Nuendo/S1)" };
+        if (e == "musicxml" || e == "mxl" || e == "xml")
+                                       return { true, "musicxml", "MusicXML score -> tracks (the SCORE tab reads it)" };   // SCORE
+        return { false, "unknown", "can't take ." + e
+                 + " - I speak wav/mp3/flac/mid/musicxml/als/flp/rpp/dawproject/json/dsp" };
     }
-    void fileDragEnter (const juce::StringArray&, int x, int y) override { thresholdHover (x, y); }
-    void fileDragMove  (const juce::StringArray&, int x, int y) override { thresholdHover (x, y); }
+    bool isInterestedInFileDrag (const juce::StringArray& files) override
+    {   // P94: ALWAYS interested — the veil answers every OS drag, recognized
+        // routes with their promise, unknown ones with the honest refusal
+        return ! files.isEmpty();
+    }
+    void fileDragEnter (const juce::StringArray& files, int x, int y) override
+    {
+        dropVeil.feed (files);                    // P94: the window says what it will do
+        thresholdHover (x, y);
+    }
+    void fileDragMove  (const juce::StringArray& files, int x, int y) override
+    {
+        if (! dropVeil.isVisible()) dropVeil.feed (files);
+        thresholdHover (x, y);
+    }
     void fileDragExit  (const juce::StringArray&) override
     {
+        dropVeil.setVisible (false);              // P94: vanish instantly, no fade lag
         fileHover = false;
         for (auto* l : lanes)
             if (l->dropHover) { l->dropHover = false; l->repaint(); }
@@ -15511,6 +18417,9 @@ private:
     {
         fileHover = true;
         fileHoverPos = { x, y };
+        const bool overChat = ! chatColumnRect.isEmpty()            // ATTACH: honest veil —
+                              && chatColumnRect.contains (x, y);    // the label IS the route
+        if (dropVeil.chatMode != overChat) { dropVeil.chatMode = overChat; dropVeil.repaint(); }
         const int over = laneIndexAtY (y);              // the lane answers the world's hand
         for (int i = 0; i < lanes.size(); ++i)
             if (lanes[i]->dropHover != (i == over))
@@ -15520,12 +18429,26 @@ private:
     void filesDropped (const juce::StringArray& files, int x, int y) override
     {
         fileDragExit (files);
+        if (! chatColumnRect.isEmpty() && chatColumnRect.contains (x, y))
+        {   // ATTACH — THE INBOX: a drop on the chat is CONTEXT, never an edit
+            attachFilesToChat (files);
+            return;
+        }
         const int ti = laneIndexAtY (y);
         double beat = 0;
         if (auto* l = ti >= 0 ? lanes[ti] : (lanes.isEmpty() ? nullptr : lanes[0]))
             beat = juce::jmax (0.0, l->beatAtX (x - l->getX()));
+        juce::StringArray refused;                // P94: refusals whisper, never no-op
         for (auto& f : files)
-            routeDroppedFile (juce::File (f), ti, beat);
+        {
+            const juce::File jf (f);
+            if (dropRoute (jf.getFileExtension().substring (1)).ok)
+                routeDroppedFile (jf, ti, beat);
+            else
+                refused.add (jf.getFileName());
+        }
+        if (! refused.isEmpty())
+            setStatus (dropRoute (juce::File (refused[0]).getFileExtension().substring (1)).label);
     }
     // G4: INTERNAL drags (rail sounds, presets, crate loops) dropped on the EMPTY
     // canvas mint a new track wearing them — the painted promise ("drop a sound or
@@ -15564,18 +18487,22 @@ private:
             addTrackWithSource (sec, id, beat);
     }
 
-    // G6: the arrange void answers the right button (the ghost drop-zone's menu)
+    // G6: THE OPEN LAND answers both hands (the ghost drop-zone made visible)
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (e.mods.isPopupMenu() && ! roll.isVisible() && ! mixer.isVisible()
-            && ! liveGrid.isVisible() && ! lanes.isEmpty()
-            && e.y > lanes.getLast()->getBottom() && e.y < hearStrip.getY())
+        if (! roll.isVisible() && ! mixer.isVisible() && ! liveGrid.isVisible()
+            && ! openLand.isEmpty() && openLand.contains (e.getPosition()))
         {
-            juce::PopupMenu m;
-            m.addItem ("Add track...", [this] { addTrackMenu(); });
-            m.addItem ("Paste a sound here: drag from Files / Sounds rails",
-                       false, false, [] {});
-            m.showMenuAsync ({});
+            if (e.mods.isPopupMenu())
+            {
+                juce::PopupMenu m;
+                m.addItem ("Add track...", [this] { addTrackMenu(); });
+                m.addItem ("Paste a sound here: drag from Files / Sounds rails",
+                           false, false, [] {});
+                m.showMenuAsync ({});
+            }
+            else
+                addTrackMenu();   // the promise the well engraves: click = new track
         }
     }
 
@@ -15840,13 +18767,13 @@ private:
             for (auto& au : t.automation)
                 std::sort (au.points.begin(), au.points.end(), [] (auto& x, auto& y) { return x.beat < y.beat; });
         }
-        const double lenBar = lenBeats / 4.0;
-        for (auto& s : song.sections)   if (s.startBar * 4.0 >= atBeat - 1e-6) s.startBar += lenBar;
-        for (auto& tp : song.tempoMap)  if (tp.bar  * 4.0 >= atBeat - 1e-6) tp.bar  += lenBar;
+        const double lenBar = lenBeats / song.beatsInBar (song.barAtBeat (atBeat));
+        for (auto& s : song.sections)   if (song.barStartBeat (s.startBar) >= atBeat - 1e-6) s.startBar += lenBar;
+        for (auto& tp : song.tempoMap)  if (song.barStartBeat (tp.bar) >= atBeat - 1e-6) tp.bar  += lenBar;
         song.lengthBars += lenBar;
         if (newSection.isNotEmpty())
         {
-            song.sections.push_back ({ newSection, atBeat / 4.0 });
+            song.sections.push_back ({ newSection, song.barAtBeat (atBeat) });
             std::sort (song.sections.begin(), song.sections.end(),
                        [] (auto& a, auto& b) { return a.startBar < b.startBar; });
         }
@@ -15856,13 +18783,14 @@ private:
         rebuildLanes();
         handReceipt (src >= 0 ? "hand.duplicate_section" : "hand.insert_time", { "*" },
                      (src >= 0 ? "duplicated " : "inserted ") + juce::String (lenBar, 0)
-                     + " bars at bar " + juce::String (atBeat / 4.0 + 1, 0));
+                     + " bars at bar " + juce::String (song.barAtBeat (atBeat) + 1, 0));
     }
     void deleteBars (double atBeat, double lenBeats)
     {
         if (lenBeats <= 0) return;
         snapshot();
-        const double end = atBeat + lenBeats, lenBar = lenBeats / 4.0;
+        const double end = atBeat + lenBeats,
+                     lenBar = lenBeats / song.beatsInBar (song.barAtBeat (atBeat));
         for (auto& t : song.tracks)
         {
             t.notes.erase (std::remove_if (t.notes.begin(), t.notes.end(),
@@ -15879,22 +18807,25 @@ private:
             }
         }
         song.sections.erase (std::remove_if (song.sections.begin(), song.sections.end(),
-            [&] (auto& s) { return s.startBar * 4.0 >= atBeat - 1e-6 && s.startBar * 4.0 < end - 1e-6; }),
+            [&] (auto& s) { const double sb = song.barStartBeat (s.startBar);
+                            return sb >= atBeat - 1e-6 && sb < end - 1e-6; }),
             song.sections.end());
-        for (auto& s : song.sections)  if (s.startBar * 4.0 >= end - 1e-6) s.startBar -= lenBar;
-        for (auto& tp : song.tempoMap) if (tp.bar  * 4.0 >= end - 1e-6) tp.bar  -= lenBar;
+        for (auto& s : song.sections)  if (song.barStartBeat (s.startBar) >= end - 1e-6) s.startBar -= lenBar;
+        for (auto& tp : song.tempoMap) if (song.barStartBeat (tp.bar) >= end - 1e-6) tp.bar  -= lenBar;
         song.lengthBars = juce::jmax (1.0, song.lengthBars - lenBar);
         saveNow();
         engineDirty = true;
         syncRulerSections();
         rebuildLanes();
         handReceipt ("hand.delete_time", { "*" },
-                     "deleted " + juce::String (lenBar, 0) + " bars at bar " + juce::String (atBeat / 4.0 + 1, 0));
+                     "deleted " + juce::String (lenBar, 0) + " bars at bar "
+                         + juce::String (song.barAtBeat (atBeat) + 1, 0));
     }
     void syncRulerSections()   // keep the ruler's copy in step after a content op
     {
         ruler.sections = song.sections;
         ruler.tempoPoints = song.tempoMap;
+        ruler.meterPoints = song.meterMap;     // the WORLD GRID chips stay in step
         ruler.chords = chordRuns (song);       // THE CHORD RAIL stays in step
         ruler.totalBeats = song.totalBeats();
         ruler.repaint();
@@ -15902,9 +18833,9 @@ private:
     std::pair<double, double> sectionSpan (int i) const   // (startBeat, lenBeats)
     {
         if (i < 0 || i >= (int) song.sections.size()) return { 0, 0 };
-        const double s = song.sections[(size_t) i].startBar * 4.0;
+        const double s = song.barStartBeat (song.sections[(size_t) i].startBar);
         const double e = i + 1 < (int) song.sections.size()
-                           ? song.sections[(size_t) i + 1].startBar * 4.0 : song.totalBeats();
+                           ? song.barStartBeat (song.sections[(size_t) i + 1].startBar) : song.totalBeats();
         return { s, juce::jmax (0.0, e - s) };
     }
     void sectionCommand (const juce::String& verb, int i)   // the ruler's section menu
@@ -15916,17 +18847,19 @@ private:
         if (verb == "duplicate" && len >= 1)
         {
             insertBars (s + len, len, s, name);            // "another chorus"
-            setStatus ("duplicated section '" + name + "' (" + juce::String (len / 4.0, 0) + " bars)");
+            setStatus ("duplicated section '" + name + "' ("
+                       + juce::String (song.barAtBeat (s + len) - song.barAtBeat (s), 0) + " bars)");
         }
         else if (verb == "insert_before")
         {
-            insertBars (s, 16.0);                           // 4 empty bars before
+            insertBars (s, song.barStartBeat (std::round (song.barAtBeat (s)) + 4.0) - s);   // 4 empty bars before
             setStatus ("inserted 4 bars before '" + name + "'");
         }
         else if (verb == "delete_time" && len >= 1)
         {
             deleteBars (s, len);
-            setStatus ("deleted section '" + name + "' and its " + juce::String (len / 4.0, 0) + " bars");
+            setStatus ("deleted section '" + name + "' and its "
+                       + juce::String (song.barAtBeat (s + len) - song.barAtBeat (s), 0) + " bars");
         }
         else if (verb == "remove_marker")
         {
@@ -15940,10 +18873,37 @@ private:
 
     // THE IMPORT IS A TAKE, HB1 shape: a trivial drop lands as ONE undo step + ONE
     // receipt (imports grow full ghost-take rails in HB3). ti < 0 = no lane hit.
+    // ATTACH — THE INBOX: chat drops land in songs/.attach/<song>/ as agent context;
+    // the sidecar summarizes each file (FalkorDB-cached ears/table/doc/score stats)
+    // and an ATTACHMENTS block rides EVERY prompt. Any file type is welcome here —
+    // context and notes sharing, never an edit.
+    void attachFilesToChat (const juce::StringArray& files)
+    {
+        auto dir = sotadaw::sotadawRoot().getChildFile ("songs/.attach/" + songName);
+        dir.createDirectory();
+        juce::StringArray landed;
+        for (auto& f : files)
+        {
+            const juce::File src (f);
+            if (! src.existsAsFile()) continue;
+            auto dst = dir.getChildFile (src.getFileName());
+            for (int i = 2; dst.existsAsFile() && dst.getSize() != src.getSize(); ++i)
+                dst = dir.getChildFile (src.getFileNameWithoutExtension() + "_"
+                                        + juce::String (i) + src.getFileExtension());
+            if (src.copyFileTo (dst)) landed.add (dst.getFileName());
+        }
+        if (landed.isEmpty()) { setStatus ("attach failed - nothing readable"); return; }
+        narrate (1, "THE INBOX: attached " + landed.joinIntoString (", ")
+                    + " - the agent reads these as context on every ask (files live in "
+                      "songs/.attach/" + songName + ")");
+        attachTray.refresh (dir);                    // ATTACH: the chips appear in the chat
+        resized();
+    }
     void routeDroppedFile (const juce::File& f, int ti, double dropBeat)
     {
         const auto ext = f.getFileExtension().substring (1).toLowerCase();
-        const double bar = std::floor (juce::jmax (0.0, dropBeat) / 4.0) * 4.0;   // crate law: land AT the bar
+        const double bar = song.barStartBeat (std::floor (song.barAtBeat (
+                               juce::jmax (0.0, dropBeat))));   // crate law: land AT the bar
         if (thresholdAudio (ext))
         {
             // ANY-FORMAT: mp3/m4a/aac/opus/wma read as null on Linux. THE ASYNC
@@ -15954,7 +18914,7 @@ private:
             const juce::File src = readableAudioNow (f);
             if (src != juce::File()) { landDroppedAudio (f, src, ti, bar); return; }
             if (ffmpegPath() == juce::File())
-            { setStatus ("can't read " + f.getFileName() + " (install ffmpeg for mp3/m4a)"); return; }
+            { narrate (2, "can't read " + f.getFileName() + " (install ffmpeg for mp3/m4a)"); return; }
             beginDropTranscode (f, ti, bar);
         }
         else if (ext == "mid" || ext == "midi")
@@ -15962,7 +18922,7 @@ private:
             juce::FileInputStream is (f);
             juce::MidiFile mf;
             if (! is.openedOk() || ! mf.readFrom (is) || mf.getTimeFormat() <= 0)
-            { setStatus ("can't read " + f.getFileName()); return; }
+            { narrate (2, "can't read " + f.getFileName()); return; }
             const double tpq = (double) mf.getTimeFormat();
             std::vector<SongNote> got;
             for (int t = 0; t < mf.getNumTracks(); ++t)
@@ -16013,6 +18973,18 @@ private:
             handReceipt ("hand.drop_midi", { song.tracks[(size_t) ti].name },
                          f.getFileName() + " merged at beat " + juce::String (bar, 1));
         }
+        else if (ext == "als" || ext == "flp" || ext == "rpp" || ext == "dawproject")
+        {   // P94: the bay footer always PROMISED canvas drops for project files —
+            // the door now honors it with the SAME bridge the bay tile runs
+            importDroppedProject (f, ext == "als" ? "als_import.py"
+                                  : ext == "flp" ? "flp_import.py"
+                                  : ext == "rpp" ? "reaper_bridge.py"
+                                                 : "dawproject_import.py");
+        }
+        else if (ext == "musicxml" || ext == "mxl" || ext == "xml")
+        {   // SCORE: a dropped score becomes tracks through the same bridge door
+            importDroppedProject (f, "musicxml_import.py");
+        }
         else if (ext == "json")
         {
             const auto v = juce::JSON::parse (f.loadFileAsString());
@@ -16034,7 +19006,7 @@ private:
             const auto dst = sotadaw::sotadawRoot().getChildFile ("instruments")
                                                    .getChildFile (f.getFileName());
             if (! dst.existsAsFile() && ! f.copyFileTo (dst))
-            { setStatus ("couldn't copy " + f.getFileName()); return; }
+            { narrate (2, "couldn't copy " + f.getFileName()); return; }
             const auto name = dst.getFileNameWithoutExtension();
             if (ti >= 0 && ti < (int) song.tracks.size())
             {
@@ -16131,6 +19103,9 @@ private:
         keymap.add ("agent.fable", "fable: every ask rides Claude Fable 5 (flip the model selector)", "AGENT", 0,
                     {}, 0, "", nullptr,
                     [this] { setModelChoice (modelChoice == "claude-fable-5" ? juce::String() : "claude-fable-5"); });
+        keymap.add ("agent.voice", "voice mode: talk, words land in the prompt live; Send is yours", "AGENT", 0,
+                    {}, 0, "", nullptr,
+                    [this] { micButton.triggerClick(); });   // /voice = the Claude Code door
         keymap.add ("view.zoomIn", "zoom timeline / roll", "TRANSPORT + VIEW", 0, {}, '+', "+  -",
                     noPrompt, [this] { zoomTimelineOrRoll (1.0); });
         keymap.add ("view.zoomIn2", "", "TRANSPORT + VIEW", 0, {}, '=', "",
@@ -16172,6 +19147,13 @@ private:
                     juce::KeyPress (juce::KeyPress::F7Key), 0, "", nullptr,
                     [this] { setView (2); })
               .hidden = true;
+        keymap.add ("view.score", "score (notation editor)", "TRANSPORT + VIEW", 0,   // SCORE
+                    juce::KeyPress (juce::KeyPress::F8Key), 0, "F8", nullptr,
+                    [this]
+                    {
+                        if (agentMode) setAgentMode (false);
+                        showScore (! scorePage.isVisible());
+                    });
         keymap.add ("view.agentMode", "agent-first mode", "TRANSPORT + VIEW", 0,
                     juce::KeyPress (juce::KeyPress::F4Key), 0, "F4", nullptr,
                     [this] { setAgentMode (! agentMode); });
@@ -16470,6 +19452,112 @@ public:   // rig entry — SotaDawApp drives it, like ghostE2EStage/snapSetView
         std::vector<int> pa;
         for (auto& n : rt.notes) pa.push_back (n.pitch);
         check (pb == pa, "roll: mirror twice = identity (involution)");
+        // 13b) WAVE ROLL-1 (UI_SPEC_100 P45/P47/P48): alt+wheel velocity shadow,
+        // Z dive + return ticket, ctrl+L legato — through the real key/wheel paths.
+        roll.keyPressed (juce::KeyPress ('A', juce::ModifierKeys::commandModifier, 0));
+        rt.notes[0].vel = 0.95;                        // deterministic clamp case (not the SUT)
+        std::vector<double> v0;
+        for (auto& n : rt.notes) v0.push_back (n.vel);
+        for (int i = 0; i < 3; ++i) roll.velWheelNotch (+1, false, { 50, 50 });
+        bool velMoved = false;
+        { size_t j = 0; for (auto& n : rt.notes) velMoved = velMoved || std::abs (n.vel - v0[j++]) > 1e-9; }
+        for (int i = 0; i < 3; ++i) roll.velWheelNotch (-1, false, { 50, 50 });
+        bool velBack = true;
+        { size_t j = 0; for (auto& n : rt.notes) velBack = velBack && std::abs (n.vel - v0[j++]) < 1e-9; }
+        check (velMoved && velBack,
+               "roll: alt+wheel x3 up + x3 down returns EXACT velocities (float shadow)");
+        const double zPreVs = roll.vs, zPrePpb = roll.effPpb();
+        roll.keyPressed (juce::KeyPress ((int) 'z', juce::ModifierKeys(), 'z'));
+        check (roll.zRestoreOk, "roll: Z dives and holds the return ticket");
+        roll.keyPressed (juce::KeyPress ((int) 'z', juce::ModifierKeys(), 'z'));
+        check (std::abs (roll.vs - zPreVs) < 1e-9 && std::abs (roll.effPpb() - zPrePpb) < 1e-6,
+               "roll: Z again restores the exact prior view");
+        roll.keyPressed (juce::KeyPress ('L', juce::ModifierKeys::commandModifier, 0));
+        {
+            std::vector<std::pair<double, double>> sl;
+            for (auto& n : rt.notes) sl.push_back ({ n.start, n.len });
+            std::sort (sl.begin(), sl.end());
+            bool lg = ! sl.empty();
+            for (size_t j = 0; j + 1 < sl.size(); ++j)
+                if (sl[j + 1].first - sl[j].first > 0.051
+                    && std::abs (sl[j].second - (sl[j + 1].first - sl[j].first)) > 1e-6)
+                    lg = false;
+            check (lg, "roll: ctrl+L legato reaches each next start");
+        }
+        // 13c) P46: CHASE + the follow truce, through the real transport feed
+        roll.rppb = 200.0;                             // zoomed: the view is a window
+        roll.vs = 0.0;
+        roll.chase = true; roll.chaseArm = true;
+        roll.followEnabled = true; roll.followSuspended = false;
+        roll.setPlayheadBeats (12.0);
+        check (roll.vs > 5.0 && roll.vs <= 12.0,
+               "roll: CHASE locates the fresh roll to NOW");
+        roll.followSuspended = true;                   // = a manual pan while playing
+        const double vsHold = roll.vs;
+        roll.setPlayheadBeats (20.0);
+        check (std::abs (roll.vs - vsHold) < 1e-9,
+               "roll: suspended follow never yanks the view");
+        roll.keyPressed (juce::KeyPress ((int) 'f', juce::ModifierKeys(), 'f'));
+        roll.keyPressed (juce::KeyPress ((int) 'f', juce::ModifierKeys(), 'f'));
+        roll.setPlayheadBeats (31.0);
+        check (roll.followEnabled && ! roll.followSuspended && roll.vs != vsHold,
+               "roll: F re-arms follow (the beam pulls the view again)");
+        roll.setPlayheadBeats (-1.0);                  // stop resets the truce
+        // 13d) P44 NOTE PROPERTIES: grammar + originals-anchored scrub + typed absolute
+        check (PianoRollEditor::parsePitch ("D#3") == 51
+               && PianoRollEditor::pitchName (51) == "D#3"
+               && PianoRollEditor::parsePitch ("60") == 60,
+               "roll: pitch grammar round-trips (C4 = 60 tower law)");
+        roll.keyPressed (juce::KeyPress ('A', juce::ModifierKeys::commandModifier, 0));
+        std::vector<int> p44;
+        for (auto& n : rt.notes) p44.push_back (n.pitch);
+        roll.beginScrub (0);
+        roll.applyScrub (16);                          // +2 semitones on the selection
+        bool up2 = true;
+        { size_t j = 0; for (auto& n : rt.notes) up2 = up2 && n.pitch == juce::jlimit (0, 127, p44[j++] + 2); }
+        roll.applyScrub (0);                           // back to the anchor = EXACT originals
+        bool back0 = true;
+        { size_t j = 0; for (auto& n : rt.notes) back0 = back0 && n.pitch == p44[j++]; }
+        check (up2 && back0, "roll: props scrub is originals-anchored (zero drift)");
+        roll.commitPropText (1, "96");
+        bool v96 = true;
+        for (auto& n : rt.notes) v96 = v96 && std::abs (n.vel - 96.0 / 127.0) < 1e-9;
+        check (v96, "roll: typed VEL 96 lands on every selected note");
+        // 13e) P38 SCALE FOLD: in-key rows only — the tower measurably shrinks
+        roll.scaleView = 0; roll.rebuildRows();
+        const double allScroll = roll.maxScrollV();
+        roll.scaleView = 2; roll.rebuildRows();
+        check (roll.maxScrollV() < allScroll - 1.0,
+               "roll: SCALE FOLD folds the tower to in-key rows");
+        roll.scaleView = 1; roll.rebuildRows();        // restore the standing default
+        // 13f) P71 PROMPT HISTORY: walk up, walk down, the draft survives
+        promptHist.clear();
+        pushPromptHist ("make it darker");
+        pushPromptHist ("add a hat");
+        promptBox.setText ("dra", juce::dontSendNotification);
+        promptBox.setCaretPosition (0);
+        promptHistKey (juce::KeyPress (juce::KeyPress::upKey));
+        check (promptBox.getText() == "add a hat", "P71: up recalls the newest ask");
+        promptHistKey (juce::KeyPress (juce::KeyPress::upKey));
+        check (promptBox.getText() == "make it darker", "P71: up walks older");
+        promptHistKey (juce::KeyPress (juce::KeyPress::downKey));
+        promptHistKey (juce::KeyPress (juce::KeyPress::downKey));
+        check (promptBox.getText() == "dra" && histCursor == -1,
+               "P71: down returns to the PRESERVED draft");
+        promptBox.clear();
+        // 13g) P65 SESSION DIVIDERS: five runs fold the oldest two; a click reopens
+        chat.clear();
+        for (int r5 = 0; r5 < 5; ++r5)
+        {
+            chat.add (ChatPanel::Kind::user, "ask number " + juce::String (r5));
+            chat.add (ChatPanel::Kind::action, "did a thing");
+            chat.add (ChatPanel::Kind::status, "done");
+        }
+        check (chat.dividersForRig() == 2 && chat.foldedForRig() == 6,
+               "P65: five runs fold the oldest two behind one-line dividers");
+        chat.toggleRun (1);
+        check (chat.foldedForRig() == 3,
+               "P65: a divider click reopens exactly its own run");
         // 14) UNDO CORRECTNESS: a roll op snapshots the PRE-edit state, so undo reverts
         // EXACTLY (the snapshot-after bug made the first undo a no-op).
         auto sig = [&]
@@ -17207,7 +20295,7 @@ private:  // (restores the section the HANDS burst was in)
         {
             auto& tc = edit->getTransport();
             playing = tc.isPlaying();
-            ph = edit->tempoSequence.toBeats (tc.getPosition()).inBeats();
+            ph = quarterAtTime (tc.getPosition());
         }
         juce::String tp;
         tp << "{\"playheadBeats\": " << juce::String (ph, 3)
@@ -17263,8 +20351,8 @@ private:  // (restores the section the HANDS burst was in)
                               + song.tracks[(size_t) ti].name);
         }
         if (loopB > loopA && loopA >= 0)
-            bits.add ("bars|bars " + juce::String ((int) (loopA / 4.0) + 1)
-                      + "-" + juce::String ((int) std::ceil (loopB / 4.0)));
+            bits.add ("bars|bars " + juce::String ((int) gridSong().barAtBeat (loopA) + 1)
+                      + "-" + juce::String ((int) std::ceil (gridSong().barAtBeat (loopB) - 1e-9)));
         if (auto* it = browser.selectedItem())
             bits.add ((it->section == "GROOVES" ? juce::String ("groove|") : juce::String ("lib|")) + it->id);
         if (mixer.masterPointed)
@@ -17469,6 +20557,7 @@ private:  // (restores the section the HANDS burst was in)
         {
             setModelChoice (modelChoice == "claude-fable-5" ? juce::String() : "claude-fable-5");
             promptBox.clear();
+            voiceLedgerReset();
             return;
         }
         if (text.startsWithIgnoreCase ("/fable "))        // prefixed ask = arm fable + send
@@ -17478,19 +20567,23 @@ private:  // (restores the section the HANDS burst was in)
         }
         const juce::String modelJson = modelRider() + seedRider();   // explicit picks ride EVERY ask
         if (text.isEmpty() || songName.isEmpty()) return;
+        pushPromptHist (text);                            // P71: every sent ask joins history
+        lastAskText = text;                               // P64: the retry chip remembers
         if (proposalPending)
         {   // FEEDBACK IS NOT REJECTION: talking during a pending proposal REVISES the
             // take in place — the buttons stay the only accept/reject door
             setAgentBusy (true);
             promptBox.clear();
+            voiceLedgerReset();                    // the words were SENT (revision)
             appendActivity ("you (revising the pending take): " + text);
             writeRequest ("prompt", buildContextJson() + modelJson + genrePrefJson()
                           + "\"revise\": true, \"text\": " + juce::JSON::toString (juce::var (text)) + ",");
-            setStatus ("revising the pending take - it stays auditionable; Accept/Reject still yours");
+            setStatus ("revising the pending take - it stays auditionable; KEEP/PASS still yours");
             return;
         }
         setAgentBusy (true);
         promptBox.clear();
+        voiceLedgerReset();                        // the words were SENT
         appendActivity ("you: " + text);
         if (loopLabButton.getToggleState())
         {
@@ -17505,8 +20598,8 @@ private:  // (restores the section the HANDS burst was in)
             lastLoopBrief = brief;
             juce::String extra = "\"text\": " + juce::JSON::toString (juce::var (brief));
             if (loopB > loopA && loopA >= 0)   // loop region selected = SEED: variations of THIS material
-                extra += ", \"seedBars\": [" + juce::String (loopA / 4.0, 2) + ", "
-                       + juce::String (loopB / 4.0, 2) + "]";
+                extra += ", \"seedBars\": [" + juce::String (gridSong().barAtBeat (loopA), 2) + ", "
+                       + juce::String (gridSong().barAtBeat (loopB), 2) + "]";
             writeRequest ("loops", buildContextJson() + modelJson + extra + ", \"bars\": 2, \"count\": 4,");
             setStatus (loopB > loopA ? "loop lab working (seeded from selection)..." : "loop lab working...");
         }
@@ -17571,6 +20664,7 @@ private:  // (restores the section the HANDS burst was in)
 
     juce::String foreignRunSaid;     // cross-run gate: which foreign stream was announced
     int uiBeatTick = 0;              // THE CONSOLE BEAT divider (host clock -> ~1/s)
+    float sigilBreath = 0.0f;        // the crown jewel's slow glow (0..1, ~3.2s period)
     bool decisionInFlight = false;   // the round-trip window (send -> accepted/rejected
                                      // event): a second click here was today's real
                                      // "no pending proposal" error x4 — double-submit
@@ -17583,13 +20677,13 @@ private:  // (restores the section the HANDS burst was in)
         if (deck.rejectArmed())                  // second press: send, with or without a WHY
         {
             const auto r = deck.rejectReason();
-            rejectButton.setButtonText ("Reject");
+            rejectButton.setButtonText ("PASS");
             decideProposal (false, r);
         }
         else if (proposalPending)                // first press: the deck asks WHY
         {
             deck.armReject();
-            rejectButton.setButtonText ("Reject anyway");
+            rejectButton.setButtonText ("PASS anyway");
         }
         else
             decideProposal (false);
@@ -17608,7 +20702,7 @@ private:  // (restores the section the HANDS burst was in)
             acceptButton.setEnabled (false);
             rejectButton.setEnabled (false);
             auditionButton.setEnabled (false);
-            acceptButton.setButtonText ("Accepting...");
+            acceptButton.setButtonText ("Keeping...");
             deck.setBusy (true);                 // the commit is in flight: a catch-light
         }                                        // rides the deck edge until it lands
         // transcript cards freeze NOW — before cherry/hunk merges reshape
@@ -17642,7 +20736,7 @@ private:  // (restores the section the HANDS burst was in)
                     const int pitch = tok[1].getIntValue();
                     hb.append (tn + ": " + PC[((pitch % 12) + 12) % 12]
                                + juce::String (pitch / 12 - 1)
-                               + " @ b" + juce::String (startB / 4.0 + 1.0, 2));
+                               + " @ b" + juce::String (song.barAtBeat (startB) + 1.0, 2));
                 }
             extra += "\"held_back\": " + juce::JSON::toString (hb) + ",";
         }
@@ -17657,6 +20751,19 @@ private:  // (restores the section the HANDS burst was in)
     }
 
     juce::String queuedVerdict;      // a verdict waiting for the daemon's single lane
+    // THE FULL-TAKE RAIL: one sender for every surface that wants a whole take
+    // born zero-token (the birth, the MAKE A TRACK door). A pinned dock genre
+    // rides; "(auto)" omits the field and the graph picks.
+    void requestMakeTrack()
+    {
+        juce::String extra;
+        if (genreBox.getSelectedId() > 1)
+            extra = "\"genre\": " + juce::JSON::toString (juce::var (genreBox.getText())) + ", ";
+        writeRequest ("make_track", extra);
+        chat.agentBusy = true;
+        chat.repaint();
+    }
+
     void writeRequest (const juce::String& type, const juce::String& extraJson)
     {
         if (! agentWanted && std::getenv ("SOTADAW_SNAPSHOT") == nullptr
@@ -17825,13 +20932,19 @@ private:  // (restores the section the HANDS burst was in)
             {
                 appendActivity ("ERROR: " + ev.getProperty ("text", "").toString());
                 setStatus ("agent error - see activity");
+                // P64: the failure lands as a CARD (it used to live only in the
+                // activity feed) — with a RETRY chip when the ask is known
+                chat.add (ChatPanel::Kind::error,
+                          ev.getProperty ("text", "?").toString(),
+                          lastAskText.isNotEmpty() ? juce::StringArray { "retryable" }
+                                                   : juce::StringArray());
                 if (decisionInFlight)            // the decision round-trip died: re-arm
                 {
                     decisionInFlight = false;
                     acceptButton.setEnabled (true);
                     rejectButton.setEnabled (true);
                     auditionButton.setEnabled (true);
-                    acceptButton.setButtonText ("Accept");
+                    acceptButton.setButtonText ("KEEP");
                     deck.setBusy (false);        // the catch-light stops with the flight
                 }
             }
@@ -17858,6 +20971,13 @@ private:  // (restores the section the HANDS burst was in)
                         const auto pk = readWavPeaks (wav, 170);
                         chat.setProposalPeaks (pk);
                         chat.setPeaksOn (ChatPanel::Kind::analysis, pk);
+                        // the render often lands AFTER the proposal event queued a
+                        // not-yet-existing wav — the ears' analysis moment is when
+                        // the strip can finally show the take (still pending only;
+                        // a resolved take must not redress the strip)
+                        if (proposalPending || proposalStreaming)
+                            hearStrip.loadWav (wav, proposal.bpm > 0 ? proposal.bpm : song.bpm,
+                                               "TAKE - " + songName, sotadaw::sotadawRoot());
                     }
                 }
                 // ...and ON THE DECK: the verdict rides the decision surface
@@ -18027,10 +21147,24 @@ private:  // (restores the section the HANDS burst was in)
                 if (historyOn) loadHistory();   // the restore/accept just became history
             }
             else if (kind == "rejected")
-                appendActivity ("[ui] proposal discarded - tell the agent what was wrong in your next prompt");
+                appendActivity ("[ui] take passed - tell the producer what was wrong in your next ask");
             else if (kind == "done")
             {
                 setAgentBusy (false);
+                if (const auto stats = ev.getProperty ("stats", juce::var()); stats.isObject())
+                {   // P74: the run's receipt — honest cost under the final
+                    const double ds = (double) stats.getProperty ("duration_s", 0.0);
+                    const int acts = (int) stats.getProperty ("actions", 0);
+                    if (ds > 0.5)
+                    {
+                        const int rm = (int) ds / 60, rs = (int) ds % 60;
+                        chat.add (ChatPanel::Kind::status,
+                                  "run receipt: "
+                                    + (rm > 0 ? juce::String (rm) + "m " : juce::String())
+                                    + juce::String (rs) + "s - " + juce::String (acts)
+                                    + " action" + (acts == 1 ? "" : "s"));
+                    }
+                }
                 if (proposalStreaming && ! proposalPending)   // run ended with no proposal:
                 {                                             // the ghosts were a mirage
                     freezeChatFlow (0);                       // the cards dim with them
@@ -18200,10 +21334,11 @@ private:  // (restores the section the HANDS burst was in)
         // the band joins the music, it does not interrupt it
         if (edit != nullptr && edit->getTransport().isPlaying())
         {
-            const double b = edit->tempoSequence.toBeats (
-                                 edit->getTransport().getPosition()).inBeats();
-            jamStartAtBeat = std::ceil (b / 4.0) * 4.0;
-            if (jamStartAtBeat - b < 0.05) jamStartAtBeat += 4.0;   // never a 1ms entry
+            const double b = quarterAtTime (edit->getTransport().getPosition());
+            const double nb = std::ceil (gridSong().barAtBeat (b));
+            jamStartAtBeat = gridSong().barStartBeat (nb);
+            if (jamStartAtBeat - b < 0.05)                          // never a 1ms entry
+                jamStartAtBeat = gridSong().barStartBeat (nb + 1.0);
             jamButton.setButtonText ("ARMED");
             setStatus ("the band joins at the next bar...");
             return;
@@ -18726,11 +21861,11 @@ private:  // (restores the section the HANDS burst was in)
     void onProposal (const juce::String& propName)
     {
         const auto f = sotadaw::sotadawRoot().getChildFile ("songs/" + propName + ".json");
-        if (! sotadaw::parseSong (f, proposal)) { appendActivity ("[ui] bad proposal file"); return; }
+        if (! sotadaw::parseSong (f, proposal)) { appendActivity ("[ui] bad take file"); return; }
         proposalPending = true;
         hearStrip.loadWav (sotadaw::sotadawRoot().getChildFile ("songs")
                                .getChildFile ("_prop_" + songName + ".wav"),
-                           proposal.bpm, "PROPOSAL - " + songName,
+                           proposal.bpm, "TAKE - " + songName,
                            sotadaw::sotadawRoot());
         diff = diffSongs (song, proposal);
         juce::StringArray summary;
@@ -18768,20 +21903,40 @@ private:  // (restores the section the HANDS burst was in)
         }
         propBar.setItems (propItems, propDropped);
         propBar.setVisible (propItems.size() > 1);   // one item = nothing to cherry-pick
-        acceptButton.setButtonText ("Accept");
+        acceptButton.setButtonText ("KEEP");
         acceptButton.setVisible (true);
         rejectButton.setVisible (true);
         auditionButton.setVisible (true);
+        explainButton.setVisible (true);          // P78: fresh take, fresh walk-through
+        explainButton.setEnabled (true);
+        explainButton.setButtonText ("Explain");
         auditioningProposal = listenStream;   // LISTEN LIVE hands over seamlessly: the ear
         listenStream = false;                 // keeps the proposal, the flow becomes audition
-        auditionButton.setButtonText (auditioningProposal ? "Audition: PROP" : "Audition: off");
+        auditionButton.setButtonText (auditioningProposal ? "Audition: TAKE" : "Audition: off");
         proposalStreaming = false;       // the stream landed: ghosts are now THE proposal
         rebuildLanes();
         updateGhostBanner();
         resized();                       // the DECK claims its strip under the transport
-        setStatus ("proposal pending on " + songName
+        setStatus ("take pending on " + songName
                    + (surgicalBadge.label.isNotEmpty() ? " - " + surgicalBadge.label : ""));
         repaint();
+    }
+
+    void scoreGhostSync()   // SCORE: the notation face mirrors the take's ghost state
+    {
+        if (proposalStreaming || proposalPending || auditioningProposal)
+        {
+            std::map<int, std::set<juce::String>> adds;
+            std::map<int, std::vector<sotadaw::SongNote>> rems;
+            for (size_t i = 0; i < diff.tracks.size(); ++i)
+            {
+                for (auto& n : diff.tracks[i].added)   adds[(int) i].insert (score::ghostNoteKey (n));
+                for (auto& n : diff.tracks[i].removed) rems[(int) i].push_back (n);
+            }
+            scorePage.setGhosts (&proposal, std::move (adds), std::move (rems));
+        }
+        else
+            scorePage.setGhosts (nullptr, {}, {});
     }
 
     void clearProposal()
@@ -18798,6 +21953,7 @@ private:  // (restores the section the HANDS burst was in)
         acceptButton.setVisible (false);
         rejectButton.setVisible (false);
         auditionButton.setVisible (false);
+        explainButton.setVisible (false);         // P78: leaves with the take
         for (auto* l : lanes) l->setDiff (nullptr);
         proposalStreaming = false;
         listenStream = false;
@@ -18809,14 +21965,18 @@ private:  // (restores the section the HANDS burst was in)
         if (roll.isVisible() && roll.readOnly) closeRoll();   // a ghost roll dies with its take
         historyPreviewSha.clear();
         historyPanel.setActive ({});
-        rejectButton.setButtonText ("Reject");   // the WHY moment ended either way
+        rejectButton.setButtonText ("PASS");   // the WHY moment ended either way
         decisionInFlight = false;                // the round-trip ended (any outcome)
         deck.setBusy (false);                    // ...and so does the in-flight catch-light
         acceptButton.setEnabled (true);
         rejectButton.setEnabled (true);
         auditionButton.setEnabled (true);
-        acceptButton.setButtonText ("Accept");
+        acceptButton.setButtonText ("KEEP");
         updateGhostBanner();
+        // any take teardown funnels here: the strip returns to the SONG (reject,
+        // history-exit, mirage, song switch — loadSong calls this with the new
+        // name already set, so the retarget wears the right identity)
+        hearStripShowSong();
         repaint();
     }
 
@@ -18839,12 +21999,17 @@ private:  // (restores the section the HANDS burst was in)
         swapEngine (auditioningProposal ? proposal : song);   // small takes A/B in ~ms
         rebuildLanes();                        // CANVAS FOLLOWS THE EARS: auditioning
         updateGhostBanner();                   // renders the PROPOSAL solid (+red ghosts
-        auditionButton.setButtonText (auditioningProposal ? "Audition: PROP" : "Audition: off");
+        auditionButton.setButtonText (auditioningProposal ? "Audition: TAKE" : "Audition: off");
         appendActivity (auditioningProposal ? "[ui] transport + canvas -> PROPOSAL (preview, read-only)"
                                             : "[ui] transport + canvas -> current song");
     }
 
     void updateGhostBanner()   // (name kept for call sites) — computes the GLASS mode
+    {
+        scoreGhostSync();      // SCORE: every ghost transition reaches the notation face
+        updateGhostBannerImpl();
+    }
+    void updateGhostBannerImpl()
     {
         if (auditioningProposal || listenStream)          ghostMode = GhostGlass::hearing;
         else if (proposalStreaming && ! proposalPending)  ghostMode = GhostGlass::composing;
@@ -19206,7 +22371,11 @@ private:  // (restores the section the HANDS burst was in)
             juce::String label = nm;
             if (! td.added.empty())   label << " +" << (int) td.added.size();
             if (! td.removed.empty()) label << "/-" << (int) td.removed.size();
-            tchips.push_back ({ label, theme::trackColour ((int) i) });
+            if (! td.props.isEmpty()) label << " ~" << td.props.size();   // P68: fx/prop moves count too
+            tchips.push_back ({ label,
+                                i < song.tracks.size() ? channelColour (song.tracks[i], (int) i)
+                                : i < proposal.tracks.size() ? channelColour (proposal.tracks[i], (int) i)
+                                : theme::trackColour ((int) i) });   // the ONE colour resolver
         }
         juce::StringArray secs;
         for (auto& s : proposal.sections) secs.add (s.name);
@@ -19529,7 +22698,7 @@ private:  // (restores the section the HANDS burst was in)
     // product until 2026-07-10 (the totality audit found no code path anywhere).
     void duplicateTrack (int ti)
     {
-        if (proposalPending) { setStatus ("resolve the pending proposal first (Accept/Reject)"); return; }
+        if (proposalPending) { setStatus ("resolve the pending take first (KEEP/PASS)"); return; }
         if (ti < 0 || ti >= (int) song.tracks.size()) return;
         snapshot();
         SongTrack copy = song.tracks[(size_t) ti];
@@ -19651,7 +22820,7 @@ private:  // (restores the section the HANDS burst was in)
         }
         for (int i = 0; i < lanes.size(); ++i)
         {
-            lanes[(size_t) i]->selected = (i == selectedTrack || selTracks.count (i) > 0);
+            lanes[(size_t) i]->setSelected (i == selectedTrack || selTracks.count (i) > 0);
             lanes[(size_t) i]->repaint();
         }
         refreshContextChips();                     // the agent-context line follows the selection
@@ -19688,7 +22857,7 @@ private:  // (restores the section the HANDS burst was in)
         selectedTrack = (int) song.tracks.size() - 1;
         for (int i = 0; i < lanes.size(); ++i)
         {
-            lanes[(size_t) i]->selected = i < (int) song.tracks.size();
+            lanes[(size_t) i]->setSelected (i < (int) song.tracks.size());
             auto it = laneNoteSel.find (i);
             lanes[(size_t) i]->setNoteSelection (it != laneNoteSel.end() ? it->second
                                                                          : std::set<size_t>());
@@ -19733,7 +22902,7 @@ private:  // (restores the section the HANDS burst was in)
             if (waveIns == 0)
             {
                 recButton.setToggleState (false, juce::dontSendNotification);
-                setStatus ("no audio input device on this machine - cannot record the room");
+                narrate (2, "no audio input device on this machine - cannot record the room");
                 return;
             }
             armWaveAndRecord (selectedTrack, 0);
@@ -19744,10 +22913,16 @@ private:  // (restores the section the HANDS burst was in)
             auto& dm = engine->getDeviceManager();
             dm.rescanMidiDeviceList();
             int midiIns = 0;
+            // THE TAKES HARVEST (0.160 STUDIO, 2026-07-24): with the loop brace
+            // ON, every pass around the loop records as its OWN take — engine-
+            // native MIDI takes; the mergeRecordings=true default was why passes
+            // blurred into one overdub. Straight recording keeps the merge.
+            recLoopTakes = loopButton.getToggleState() && loopB > loopA;
             for (auto& mi : dm.getMidiInDevices())
             {
                 mi->setEnabled (true);
                 mi->setMonitorMode (te::InputDevice::MonitorMode::on);
+                mi->mergeRecordings = ! recLoopTakes;
                 ++midiIns;
             }
             edit->getTransport().ensureContextAllocated();
@@ -19766,7 +22941,11 @@ private:  // (restores the section the HANDS burst was in)
             }
             preRecordClips = target->getClips().size();
             stopPlayback();
-            edit->getTransport().setPosition (te::TimePosition());
+            // loop takes: start AT the brace so pass 1 is a full pass, not a
+            // pre-roll fragment; straight recording keeps the from-zero ritual
+            edit->getTransport().setPosition (recLoopTakes
+                ? timeAtQuarter (loopA)
+                : te::TimePosition());
             edit->getTransport().record (false, true);
             setStatus ("REC on '" + song.tracks[(size_t) selectedTrack].name + "'  |  "
                        + juce::String (armed) + "/" + juce::String (midiIns) + " midi inputs armed - play!");
@@ -19849,8 +23028,8 @@ private:  // (restores the section the HANDS burst was in)
                         songName + "_" + tr.name.replaceCharacter (':', '_') + "_take", ".wav");
                     if (! src.copyFileTo (dst)) continue;    // copy failed: KEEP the original
                     rawTakes.add (src);
-                    const double b0 = edit->tempoSequence.toBeats (wc->getPosition().getStart()).inBeats();
-                    const double b1 = edit->tempoSequence.toBeats (wc->getPosition().getEnd()).inBeats();
+                    const double b0 = quarterAtTime (wc->getPosition().getStart());
+                    const double b1 = quarterAtTime (wc->getPosition().getEnd());
                     sotadaw::SongAudioClip ac;
                     ac.file = "songs/takes/" + dst.getFileName();
                     ac.startBeat = juce::jmax (0.0, std::round (b0 * 1000.0) / 1000.0);
@@ -19864,7 +23043,7 @@ private:  // (restores the section the HANDS burst was in)
             double need = 0;
             for (auto& ac : tr.audioClips)
                 need = juce::jmax (need, ac.startBeat + ac.lengthBeats);
-            song.lengthBars = juce::jmax (song.lengthBars, std::ceil (need / 4.0));
+            song.lengthBars = juce::jmax (song.lengthBars, std::ceil (song.barAtBeat (need)));
         }
         recAudioAdded = added;
         if (added > 0)
@@ -19884,7 +23063,7 @@ private:  // (restores the section the HANDS burst was in)
 
     void harvestRecording (te::AudioTrack* target)
     {
-        int added = 0;
+        int added = 0, banked = 0;
         auto clips = target->getClips();
         if (clips.size() > preRecordClips)
         {
@@ -19894,28 +23073,83 @@ private:  // (restores the section the HANDS burst was in)
             {
                 if (auto* mc = dynamic_cast<te::MidiClip*> (clips[(size_t) i]))
                 {
-                    const double clipStart =
-                        edit->tempoSequence.toBeats (mc->getPosition().getStart()).inBeats();
-                    for (auto* n : mc->getSequence().getNotes())
+                    const double clipStart = quarterAtTime (mc->getPosition().getStart());
+                    auto pushLive = [&] (double startB, double lenB, int pitch, double vel)
                     {
-                        const double startB = clipStart + n->getStartBeat().inBeats();
-                        if (startB < 0 || startB >= song.totalBeats()) continue;
+                        if (startB < 0 || startB >= song.totalBeats()) return;
                         dst.push_back ({ std::round (startB * 1000.0) / 1000.0,
-                                         juce::jmax (0.05, n->getLengthBeats().inBeats()),
-                                         n->getNoteNumber(),
-                                         juce::jlimit (0.05, 1.0, n->getVelocity() / 127.0) });
+                                         juce::jmax (0.05, lenB), pitch,
+                                         juce::jlimit (0.05, 1.0, vel) });
                         ++added;
+                    };
+                    // THE TAKES HARVEST: a loop-record clip carries one MidiList
+                    // per pass. The LAST pass plays (Live's convention); earlier
+                    // passes bank into track takes[] — comp_take's parallel
+                    // history, round-tripping through extras (the UNDROPPABLE var)
+                    const int nTakes = mc->hasAnyTakes() ? mc->getNumTakes (false) : 0;
+                    if (recLoopTakes && nTakes > 1)
+                    {
+                        auto& tr = song.tracks[(size_t) selectedTrack];
+                        if (tr.extras.getDynamicObject() == nullptr)
+                            tr.extras = juce::var (new juce::DynamicObject());
+                        auto* dob = tr.extras.getDynamicObject();
+                        juce::var takesVar = dob->getProperty ("takes");
+                        juce::Array<juce::var> takesArr;
+                        if (auto* ex = takesVar.getArray()) takesArr = *ex;
+                        const int base = takesArr.size();
+                        for (int k = 0; k < nTakes; ++k)
+                        {
+                            auto* seq = mc->getTakeSequence (k);
+                            if (seq == nullptr) continue;
+                            if (k == nTakes - 1)
+                            {
+                                for (auto* n : seq->getNotes())
+                                    pushLive (clipStart + n->getStartBeat().inBeats(),
+                                              n->getLengthBeats().inBeats(),
+                                              n->getNoteNumber(), n->getVelocity() / 127.0);
+                                continue;
+                            }
+                            juce::Array<juce::var> notesArr;
+                            for (auto* n : seq->getNotes())
+                            {
+                                const double startB = clipStart + n->getStartBeat().inBeats();
+                                if (startB < 0 || startB >= song.totalBeats()) continue;
+                                auto* no = new juce::DynamicObject();
+                                no->setProperty ("start", std::round (startB * 1000.0) / 1000.0);
+                                no->setProperty ("len",   juce::jmax (0.05, n->getLengthBeats().inBeats()));
+                                no->setProperty ("pitch", n->getNoteNumber());
+                                no->setProperty ("vel",   juce::jlimit (0.05, 1.0, n->getVelocity() / 127.0));
+                                notesArr.add (juce::var (no));
+                            }
+                            if (notesArr.isEmpty()) continue;   // a silent pass banks nothing
+                            auto* to = new juce::DynamicObject();
+                            to->setProperty ("name", "take " + juce::String (base + banked + 1) + " (rec)");
+                            to->setProperty ("notes", juce::var (notesArr));
+                            takesArr.add (juce::var (to));
+                            ++banked;
+                        }
+                        if (banked > 0)
+                            dob->setProperty ("takes", juce::var (takesArr));
                     }
+                    else
+                        for (auto* n : mc->getSequence().getNotes())
+                            pushLive (clipStart + n->getStartBeat().inBeats(),
+                                      n->getLengthBeats().inBeats(),
+                                      n->getNoteNumber(), n->getVelocity() / 127.0);
                 }
             }
             std::sort (dst.begin(), dst.end(),
                        [] (auto& a, auto& b) { return a.start < b.start; });
         }
-        if (added > 0)
+        if (added > 0 || banked > 0)
         {
             saveNow();
             appendActivity ("[rec] " + juce::String (added) + " notes recorded into '"
-                            + song.tracks[(size_t) selectedTrack].name + "' (now part of the song)");
+                            + song.tracks[(size_t) selectedTrack].name + "'"
+                            + (banked > 0 ? " + " + juce::String (banked)
+                                            + " earlier pass(es) banked as takes[] — comp spans"
+                                              " back any time (comp_take / ask the agent)"
+                                          : juce::String (" (now part of the song)")));
         }
         else
             appendActivity ("[rec] nothing recorded (no MIDI input played?)");
@@ -19927,7 +23161,7 @@ private:  // (restores the section the HANDS burst was in)
     //========================================================================== roll / export / transport
     void openRoll (int trackIndex, bool force = false)   // force: snapshot rig only
     {
-        if (proposalPending && ! force) { appendActivity ("[ui] resolve the proposal before editing"); return; }
+        if (proposalPending && ! force) { appendActivity ("[ui] resolve the take before editing"); return; }
         snapshot();
         roll.open (song, trackIndex);
         roll.setGhosts (rollGhostPtr());             // opening mid-take: ghosts ride in
@@ -20010,7 +23244,8 @@ private:  // (restores the section the HANDS burst was in)
         edit->getTransport().ensureContextAllocated();
         auto& t = edit->getTransport();
         t.setLoopRange ({ tracktion::TimePosition(),
-                          edit->tempoSequence.toTime (te::BeatPosition::fromBeats (ls.totalBeats())) });
+                          edit->tempoSequence.toTime (te::BeatPosition::fromBeats (
+                              ls.engineBeat (ls.totalBeats()))) });
         t.looping = true;
         t.setPosition (tracktion::TimePosition());
         t.play (false);
@@ -20080,7 +23315,7 @@ private:  // (restores the section the HANDS burst was in)
         saveNow();
         reloadEngineKeepUi();
         appendActivity ("[ui] " + f.getFileNameWithoutExtension() + " -> " + target.name
-                        + " @ bar " + juce::String (1 + (int) (atBeat / 4.0))
+                        + " @ bar " + juce::String (1 + (int) song.barAtBeat (atBeat))
                         + " (" + juce::String (placed) + " notes)");
     }
 
@@ -20103,15 +23338,15 @@ private:  // (restores the section the HANDS burst was in)
     // so the track is instantly audible (the addTrackMenu law).
     void addTrackWithSource (const juce::String& section, const juce::String& id, double atBeat)
     {
-        if (proposalPending) { setStatus ("resolve the pending proposal first (Accept/Reject)"); return; }
+        if (proposalPending) { setStatus ("resolve the pending take first (KEEP/PASS)"); return; }
         snapshot();
         SongTrack t;
         t.name = id.substring (0, 24);
         t.source.kind = section == "KITS" ? "sample" : section == "VST3" ? "vst3" : "faust";
         t.source.id = id;
         t.gainDb = section == "KITS" ? -8 : -6;
-        const double bar = std::floor (juce::jlimit (0.0, juce::jmax (0.0, song.totalBeats() - 1.0),
-                                                     atBeat) / 4.0) * 4.0;
+        const double bar = song.barStartBeat (std::floor (song.barAtBeat (
+            juce::jlimit (0.0, juce::jmax (0.0, song.totalBeats() - 1.0), atBeat))));
         t.notes.push_back ({ bar, 0.25, 60, 0.8 });
         song.tracks.push_back (std::move (t));
         saveNow();
@@ -20122,7 +23357,7 @@ private:  // (restores the section the HANDS burst was in)
 
     void addPresetAsNewTrack (const juce::String& plugin, const juce::String& name)
     {
-        if (proposalPending) { setStatus ("resolve the pending proposal first (Accept/Reject)"); return; }
+        if (proposalPending) { setStatus ("resolve the pending take first (KEEP/PASS)"); return; }
         snapshot();
         SongTrack t;
         t.name = name.substring (0, 24);
@@ -20178,7 +23413,7 @@ private:  // (restores the section the HANDS burst was in)
                        + "' - double-click to keep it");
         }
         else
-            setStatus ("audition failed");
+            narrate (2, "audition failed");
     }
 
     // #38: preset rail apply — shells the preset tool, writes the source (or fx) into the track
@@ -20202,7 +23437,7 @@ private:  // (restores the section the HANDS burst was in)
                         : plugin.contains ("Effects") ? "surgefx_presets.py" : "surge_presets.py";
         if (! presetProc.start (juce::StringArray { py,
                 root.getChildFile ("tools").getChildFile (tool).getFullPathName(), "get", name }))
-        { setStatus ("preset tool failed to start"); return; }
+        { narrate (2, "preset tool failed to start"); return; }
         presetDrain.begin (presetProc);        // Surge blobs can pass 64K (the pipe law)
         presetIdx = idx; presetPlugin = plugin; presetName = name;
         const int gen = ++presetGen;
@@ -20226,7 +23461,7 @@ private:  // (restores the section the HANDS burst was in)
         const auto out = presetDrain.finish() + presetProc.readAllProcessOutput();
         const auto js = out.fromFirstOccurrenceOf ("{", true, false);
         auto v = juce::JSON::parse (js);
-        if (v.isVoid()) { setStatus ("preset load failed: " + presetName); return; }
+        if (v.isVoid()) { narrate (2, "preset load failed: " + presetName); return; }
         if (presetIdx < 0 || presetIdx >= (int) song.tracks.size()) return;   // tracks moved
         const int idx = presetIdx;
         const auto plugin = presetPlugin;
@@ -20362,7 +23597,8 @@ private:  // (restores the section the HANDS burst was in)
         edit->getTransport().ensureContextAllocated();
         auto& t = edit->getTransport();
         t.setLoopRange ({ tracktion::TimePosition(),
-                          edit->tempoSequence.toTime (te::BeatPosition::fromBeats (ls.totalBeats())) });
+                          edit->tempoSequence.toTime (te::BeatPosition::fromBeats (
+                              ls.engineBeat (ls.totalBeats()))) });
         t.looping = true;
         t.setPosition (tracktion::TimePosition());
         t.play (false);
@@ -20458,7 +23694,7 @@ private:  // (restores the section the HANDS burst was in)
         else
         {
             t.setPosition (loopButton.getToggleState() && loopB > loopA
-                               ? edit->tempoSequence.toTime (te::BeatPosition::fromBeats (loopA))
+                               ? timeAtQuarter (loopA)
                                : tracktion::TimePosition());
             t.play (false);
             playButton.setButtonText ("Stop");
@@ -20494,10 +23730,11 @@ private:  // (restores the section the HANDS burst was in)
         {   // LISTEN LIVE: hot-swap to the newest ghost at each bar wrap — the song
             // grows under the ear, one bar at a time, no mid-phrase rug-pulls
             auto& tp = edit->getTransport();
-            const double b = edit->tempoSequence.toBeats (tp.getPosition()).inBeats();
+            const double b = quarterAtTime (tp.getPosition());
             if (streamDirty && tp.isPlaying()
                 && (b < lastPollBeat - 0.5
-                    || std::floor (b / 4.0) != std::floor (lastPollBeat / 4.0)))
+                    || std::floor (gridSong().barAtBeat (b))
+                           != std::floor (gridSong().barAtBeat (lastPollBeat))))
             {
                 const auto pos = tp.getPosition();
                 if (! applyEngineDelta (proposal, false))   // streamed notes usually delta
@@ -20549,7 +23786,7 @@ private:  // (restores the section the HANDS burst was in)
         if (jamStartAtBeat >= 0.0 && edit != nullptr)
         {   // ARMED seat: fire ON the bar (or the loop wrap — also a bar boundary)
             const double b = edit->getTransport().isPlaying()
-                ? edit->tempoSequence.toBeats (edit->getTransport().getPosition()).inBeats()
+                ? quarterAtTime (edit->getTransport().getPosition())
                 : -1.0;
             if (b < 0.0 || b + 0.02 >= jamStartAtBeat || b < jamStartAtBeat - 4.5)
             {
@@ -20560,6 +23797,16 @@ private:  // (restores the section the HANDS burst was in)
         deck.tick();                          // the deck breathes on the host clock
         surgicalBadge.tick();                 // ...and the scalpel verdict ARRIVES (one
                                               // light sweeps the chip; self-gates when settled)
+        {   // the sigil breathes (~3.2s period) — repaint ONLY its 46px box, and only
+            // when the eased value moved a visible step (movement-guard law)
+            const float ph = (float) std::fmod (juce::Time::getMillisecondCounter() / 3200.0, 1.0);
+            const float br = 0.5f + 0.5f * std::sin (ph * juce::MathConstants<float>::twoPi);
+            if (std::abs (br - sigilBreath) > 0.05f)
+            {
+                sigilBreath = br;
+                repaint (0, menuH, 48, 48);
+            }
+        }
         for (auto* c : allCards) c->tick();
         if (++uiBeatTick % 32 == 0)           // THE CONSOLE BEAT (~1/s): the daemon
         {                                     // cancels runs whose console is gone —
@@ -20568,6 +23815,8 @@ private:  // (restores the section the HANDS burst was in)
             if (! f.exists() || ! f.setLastModificationTime (juce::Time::getCurrentTime()))
                 f.replaceWithText ({});
         }
+        if (uiBeatTick % 160 == 0)            // THE SOUND CANNOT DIE v2: a BT sink
+            healAudioOutputIfDead();          // dying MID-SET re-picks within ~5s
         {   // THE FACTORY PORT: the live cam of the whole floor — streams every note
             // the agent writes, on EDIT and CREATE alike (same diff the lanes/cards read)
             const int fm = (auditioningProposal || listenStream) ? 3
@@ -20576,14 +23825,19 @@ private:  // (restores the section the HANDS burst was in)
             if (edit != nullptr)
             {   // position feeds ALWAYS (paused = parked marker; scrub needs truth)
                 pl = edit->getTransport().isPlaying();
-                ph = edit->tempoSequence.toBeats (edit->getTransport().getPosition()).inBeats();
+                ph = quarterAtTime (edit->getTransport().getPosition());
             }
             factoryPort.setSelected (selectedTrack);
             factoryPort.setSelectedSet (selTracks);     // MULTI beacons ride the room
             factoryPort.setSoloed (soloed);             // solo rings + step-back law
             factoryPort.setLoop (loopA, loopB);         // one brace, every surface
-            factoryPort.setFeed (&song, (proposalStreaming || proposalPending) ? &diff : nullptr,
-                                 ph, pl, fm, songName, song.bpm, song.key, masterDb);
+            // CANVAS FOLLOWS EARS (Chezy live 2026-07-15): auditioning = the room shows
+            // the PROPOSAL's world — rows, bpm, bars, key. The pod's chips read
+            // 120/8/A MINOR while the ears played an 80bpm 32-bar F-minor take.
+            // (&proposal is a stable member — contents swap, the address never dies.)
+            const Song& hearing = auditioningProposal ? proposal : song;
+            factoryPort.setFeed (&hearing, (proposalStreaming || proposalPending) ? &diff : nullptr,
+                                 ph, pl, fm, songName, hearing.bpm, hearing.key, masterDb);
             factoryPort.tick();
             fxRail.tick();                    // the wings breathe on the same clock
             masterRail.tick();
@@ -20621,8 +23875,10 @@ private:  // (restores the section the HANDS burst was in)
                                             || j.kind == ActionCard::Kind::buses
                                             || j.kind == ActionCard::Kind::ears
                                             || j.track == "master";    // MOTION master etc
-                        auto b = masterish ? factoryPort.masterJack()
-                                           : factoryPort.laneJack (j.track);
+                        auto b = masterish ? factoryPort.masterGrommet()   // GUTTER LAW:
+                                           : factoryPort.laneJack (j.track); // land on the
+                                                                             // BEZEL, never
+                                                                             // through the face
                         if (b.isOrigin()) continue;             // nowhere to plug
                         const int gi = fan[masterish ? juce::String ("M")
                                                      : "T:" + j.track]++;
@@ -20680,7 +23936,7 @@ private:  // (restores the section the HANDS burst was in)
                 patchField.tick();
             }
             juce::StringArray secs; int cur = -1;
-            const double phBar = ph >= 0 ? ph / 4.0 : -1.0;
+            const double phBar = ph >= 0 ? song.barAtBeat (ph) : -1.0;
             for (int i = 0; i < (int) song.sections.size(); ++i)
             {
                 secs.add (song.sections[(size_t) i].name);
@@ -20716,6 +23972,9 @@ private:  // (restores the section the HANDS burst was in)
         if (tick % 3 == 0) refreshContextChips();   // selection = context, mirrored live
         if (tick % 60 == 0) checkAgentAlive();      // the agent must never die silently
         if (saveCountdown > 0 && --saveCountdown == 0) saveNow();
+        if (tick % 15 == 0) refreshTitle();       // P93: 2Hz, change-gated
+        if (tick % 15 == 0 && ! saveChip.getBounds().isEmpty())
+            saveChip.repaint();                    // P90: age/countdown at 2Hz
         if (exporting && ! exportProc.isRunning())
         {
             exporting = false;
@@ -20768,6 +24027,7 @@ private:  // (restores the section the HANDS burst was in)
                     coEditWarned = false;
                     reloadAcceptedSong();
                     appendActivity ("[sync] adopted changes from another window");
+                    saveChip.flash();              // P90: the sync made material
                     setStatus ("synced from another window");
                 }
             }
@@ -20782,7 +24042,7 @@ private:  // (restores the section the HANDS burst was in)
         {
             bridging = false;
             bridgeWasStarted = false;
-            importPhase.clear(); importPct = -1.0f;
+            importPhase.clear(); importDetail.clear(); importPct = -1.0f;
             const auto out = (bridgeDrain.finish() + bridgeProc.readAllProcessOutput()).trim();
             const auto tail = out.fromLastOccurrenceOf ("\n", false, false).trim().substring (0, 140);
             if (bridgePendingLoad != juce::File())
@@ -20842,8 +24102,13 @@ private:  // (restores the section the HANDS burst was in)
         }
         if (masterClientAttached)
         {
-            const float v = juce::jmax (masterClient.getAndClearAudioLevel (0).dB,
-                                        masterClient.getAndClearAudioLevel (1).dB);
+            const float vl = masterClient.getAndClearAudioLevel (0).dB;
+            const float vr = masterClient.getAndClearAudioLevel (1).dB;
+            masterDbL = vl > masterDbL ? vl : masterDbL * 0.9f + vl * 0.1f - 0.2f;
+            masterDbR = vr > masterDbR ? vr : masterDbR * 0.9f + vr * 0.1f - 0.2f;
+            peakHoldL = vl >= peakHoldL ? vl : peakHoldL - 0.35f;   // ~10dB/s fall
+            peakHoldR = vr >= peakHoldR ? vr : peakHoldR - 0.35f;
+            const float v = juce::jmax (vl, vr);
             masterDb = v > masterDb ? v : masterDb * 0.9f + v * 0.1f - 0.2f;
             if (std::abs (masterDb - paintedMasterDb) > 0.25f)   // silence costs zero paints
             {
@@ -20853,8 +24118,9 @@ private:  // (restores the section the HANDS burst was in)
         }
         if (edit == nullptr) return;
         auto& t = edit->getTransport();
-        const double beats = edit->tempoSequence.toBeats (t.getPosition()).inBeats();
+        const double beats = quarterAtTime (t.getPosition());   // METER-TRUE: lanes/ruler/nav
         if (t.isPlaying() || tick % 15 == 0) lcd.repaint();
+        if (t.isPlaying()) playButton.repaint();   // the beat light rides the LCD's clock (38px)
         for (auto* lane : lanes)
         {
             lane->setPlayheadBeats (t.isPlaying() ? beats : -1.0);
@@ -20887,6 +24153,8 @@ private:  // (restores the section the HANDS burst was in)
     // pushed from here, keyed by a signature — scroll/zoom churn on a still song
     // costs nothing, and the 1Hz tick pull catches every mutation path for free.
     sotadaw::Navigator nav;
+    juce::Label navStats;                 // ONE TIME COLUMN: the nav's header-corner stats
+    juce::Rectangle<int> openLand;        // THE OPEN LAND: freed rows = an invitation
     void navRefresh()
     {
         const auto& s = auditioningProposal ? proposal : song;
@@ -20894,10 +24162,14 @@ private:  // (restores the section the HANDS burst was in)
         m.totalBeats = juce::jmax (4.0, viewTotalBeats());
         m.loopA = ruler.loopStart;
         m.loopB = ruler.loopEnd;
-        const int bars = (int) std::ceil (m.totalBeats / 4.0);
+        const int bars = juce::jmax (1, (int) std::ceil (s.barAtBeat (m.totalBeats)));
+        m.barStarts.reserve ((size_t) bars + 1);          // METER-TRUE edges for the paint
+        for (int bi = 0; bi <= bars; ++bi)
+            m.barStarts.push_back (s.barStartBeat ((double) bi));
         juce::int64 sig = (juce::int64) bars * 1315423911LL
                         ^ ((juce::int64) (m.loopA * 8.0) << 3)
-                        ^ ((juce::int64) (m.loopB * 8.0) << 9);
+                        ^ ((juce::int64) (m.loopB * 8.0) << 9)
+                        ^ ((juce::int64) (m.barStarts.back() * 8.0) << 5);
         m.bands.reserve (s.tracks.size());
         for (size_t i = 0; i < s.tracks.size(); ++i)
         {
@@ -20910,7 +24182,7 @@ private:  // (restores the section the HANDS burst was in)
             float mx = 1.0f;
             for (const auto& n : t.notes)
             {
-                const int bi = (int) (n.start / 4.0);
+                const int bi = (int) s.barAtBeat (n.start);
                 if (bi >= 0 && bi < bars)
                 { b.note[(size_t) bi] += 1.0f; mx = juce::jmax (mx, b.note[(size_t) bi]); }
                 sig = sig * 31 + (juce::int64) (n.start * 8.0) + n.pitch;
@@ -20920,8 +24192,8 @@ private:  // (restores the section the HANDS burst was in)
             {
                 const double len = ac.lengthBeats > 0 ? ac.lengthBeats
                                                       : juce::jmax (0.0, m.totalBeats - ac.startBeat);
-                const int b0 = juce::jmax (0, (int) (ac.startBeat / 4.0));
-                const int b1 = juce::jmin (bars - 1, (int) ((ac.startBeat + len - 0.01) / 4.0));
+                const int b0 = juce::jmax (0, (int) s.barAtBeat (ac.startBeat));
+                const int b1 = juce::jmin (bars - 1, (int) s.barAtBeat (ac.startBeat + len - 0.01));
                 for (int bi = b0; bi <= b1; ++bi) b.audio[(size_t) bi] = 1;
                 sig = sig * 31 + (juce::int64) (ac.startBeat * 8.0) + ac.file.hashCode();
             }
@@ -20930,7 +24202,7 @@ private:  // (restores the section the HANDS burst was in)
         }
         for (const auto& sc : ruler.sections)
         {
-            m.secs.push_back ({ sc.name, sc.startBar * 4.0 });
+            m.secs.push_back ({ sc.name, s.barStartBeat (sc.startBar) });
             sig = sig * 31 + sc.name.hashCode() + (juce::int64) (sc.startBar * 4.0);
         }
         m.sig = sig;
@@ -21001,7 +24273,7 @@ private:  // (restores the section the HANDS burst was in)
         j.part.deleteFile();
         j.cp = std::make_unique<juce::ChildProcess>();
         if (! j.cp->start (transcodeCmd (f, j.part), 0))   // 0 streams: nothing to drain, no 64K trap
-        { setStatus ("can't start ffmpeg for " + f.getFileName()); return; }
+        { narrate (2, "can't start ffmpeg for " + f.getFileName()); return; }
         dropJobs.push_back (std::move (j));
         if (! dropClock.isTimerRunning()) dropClock.startTimer (150);
         setStatus ("decoding " + f.getFileName() + " in the background - keep playing");
@@ -21024,7 +24296,7 @@ private:  // (restores the section the HANDS burst was in)
             const double dropBar = j.bar;
             dropJobs.erase (dropJobs.begin() + (long) i);
             if (landed == juce::File())
-                setStatus ("can't decode " + original.getFileName() + (timedOut ? " (timed out)" : ""));
+                narrate (2, "can't decode " + original.getFileName() + (timedOut ? " (timed out)" : ""));
             else
             {
                 int ti = -1;
@@ -21042,7 +24314,7 @@ private:  // (restores the section the HANDS burst was in)
     // read — growing it here is what makes the whole world follow the music.
     bool growSongToFit (double endBeat)
     {
-        const double bars = std::ceil (juce::jmax (0.0, endBeat) / 4.0);
+        const double bars = std::ceil (song.barAtBeat (juce::jmax (0.0, endBeat)));
         if (bars <= song.lengthBars) return false;
         song.lengthBars = bars;
         return true;
@@ -21094,7 +24366,7 @@ private:  // (restores the section the HANDS burst was in)
     void landDroppedAudio (const juce::File& f, const juce::File& src, int ti, double bar)
     {
         const double secs = audioFileSeconds (src);
-        if (secs <= 0) { setStatus ("can't read " + f.getFileName()); return; }
+        if (secs <= 0) { narrate (2, "can't read " + f.getFileName()); return; }
         snapshot();
         // audio lands on an AUDIO track: dropped on empty space OR on a
         // synth/MIDI lane -> a NEW audio track minted RIGHT BELOW the drop
@@ -21143,7 +24415,7 @@ private:  // (restores the section the HANDS burst was in)
         revealLane (ti);
         setStatus ("THE THRESHOLD: " + f.getFileName() + " -> "
                    + song.tracks[(size_t) ti].name + " at bar "
-                   + juce::String ((int) (bar / 4.0) + 1)
+                   + juce::String ((int) song.barAtBeat (bar) + 1)
                    + (grew ? " (timeline -> " + juce::String ((int) song.lengthBars)
                              + " bars)" : juce::String()));
         handReceipt ("hand.drop_audio", { song.tracks[(size_t) ti].name },
@@ -21165,6 +24437,23 @@ private:  // (restores the section the HANDS burst was in)
         return proposalStreaming || proposalPending || auditioningProposal
                  ? juce::jmax (song.totalBeats(), proposal.totalBeats())
                  : song.totalBeats();
+    }
+    // THE CONVERSION BOUNDARY, UI SIDE (WORLD GRID #1): the engine clock speaks
+    // DENOMINATOR-beats, the whole UI speaks quarter-beats. Every transport
+    // crossing goes through these two (identity for mapless songs). The grid
+    // source mirrors what the ENGINE is playing (engineIsProposal law).
+    const Song& gridSong() const
+    { return auditioningProposal || listenStream ? proposal : song; }
+    double quarterAtTime (te::TimePosition t) const
+    {
+        return edit == nullptr ? 0.0
+             : gridSong().quarterFromEngine (edit->tempoSequence.toBeats (t).inBeats());
+    }
+    te::TimePosition timeAtQuarter (double q) const
+    {
+        return edit == nullptr ? te::TimePosition()
+             : edit->tempoSequence.toTime (te::BeatPosition::fromBeats (
+                   gridSong().engineBeat (juce::jmax (0.0, q))));
     }
     double fitPpb() const         { return canvasWidthPx() / juce::jmax (1.0, viewTotalBeats()); }
     double effViewPpb() const     { return viewPpb <= fitPpb() ? 0.0 : viewPpb; }   // 0 = fit
@@ -21188,6 +24477,14 @@ private:  // (restores the section the HANDS burst was in)
         hScroll.setVisible (p > 0);
         navRefresh();                                   // signature-gated: a still song costs ~0
         nav.setView (viewStart, visibleBeats());
+        {   // THE WORLD ZOOMS, THE OVERVIEWS DON'T (Chezy 2026-07-17): the hear
+            // strip stays whole-song and wears the same viewport pane the nav
+            // does — aligned to the identical normalized song-time, never zoomed
+            const double tb = viewTotalBeats();
+            if (tb > 0.01)
+                hearStrip.setViewSpan (viewStart / tb,
+                                       (viewStart + visibleBeats()) / tb);
+        }
     }
 
     // ---- rows are CLAY: per-name lane heights (drag the header's bottom edge; ----
@@ -21379,7 +24676,7 @@ private:  // (restores the section the HANDS burst was in)
             if (auditioningProposal)
             {   // preview canvas is read-only: family M/S explain themselves too
                 auto say = [this]
-                { setStatus ("this is the PROPOSAL preview - Accept to apply it, then edit"); };
+                { setStatus ("this is the TAKE preview - KEEP to apply it, then edit"); };
                 bar->onMuteAll = [say] (bool) { say(); };
                 bar->onSoloAll = [say] (bool) { say(); };
             }
@@ -21597,7 +24894,7 @@ private:  // (restores the section the HANDS burst was in)
         if (cid == convId) return;
         if (proposalPending)
         {   // the pending take belongs to THIS conversation's context
-            appendActivity ("[ui] resolve the pending take first (Accept/Reject)");
+            appendActivity ("[ui] resolve the pending take first (KEEP/PASS)");
             return;
         }
         convId = cid;
@@ -21605,8 +24902,9 @@ private:  // (restores the section the HANDS burst was in)
         dir.createDirectory();
         dir.getChildFile (songName + ".conv").replaceWithText (cid);
         replayChronicle();
-        setStatus (cid == "main" ? juce::String ("conversation: MAIN")
-                                 : "conversation: " + cid + " (own context)");
+        // no raw hashes on the chrome — the id is plumbing, not a face
+        setStatus (cid == "main" ? juce::String ("back to the main conversation")
+                                 : juce::String ("fresh conversation - this project's other chats stay saved"));
     }
 
     void replayChronicle()
@@ -21634,6 +24932,31 @@ private:  // (restores the section the HANDS burst was in)
             if (v.isObject() && v.getProperty ("role", "").toString().isNotEmpty())
                 rows.push_back (v);
         }
+        // TWIN LAW, replay leg (2026-07-16): chronicles written BEFORE the
+        // sidecar fix carry doubled notes (the CLI emitted the same text block
+        // twice) — adjacent agent rows where one contains the other collapse to
+        // the longer on REPLAY; the history file itself stays untouched.
+        for (size_t i = 1; i < rows.size(); )
+        {
+            const auto r0 = rows[i - 1].getProperty ("role", "").toString();
+            const auto r1 = rows[i].getProperty ("role", "").toString();
+            const auto t0 = rows[i - 1].getProperty ("text", "").toString();
+            const auto t1 = rows[i].getProperty ("text", "").toString();
+            if ((r0 == "agent" || r0 == "note") && (r1 == "agent" || r1 == "note")
+                && t0.isNotEmpty() && t1.isNotEmpty()
+                && (t0 == t1 || t1.startsWith (t0) || t0.startsWith (t1)))
+            {
+                if (t1.length() >= t0.length()) rows[i - 1] = rows[i];
+                rows.erase (rows.begin() + (long) i);
+                continue;
+            }
+            ++i;
+        }
+        promptHist.clear(); histCursor = -1;              // P71: history follows the PROJECT
+        updateHistChip();
+        for (auto& v : rows)
+            if (v.getProperty ("role", "").toString() == "user")
+                pushPromptHist (v.getProperty ("text", "").toString());
         if (rows.empty())
         {
             // a switch takes the old song's chat with it; first boot keeps the greeting
@@ -21686,13 +25009,40 @@ private:  // (restores the section the HANDS burst was in)
         else if (s.startsWith ("[") && s.containsChar ('\n'))
             chat.add (K::report, s);          // doctor/energy/verb reports: mono card, not a clipped line
         else if (s.startsWith ("agent done: "))
-            chat.add (K::agent, s.substring (12));
+            chat.addFinal (s.substring (12));   // THE FINAL IS NOT A TWIN belt
         else if (s.startsWith ("analysis[") || s.startsWith ("cost:"))
             chat.add (K::status, s);
         else
             chat.add (K::status, s.startsWith ("[ui] ") ? s.substring (5) : s);
     }
     void setStatus (const juce::String& s) { statusLabel.setText (s, juce::dontSendNotification); }
+    // P89 severity gets physics: 0 whisper (evaporates), 1 note (warn tick),
+    // 2 error (testifies in the stack until acknowledged + activity log).
+    void narrate (int tier, const juce::String& text,
+                  const juce::String& actionLabel = {}, std::function<void()> action = {})
+    {
+        if (tier >= 2)
+        {
+            errorStack.push (text, actionLabel, std::move (action));
+            appendActivity ("[error] " + text);
+        }
+        else
+            setStatus (tier == 1 ? "! " + text : text);
+    }
+
+    int promptRowH() const
+    {   // THE PROMPT GROWS: 1..3 text rows tall (past 3 the caret scrolls inside).
+        // row = text + indents(10) + outer margins(12); floor 50 keeps the
+        // one-line look, ceiling = exactly three laid-out rows.
+        // camera-measured (3 frames): with these margins the row clips at
+        // (rowH - 22) / 12 laid-out lines — 58 shows EXACTLY three.
+        return juce::jmax (50, juce::jmin (58, promptBox.getTextHeight() + 22));
+    }
+    void maybeGrowPrompt()
+    {
+        const int h = promptRowH();
+        if (h != lastPromptRowH) { lastPromptRowH = h; resized(); }
+    }
 
     // SOTADAW_PERF=1: the host clock self-reports — mean/max tick cost every ~5s
     // (paints run outside the timer; the paint bill is SOTADAW_PERF_PAINT's rig)
@@ -21720,6 +25070,39 @@ private:  // (restores the section the HANDS burst was in)
     QuietLogger quietLogger;
     std::unique_ptr<te::Engine> engine;
     std::unique_ptr<te::Edit> edit;
+    // ---- P95 THE FOCUS RING: modality + target (focus-visible law) ----
+    bool kbdModality = false;                 // true while focus travels by keys
+    juce::uint32 lastMouseMs = 0;             // the spy's clock (any click, anywhere)
+    juce::Component::SafePointer<juce::Component> focusRingTarget;
+    juce::Rectangle<int> lastRingRect;
+    struct ModalitySpy : juce::MouseListener  // separate object: MainComponent's own
+    {                                         // mouseDown must never hear child events
+        MainComponent& m;
+        explicit ModalitySpy (MainComponent& mm) : m (mm) {}
+        void mouseDown (const juce::MouseEvent&) override
+        {
+            m.lastMouseMs = juce::Time::getMillisecondCounter();
+            if (m.kbdModality) { m.kbdModality = false; m.refreshFocusRing(); }
+        }
+    } modalitySpy { *this };
+    void globalFocusChanged (juce::Component* f) override
+    {   // focus moved with no recent click = the keyboard drove it
+        kbdModality = f != nullptr
+                      && juce::Time::getMillisecondCounter() - lastMouseMs > 400;
+        focusRingTarget = kbdModality && f != nullptr && isParentOf (f) ? f : nullptr;
+        refreshFocusRing();
+    }
+    void refreshFocusRing()
+    {   // repaint only the two ring rects — never the whole desk
+        const auto old = lastRingRect;
+        lastRingRect = focusRingTarget != nullptr
+                         ? getLocalArea (focusRingTarget.getComponent(),
+                                         focusRingTarget->getLocalBounds()).expanded (5)
+                         : juce::Rectangle<int>();
+        if (! old.isEmpty()) repaint (old);
+        if (! lastRingRect.isEmpty()) repaint (lastRingRect);
+    }
+
     Song song, proposal;
     Song lastBuiltSong;   // THE ENGINE DELTA: the snapshot the live edit was built from
     SongDiff diff;
@@ -21741,6 +25124,201 @@ private:  // (restores the section the HANDS burst was in)
     double loopA = -1, loopB = -1;
     std::set<int> muted, soloed;
     std::vector<juce::String> undoStack, redoStack;
+    // P90 THE SAVE CHIP: saved-ness made visible (trust infrastructure). A
+    // MATERIAL dot (never a glyph — ASCII/panel law) + age/countdown; click =
+    // save now — the crash journal's promise made legible in the header.
+    struct SaveChip : public juce::Component, public juce::SettableTooltipClient
+    {
+        std::function<bool()> isDirty;
+        std::function<int()>  dirtyTicks;          // 30Hz ticks to autosave
+        std::function<juce::uint32()> savedAt;     // ms clock of the last save
+        std::function<void()> onSave;
+        juce::uint32 flashUntil = 0;               // sync-adopt / manual pulse
+        SaveChip()
+        {
+            setTitle ("Save state");               // SPOKEN DESK
+            setWantsKeyboardFocus (true);          // P95: keys reach it
+            setTooltip ("autosaves after edits pause - journal guards crashes - click to save now");
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+        void flash() { flashUntil = juce::Time::getMillisecondCounter() + 700; repaint(); }
+        void mouseDown (const juce::MouseEvent&) override { if (onSave != nullptr) onSave(); flash(); }
+        bool keyPressed (const juce::KeyPress& k) override
+        {
+            if (k == juce::KeyPress (juce::KeyPress::spaceKey)
+                || k == juce::KeyPress (juce::KeyPress::returnKey))
+            { if (onSave != nullptr) onSave(); flash(); return true; }
+            return false;
+        }
+        void paint (juce::Graphics& g) override
+        {
+            auto r = getLocalBounds().toFloat();
+            if (r.getWidth() < 8.0f) return;       // degraded away (FLIP dead-band law)
+            const bool dirty = isDirty != nullptr && isDirty();
+            g.setColour (theme::inset.withAlpha (0.8f));
+            g.fillRoundedRectangle (r, 5.0f);
+            const auto now = juce::Time::getMillisecondCounter();
+            if (now < flashUntil)
+            {   // the pulse: a save (or a sync adoption) made material
+                g.setColour (theme::accent.withAlpha (0.55f));
+                g.drawRoundedRectangle (r.reduced (0.6f), 5.0f, 1.2f);
+            }
+            g.setColour (dirty ? theme::warn : theme::good.withAlpha (0.65f));
+            g.fillEllipse (r.getX() + 5.0f, r.getCentreY() - 2.5f, 5.0f, 5.0f);
+            juce::String lbl;
+            if (dirty)
+                lbl = juce::String ((dirtyTicks != nullptr ? juce::jmax (0, dirtyTicks()) : 0) / 30 + 1) + "s";
+            else
+            {
+                const juce::uint32 base = savedAt != nullptr ? savedAt() : now;
+                const auto age = (juce::int64) (now - base) / 1000;
+                lbl = age > 99 ? juce::String (age / 60) + "m" : juce::String ((int) age) + "s";
+            }
+            g.setColour (dirty ? theme::warn : theme::textMute);
+            g.setFont (theme::mono (8.5f, juce::Font::bold));
+            g.drawText (lbl, getLocalBounds().withTrimmedLeft (11), juce::Justification::centred);
+        }
+    } saveChip;
+    // P94 THE DROP VEIL: on an external drag the whole window says what the drop
+    // WILL do — per-file routes from the ONE table, refusals honest, gone the
+    // instant the hand leaves. Material glass, never a banner.
+    struct DropVeil : public juce::Component
+    {
+        struct Row { juce::String name, label; bool ok; };
+        std::vector<Row> rows;
+        int extra = 0;
+        bool zone = false;                       // audio present: the lane matters
+        bool chatMode = false;                   // ATTACH: hand over the chat = context door
+        DropVeil() { setInterceptsMouseClicks (false, false); setAlwaysOnTop (true); }
+        void feed (const juce::StringArray& files)
+        {
+            rows.clear(); extra = 0; zone = false;
+            for (auto& f : files)
+            {
+                const juce::File jf (f);
+                const auto r = dropRoute (jf.getFileExtension().substring (1));
+                if (r.kind == "audio") zone = true;
+                if ((int) rows.size() < 5) rows.push_back ({ jf.getFileName(), r.label, r.ok });
+                else ++extra;
+            }
+            setVisible (true); toFront (false); repaint();
+        }
+        void paint (juce::Graphics& g) override
+        {
+            if (rows.empty()) return;
+            g.fillAll (juce::Colours::black.withAlpha (0.30f));
+            const float w = 560.0f, rowH = 22.0f;
+            const float h = 64.0f + rowH * (float) rows.size() + (extra > 0 ? 16.0f : 0.0f);
+            auto card = juce::Rectangle<float> (w, h).withCentre (getLocalBounds().getCentre().toFloat());
+            theme::card (g, card, theme::panelHi, 10.0f);
+            g.setColour (theme::accent.withAlpha (0.35f));
+            g.drawRoundedRectangle (card.reduced (0.6f), 10.0f, 1.2f);
+            auto in = card.reduced (18.0f, 12.0f);
+            g.setColour (theme::text.withAlpha (0.9f));
+            g.setFont (theme::caps (10.0f));
+            g.drawText (chatMode ? "DROP ON THE CHAT - ANY FILE BECOMES AGENT CONTEXT"
+                        : zone ? "DROP ANYWHERE - AUDIO LANDS ON THE LANE UNDER THE HAND"
+                               : "DROP ANYWHERE - I WILL ROUTE IT",
+                        in.removeFromTop (20.0f).toNearestInt(), juce::Justification::centredLeft);
+            in.removeFromTop (6.0f);
+            for (auto& r : rows)
+            {
+                auto line = in.removeFromTop (rowH);
+                g.setFont (theme::ui (11.0f, juce::Font::bold));
+                g.setColour (chatMode || r.ok ? theme::text : theme::bad.withAlpha (0.9f));
+                g.drawText (r.name, line.removeFromLeft (190.0f).toNearestInt(),
+                            juce::Justification::centredLeft);
+                g.setFont (theme::ui (10.5f));
+                g.setColour (chatMode || r.ok ? theme::textMute : theme::bad.withAlpha (0.75f));
+                g.drawText ("-> " + (chatMode ? juce::String ("attach to the chat (agent context)")
+                                              : r.label),
+                            line.toNearestInt(), juce::Justification::centredLeft);
+            }
+            if (extra > 0)
+            {
+                g.setColour (theme::textMute);
+                g.setFont (theme::ui (10.0f));
+                g.drawText ("... and " + juce::String (extra) + " more",
+                            in.removeFromTop (16.0f).toNearestInt(), juce::Justification::centredLeft);
+            }
+        }
+    } dropVeil;
+    // P89 THE ERROR STACK: errors are the app's testimony — they STAY until
+    // acknowledged. Info evaporates in the status slot; failure gets a pinned
+    // card (bad edge, optional action chip, x), max 3 + honest fold counter.
+    struct ErrorStack : public juce::Component
+    {
+        struct Item { juce::String text, actionLabel;
+                      std::function<void()> action; juce::uint32 born; };
+        std::vector<Item> items;
+        std::function<void()> onLayout;
+        static constexpr int rowH = 44;
+        void push (juce::String text, juce::String actionLabel, std::function<void()> action)
+        {
+            items.push_back ({ std::move (text), std::move (actionLabel), std::move (action),
+                               juce::Time::getMillisecondCounter() });
+            setVisible (true);
+            toFront (false);                    // clip law: testimony above furniture
+            if (onLayout != nullptr) onLayout();
+            repaint();
+        }
+        int shown() const        { return juce::jmin (3, (int) items.size()); }
+        int wantedHeight() const { return items.empty() ? 0
+                                        : shown() * rowH + ((int) items.size() > 3 ? 16 : 0); }
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            const int idx = e.y / rowH;
+            if (idx < 0 || idx >= shown()) return;
+            auto it = items[(size_t) idx];      // copy: the action may push more
+            const bool hitAction = it.action != nullptr && it.actionLabel.isNotEmpty()
+                                   && e.x > getWidth() - 108 && e.x <= getWidth() - 26;
+            items.erase (items.begin() + idx);  // any click acknowledges
+            if (hitAction) it.action();
+            if (items.empty()) setVisible (false);
+            if (onLayout != nullptr) onLayout();
+            repaint();
+        }
+        void paint (juce::Graphics& g) override
+        {
+            for (int i = 0; i < shown(); ++i)
+            {
+                auto card = juce::Rectangle<float> (0.0f, (float) (i * rowH),
+                                                    (float) getWidth(), (float) rowH - 4.0f);
+                theme::card (g, card, theme::panelHi, 7.0f);
+                auto& it = items[(size_t) i];
+                g.setColour (theme::bad.withAlpha (0.85f));
+                g.fillRoundedRectangle (card.withWidth (3.0f), 1.5f);
+                if (juce::Time::getMillisecondCounter() - it.born < 900)
+                {   // arrival pulse: once, material
+                    g.setColour (theme::bad.withAlpha (0.30f));
+                    g.drawRoundedRectangle (card.reduced (0.8f), 7.0f, 1.4f);
+                }
+                auto in = card.toNearestInt().reduced (10, 4);
+                auto xr = in.removeFromRight (18);
+                g.setColour (theme::textMute);
+                g.setFont (theme::ui (12.0f, juce::Font::bold));
+                g.drawText ("x", xr, juce::Justification::centred);
+                if (it.actionLabel.isNotEmpty() && it.action != nullptr)
+                {
+                    auto ar = in.removeFromRight (80);
+                    theme::chip (g, ar.toFloat().reduced (2.0f, 8.0f), theme::accent,
+                                 it.actionLabel, theme::caps (7.5f), 0.22f, 0.0f, false);
+                }
+                g.setColour (theme::text.withAlpha (0.92f));
+                g.setFont (theme::ui (11.0f));
+                g.drawText (it.text, in, juce::Justification::centredLeft);
+            }
+            if ((int) items.size() > 3)
+            {
+                g.setColour (theme::textMute);
+                g.setFont (theme::caps (7.5f));
+                g.drawText ("... and " + juce::String ((int) items.size() - 3) + " more",
+                            juce::Rectangle<int> (8, shown() * rowH, getWidth() - 16, 14),
+                            juce::Justification::centredLeft);
+            }
+        }
+    } errorStack;
+    juce::uint32 lastSaveMs = juce::Time::getMillisecondCounter();   // P90 clock
     int saveCountdown = -1;
 
     juce::File songFile, ipcDir, eventsFile, receiptsFile;
@@ -21760,6 +25338,8 @@ private:  // (restores the section the HANDS burst was in)
     te::LevelMeasurer::Client masterClient;
     bool masterClientAttached = false;
     float masterDb = -100.0f, paintedMasterDb = -100.0f;
+    float masterDbL = -100.0f, masterDbR = -100.0f;        // THE MASTER LAMP: stereo truth
+    float peakHoldL = -100.0f, peakHoldR = -100.0f;        // falling peak ticks (~10dB/s)
 
     juce::OwnedArray<TrackLane> lanes;
     std::vector<SongTrack> busModels;   // display models backing bus lanes (stable addresses via reserve)
@@ -21771,6 +25351,7 @@ private:  // (restores the section the HANDS burst was in)
     int auditioningLoop = -1;
     Ruler ruler;
     PianoRollEditor roll;
+    sotadaw::ScorePage scorePage;         // THE SCORE TAB: engraved notation view (SCORE)
     IconButton playButton { IconButton::Glyph::play, "Play" },
                recButton  { IconButton::Glyph::rec, "Rec" },
                loopButton { IconButton::Glyph::loop, "Loop" },
@@ -21781,9 +25362,13 @@ private:  // (restores the section the HANDS burst was in)
                      addTrackButton { "+ Track" }, exportButton { "Export" },
                      historyButton { "History" },
                      chatToggle { "Agent" },
-                     acceptButton { "Accept" }, rejectButton { "Reject" },
+                     acceptButton { "KEEP" }, rejectButton { "PASS" },
                      auditionButton { "Audition: off" }, backButton { "< Back" }, sendButton { "Send" },
-                     makeTrackButton { "MAKE" }, humButton { "HUM" };
+                     makeTrackButton { "MAKE" }, humButton { "HUM" },
+                     explainButton { "Explain" };   // P78: the take walks you through itself
+    juce::TextButton connectButton { "Connect" };   // THE CONNECTOR BAY's door (transport)
+    ConnectorBay connectorBay;                      // bridges as tiles, not menu rows
+    VoiceMicButton micButton;                       // THE VOICE MODE: speak, then read
     // THE VERB STRIP (SURFACE LAW, firing 94): every zero-token producer verb is ONE
     // CLICK — the verb bus lane lands a proposal in ~a second where the LLM lane's
     // median is minutes. Table mirrors agent/verbs.py REGISTRY.
@@ -21817,8 +25402,10 @@ private:  // (restores the section the HANDS burst was in)
     // THE IMPORT DOCK: live phase + progress for connector jobs (stems import =
     // minutes of GPU work; a bare status line read as a hang — Chezy live)
     juce::String importPhase;
+    juce::String importDetail;                // the job's own words (model, device, why slow)
     float importPct = -1.0f;                  // -1 = indeterminate sweep
     juce::uint32 importT0 = 0;
+    double importEpoch0 = 0.0;                // job-start wall clock: stale heartbeats can't lie
     bool bridgeWasStarted = false;
     juce::File bridgePendingLoad, bridgeReveal;
     bool bridgeMergeAudio = false;   // stems import JOINS the open song (Chezy 2026-07-12)
@@ -21834,6 +25421,7 @@ private:  // (restores the section the HANDS burst was in)
     ChatPanel chat;
     juce::ComboBox snapBox;
     int selectedTrack = 0, preRecordClips = 0;
+    bool recLoopTakes = false;      // this recording ran under the loop brace -> passes = takes
     bool masterCtx = false;                    // the master/bus strip is selected -> RIGHT wing
     int recAudioArmed = 0, recAudioAdded = 0;    // B4 capture truth (rig dump reads these)
     juce::String recAudioFile;
@@ -21876,6 +25464,90 @@ private:  // (restores the section the HANDS burst was in)
         }
     };
     GlobalKeys globalKeys { *this };
+    // P71 PROMPT HISTORY (the terminal inheritance): ↑ in an empty / caret-0
+    // prompt walks previous asks, ↓ walks forward to the PRESERVED draft, Esc
+    // restores it, editing a recalled ask DETACHES it. Seeded from the
+    // chronicle on every replay — history survives restarts with the project.
+    juce::StringArray promptHist;
+    int histCursor = -1;                  // -1 = not browsing
+    juce::String histDraft;
+    juce::String lastAskText;             // P64: the retry chip's ammunition
+    bool histRecallGuard = false;         // programmatic setText is not an edit
+    juce::Label histChip;                 // "3/12" ghost chip inside the prompt
+    struct PromptHistKeys : juce::KeyListener
+    {
+        MainComponent& mc;
+        explicit PromptHistKeys (MainComponent& m) : mc (m) {}
+        bool keyPressed (const juce::KeyPress& k, juce::Component*) override
+        { return mc.promptHistKey (k); }
+    };
+    PromptHistKeys promptHistKeys { *this };
+    void pushPromptHist (const juce::String& t)
+    {
+        const auto s = t.trim();
+        if (s.isEmpty() || s.startsWith ("/")) return;   // palette verbs are not asks
+        promptHist.removeString (s);                     // move-to-front dedup
+        promptHist.add (s);
+        while (promptHist.size() > 50) promptHist.remove (0);
+        histCursor = -1;
+        updateHistChip();
+    }
+    void updateHistChip()
+    {
+        if (histCursor < 0 || ! promptBox.isVisible()) { histChip.setVisible (false); return; }
+        histChip.setText (juce::String (histCursor + 1) + "/" + juce::String (promptHist.size()),
+                          juce::dontSendNotification);
+        const auto pb = promptBox.getBounds();
+        histChip.setBounds (pb.getRight() - 50, pb.getY() + 3, 44, 14);
+        histChip.setVisible (true);
+        histChip.toFront (false);
+    }
+    bool promptHistKey (const juce::KeyPress& k)
+    {
+        const int kc = k.getKeyCode();
+        if ((kc != juce::KeyPress::upKey && kc != juce::KeyPress::downKey
+             && kc != juce::KeyPress::escapeKey)
+            || k.getModifiers().isAnyModifierKeyDown())
+            return false;
+        const auto txt = promptBox.getText();
+        if (kc == juce::KeyPress::escapeKey)
+        {
+            if (histCursor < 0) return false;            // not browsing: Esc stays Esc
+            histRecallGuard = true;
+            promptBox.setText (histDraft, juce::dontSendNotification);
+            promptBox.moveCaretToEnd();
+            histRecallGuard = false;
+            histCursor = -1;
+            updateHistChip();
+            return true;
+        }
+        if (histCursor < 0 && ! (txt.isEmpty() || promptBox.getCaretPosition() == 0))
+            return false;                                // mid-text arrows stay caret moves
+        if (promptHist.isEmpty()) return false;
+        if (kc == juce::KeyPress::upKey)
+        {
+            if (histCursor < 0) { histDraft = txt; histCursor = promptHist.size(); }
+            if (histCursor == 0) { updateHistChip(); return true; }   // oldest: hold
+            --histCursor;
+        }
+        else
+        {
+            if (histCursor < 0) return false;
+            ++histCursor;
+        }
+        histRecallGuard = true;
+        if (histCursor >= promptHist.size())
+        {   // walked past the newest: the preserved draft returns
+            promptBox.setText (histDraft, juce::dontSendNotification);
+            histCursor = -1;
+        }
+        else
+            promptBox.setText (promptHist[histCursor], juce::dontSendNotification);
+        promptBox.moveCaretToEnd();
+        histRecallGuard = false;
+        updateHistChip();
+        return true;
+    }
     juce::Point<int> blockA, blockB;      // THE BLOCK (H11): grab anchor + hand position
     bool blockOn = false;
     bool fileHover = false;               // THE THRESHOLD (H21): OS drag over the app
@@ -21886,7 +25558,8 @@ private:  // (restores the section the HANDS burst was in)
     PropItemsBar propBar;                 // per-item proposal review (track-level cherry-pick)
     // THE DECK re-homes the decision hardware (declared AFTER its children: C++
     // member-init order guarantees they exist when the deck's ctor claims them)
-    ProposalDeck deck { surgicalBadge, auditionButton, acceptButton, rejectButton, propBar };
+    ProposalDeck deck { surgicalBadge, auditionButton, explainButton,
+                        acceptButton, rejectButton, propBar };
     juce::StringArray propItems;          // "kind|name" per reviewable item
     std::set<int> propDropped;            // indices the user struck out
     juce::StringArray pinnedCtx;          // dropped-on-chat pins: "type|label", persist until X
@@ -22000,9 +25673,15 @@ private:  // (restores the section the HANDS burst was in)
         viewStart = newRangeStart;
         applyViewport();
     }
-    juce::ComboBox songBox;
+    SongPickBox songBox;
+    std::unique_ptr<SongPicker> songPicker;   // THE SONG VAULT overlay (nullptr = closed)
     juce::TextButton newSongButton { "+ NEW" };
     juce::TextButton seedButton { "SEED" };   // SKELETON SEED: opt-in (Chezy law 2026-07-11)
+    juce::TextButton dockMoreButton { "..." };   // THE DOCK FOLD caret (lit = desk open)
+    bool dockMoreOpen = false;                   // persisted: uiPref "dockMore"
+    // PERSISTENT DOORS (rebrand 31 §1a): the coach dies with the first ask, the
+    // doors must not — the door row carries them wherever it has the width
+    juce::TextButton bringSongButton { "+ SONG" }, finishDoorButton { "FINISH" };
     juce::Label bpmLabel { {}, "-- BPM" }, statusLabel;
     juce::TextButton tapButton { "TAP" };
     struct RClickButton : juce::TextButton        // a toggle whose right-click OPENS OPTIONS
@@ -22026,7 +25705,119 @@ private:  // (restores the section the HANDS burst was in)
     bool clickRecOnly = false, clickBars = true;  // when it sounds + bar emphasis
     std::vector<double> tapTimes;                 // tap-tempo intervals (ms)
     juce::Slider swingSlider;
-    juce::TextEditor promptBox;
+    GrowPromptBox promptBox;                 // THE PROMPT GROWS: wraps + rises, max 3 rows
+    // ATTACH — THE INBOX TRAY: attachments live IN the chat as chips directly above
+    // the composer; image files wear real inline thumbnails. Click = open (system
+    // viewer), x = remove (the inbox copy only). Empty inbox = zero height.
+    struct AttachTray : public juce::Component
+    {
+        struct Item { juce::File f; juce::Image thumb; juce::Rectangle<float> r, xr; };
+        std::vector<Item> items;
+        int extraCount = 0;
+        std::function<void (const juce::File&)> onOpen, onRemove;
+        static constexpr int rowH = 34, maxRows = 2;
+        void refresh (const juce::File& dir)
+        {
+            items.clear(); extraCount = 0;
+            juce::Array<juce::File> fs;
+            dir.findChildFiles (fs, juce::File::findFiles, false);
+            std::sort (fs.begin(), fs.end(), [] (const juce::File& a, const juce::File& b)
+                       { return a.getLastModificationTime() > b.getLastModificationTime(); });
+            for (auto& f : fs)
+            {
+                if (f.getFileName().startsWithChar ('.')) continue;
+                if ((int) items.size() >= 12) { ++extraCount; continue; }
+                Item it; it.f = f;
+                const auto ext = f.getFileExtension().toLowerCase();
+                if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif"
+                    || ext == ".webp" || ext == ".bmp")
+                {
+                    const auto img = juce::ImageFileFormat::loadFrom (f);
+                    if (img.isValid()) it.thumb = img.rescaled (
+                        juce::jlimit (12, 64, img.getWidth() * 26 / juce::jmax (1, img.getHeight())), 26);
+                }
+                items.push_back (std::move (it));
+            }
+            repaint();
+        }
+        static float chipW (const Item& it)
+        {
+            const float tw = theme::measure (theme::ui (10.5f),
+                                             it.f.getFileName().substring (0, 22));
+            return (it.thumb.isValid() ? (float) it.thumb.getWidth() + 12.0f : 8.0f) + tw + 30.0f;
+        }
+        int preferredHeight (int w) const
+        {
+            if (items.empty()) return 0;
+            float x = 0; int rows = 1;
+            for (auto& it : items)
+            {
+                const float cw = chipW (it);
+                if (x > 0 && x + cw > (float) w) { x = 0; if (++rows > maxRows) break; }
+                x += cw + 6.0f;
+            }
+            return juce::jmin (rows, maxRows) * rowH + 4;
+        }
+        void paint (juce::Graphics& g) override
+        {
+            float x = 0, y = 2;
+            int rows = 1;
+            for (auto& it : items)
+            {
+                const float cw = chipW (it);
+                if (x > 0 && x + cw > (float) getWidth())
+                {
+                    x = 0; y += (float) rowH;
+                    if (++rows > maxRows) { it.r = {}; it.xr = {}; continue; }
+                }
+                juce::Rectangle<float> r (x, y, cw, (float) rowH - 6.0f);
+                it.r = r;
+                g.setColour (theme::panelHi.withAlpha (0.88f));
+                g.fillRoundedRectangle (r, 6.0f);
+                g.setColour (theme::line);
+                g.drawRoundedRectangle (r.reduced (0.5f), 6.0f, 1.0f);
+                float tx = r.getX() + 6.0f;
+                if (it.thumb.isValid())
+                {   // the image IS the chip's face (inline thumbnail)
+                    juce::Rectangle<float> tr (tx, r.getY() + 1.0f, (float) it.thumb.getWidth(), 26.0f);
+                    g.drawImage (it.thumb, tr, juce::RectanglePlacement::centred);
+                    tx += (float) it.thumb.getWidth() + 6.0f;
+                }
+                g.setColour (theme::text.withAlpha (0.88f));
+                g.setFont (theme::ui (10.5f));
+                g.drawText (it.f.getFileName().substring (0, 22),
+                            juce::Rectangle<int> ((int) tx, (int) r.getY(),
+                                                  (int) juce::jmax (10.0f, r.getRight() - tx - 20.0f),
+                                                  (int) r.getHeight()),
+                            juce::Justification::centredLeft);
+                juce::Rectangle<float> xr (r.getRight() - 18.0f,
+                                           r.getY() + (r.getHeight() - 14.0f) * 0.5f, 14.0f, 14.0f);
+                it.xr = xr;
+                g.setColour (theme::textMute);
+                g.drawLine (xr.getX() + 4.0f, xr.getY() + 4.0f, xr.getRight() - 4.0f, xr.getBottom() - 4.0f, 1.4f);
+                g.drawLine (xr.getX() + 4.0f, xr.getBottom() - 4.0f, xr.getRight() - 4.0f, xr.getY() + 4.0f, 1.4f);
+                x += cw + 6.0f;
+            }
+            if (extraCount > 0)
+            {
+                g.setColour (theme::textMute);
+                g.setFont (theme::caps (7.5f));
+                g.drawText ("+" + juce::String (extraCount) + " MORE",
+                            juce::Rectangle<int> ((int) x + 4, (int) y, 70, rowH - 6),
+                            juce::Justification::centredLeft);
+            }
+        }
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            for (auto& it : items)
+            {
+                if (it.xr.contains (e.position)) { if (onRemove) onRemove (it.f); return; }
+                if (it.r.contains (e.position))  { if (onOpen)  onOpen  (it.f); return; }
+            }
+        }
+    } attachTray;
+    juce::TextButton attachButton { "+" };   // ATTACH: the paperclip (any file -> context)
+    int lastPromptRowH = 50;                 // the composer row's last laid-out height
     juce::TextEditor inlineAsk;              // THE INLINE ASK (H26): Cmd+Enter at the selection
     bool inlineAskOn = false;
     PaletteDrop paletteDrop;                 // THE PALETTE (H27): "/" dropdown under the prompt
@@ -22147,6 +25938,88 @@ public:
                 {
                     snapComp->keyboardSelfTest (ktDir);
                     juce::Timer::callAfterDelay (400, []
+                    { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+                });
+                return;
+            }
+            if (std::getenv ("SOTADAW_SNAP_VOICE") != nullptr)
+            {   // THE VOICE MODE camera: /voice contract proof — feed speech, hear
+                // the pause send. Driver: espeak raw via SOTADAW_VOICE_FEED.
+                juce::Timer::callAfterDelay (900, [this, shoot]
+                {
+                    snapComp->rigVoiceBegin();
+                    auto n = std::make_shared<int> (0);
+                    auto step = std::make_shared<std::function<void()>>();
+                    *step = [this, shoot, n, step]
+                    {
+                        const int st = snapComp->rigVoicePump (*n);
+                        if (st == 2 || ++*n > 1400)            // done, or 70s cap (3 rounds, one cold)
+                        {
+                            shoot ("arrange", "voice.png");
+                            std::cout << "[voice] " << snapComp->rigVoiceDump() << std::endl;
+                            juce::Timer::callAfterDelay (200, []
+                            { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+                            return;
+                        }
+                        juce::Timer::callAfterDelay (50, *step);
+                    };
+                    juce::Timer::callAfterDelay (400, *step);
+                });
+                return;
+            }
+            if (std::getenv ("SOTADAW_A11Y_CENSUS") != nullptr)
+            {   // THE SPOKEN DESK census: what can a screen reader NAME right now?
+                juce::Timer::callAfterDelay (900, [this]
+                {
+                    std::cout << "[a11y] " << snapComp->a11yCensusDump() << std::endl;
+                    juce::Timer::callAfterDelay (200, []
+                    { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+                });
+                return;
+            }
+            if (std::getenv ("SOTADAW_SNAP_ERRORS") != nullptr)
+            {   // P89 stack camera: 4 errors -> 3 cards + fold counter, action chip
+                juce::Timer::callAfterDelay (700, [this, shoot]
+                {
+                    snapComp->snapPushErrors();
+                    shoot ("arrange", "errors.png");
+                    juce::Timer::callAfterDelay (200, []
+                    { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+                });
+                return;
+            }
+            if (std::getenv ("SOTADAW_SNAP_DROPVEIL") != nullptr)
+            {   // P94 veil camera: feed a mixed drag (recognized + refusal) and shoot
+                juce::Timer::callAfterDelay (700, [this, shoot]
+                {
+                    snapComp->snapFeedDropVeil ({ "/x/groove.mp3", "/x/riff.mid",
+                                                  "/x/session.als", "/x/notes.docx" });
+                    shoot ("arrange", "dropveil.png");
+                    juce::Timer::callAfterDelay (200, []
+                    { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+                });
+                return;
+            }
+            if (std::getenv ("SOTADAW_SNAP_FOCUSRING") != nullptr)
+            {   // P95 ring camera: force the keyboard-focus state (the peerless rig
+                // has no real key focus) and shoot — proves the ring PAINT path.
+                juce::Timer::callAfterDelay (700, [this, shoot]
+                {
+                    snapComp->snapForceFocusRing();
+                    shoot ("arrange", "focusring.png");
+                    juce::Timer::callAfterDelay (200, []
+                    { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+                });
+                return;
+            }
+            if (std::getenv ("SOTADAW_SNAP_BAY") != nullptr)
+            {   // THE CONNECTOR BAY camera: the vault sheet over a real song — the
+                // z-guard proof (lanes/wings must never paint through the sheet)
+                juce::Timer::callAfterDelay (700, [this, shoot]
+                {
+                    snapComp->rigOpenBay();
+                    shoot ("arrange", "bay.png");
+                    juce::Timer::callAfterDelay (200, []
                     { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
                 });
                 return;
@@ -22458,6 +26331,8 @@ public:
                         snapComp->snapMarquee (juce::Rectangle<int> (
                             juce::Point<int> (t[0].getIntValue(), t[1].getIntValue()),
                             juce::Point<int> (t[2].getIntValue(), t[3].getIntValue())));
+                    if (std::getenv ("SOTADAW_SNAP_NOTETOGGLE") != nullptr)
+                        snapComp->snapNoteToggle();      // ctrl-toggle census rides the sweep
                 }
                 if (const char* ro = std::getenv ("SOTADAW_SNAP_REORDER"))   // "from,to" (never persists)
                 {
@@ -22601,6 +26476,20 @@ public:
                         shoot ("arrange", "autoedit.png");
                     }
                 }
+                if (std::getenv ("SOTADAW_SNAP_ALIVE") != nullptr)   // THE ALIVE WAVE camera
+                    snapComp->snapAlive();
+                if (std::getenv ("SOTADAW_SNAP_SONGPICK") != nullptr)   // THE SONG VAULT camera
+                {
+                    snapComp->snapSongPick (std::getenv ("SOTADAW_SNAP_SONGPICK_Q"));
+                    shoot ("arrange", "songpick.png");
+                }
+                if (std::getenv ("SOTADAW_SNAP_PROMPTGROW") != nullptr) // THE PROMPT GROWS camera
+                {
+                    snapComp->snapPromptGrow();
+                    shoot ("arrange", "promptgrow.png");
+                }
+                if (std::getenv ("SOTADAW_SNAP_SONGPICK2") != nullptr)  // the reopen tripwire
+                    snapComp->snapSongPickReopen();
                 const juce::String only (std::getenv ("SOTADAW_SNAP_ONLY") != nullptr
                                            ? std::getenv ("SOTADAW_SNAP_ONLY") : "");
                 auto want = [&only] (const char* nm) { return only.isEmpty() || only == nm; };
@@ -22609,6 +26498,13 @@ public:
                 if (want ("morph"))      shoot ("morph", "morph_out.png");
                 if (want ("live"))       shoot ("live", "live.png");
                 if (want ("mix"))        shoot ("mix", "mix.png");
+                if (want ("score"))
+                {
+                    shoot ("score", "score.png");   // SCORE: engraved face
+                    if (std::getenv ("SOTADAW_SCORE_PDF") != nullptr)   // SCORE: print proof
+                        snapComp->snapScorePdf (juce::File (juce::String (
+                            std::getenv ("SOTADAW_SCORE_PDF"))));
+                }
                 if (want ("roll"))
                 {
                     shoot ("roll", "roll.png");
@@ -22622,6 +26518,9 @@ public:
                 if (want ("history"))    shoot ("history", "history.png");
                 if (want ("rack"))       shoot ("rack", "rack.png");
                 if (want ("rackmaster")) shoot ("rackmaster", "rack_master.png");
+                if (want ("tune"))       shoot ("tune", "tune.png");
+                if (want ("sounds"))     shoot ("sounds", "sounds.png");   // last: flips the rail
+                if (want ("bay"))        shoot ("bay", "bay.png");         // the veil covers all
                 snapComp->snapshotFaces (snapDir);   // SOTADAW_SNAP_FACES=voice,... -> face PNGs (peerless)
                 juce::JUCEApplication::getInstance()->systemRequestedQuit();
             });
@@ -22670,6 +26569,11 @@ public:
             centreWithSize (getWidth(), getHeight());
             setResizable (true, true);
             setVisible (true);
+#if SOTADAW_EMBEDDED_FONTS   // assets target linked: the taskbar wears the spark
+            if (auto* p = getPeer())
+                p->setIcon (juce::ImageFileFormat::loadFrom (BinaryData::icon_png,
+                                                             (size_t) BinaryData::icon_pngSize));
+#endif
         }
 
         void snapshotTo (const juce::File& dir)

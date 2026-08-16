@@ -2,9 +2,9 @@
  "name": "jazz_piano",
  "kind": "voice",
  "dsp_sha": "d55ce07c9a1551f4",
- "m1_md5": "cec426b253528867",
+ "m1_md5": "caee7f9167c3a7bd",
  "machine": "chezy-LOQ-15IAX9E",
- "date": "2026-07-07",
+ "date": "2026-07-31",
  "law": "E2 (docs/THE_PHYSICS.md)",
  "peak_dbfs": -6.7,
  "clipped_samples": 0,
@@ -47,8 +47,34 @@
  ],
  "decay_to_m60_s": 2.02,
  "noise_tail_dbfs": -200.0,
+ "headroom": {
+  "registers": {
+   "33": {
+    "peak_dbfs": -6.06,
+    "clipped": 0
+   },
+   "60": {
+    "peak_dbfs": -6.7,
+    "clipped": 0
+   },
+   "81": {
+    "peak_dbfs": -6.26,
+    "clipped": 0
+   }
+  },
+  "overlap": {
+   "peak_dbfs": -5.51,
+   "clipped": 0
+  },
+  "retrigger": {
+   "peak_dbfs": -4.14,
+   "clipped": 0
+  },
+  "clipped_total": 0
+ },
  "verdicts": {
   "headroom_pass_vel1": true,
+  "headroom_pass_registers": true,
   "audible": true
  }
 }

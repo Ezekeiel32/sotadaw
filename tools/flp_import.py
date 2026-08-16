@@ -14,19 +14,22 @@ import json, os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 GM_KEY = [
-    (re.compile(r"kick|bd\b|boom", re.I), 36),
-    (re.compile(r"snare|sn\b|snr", re.I), 38),
-    (re.compile(r"clap", re.I), 39),
-    (re.compile(r"open.?hat|oh\b|open", re.I), 46),
-    (re.compile(r"hat|hh\b|hi.?hat", re.I), 42),
-    (re.compile(r"crash", re.I), 49),
-    (re.compile(r"ride", re.I), 51),
-    (re.compile(r"tom", re.I), 45),
-    (re.compile(r"shaker|shk", re.I), 70),
-    (re.compile(r"perc|rim|snap", re.I), 37),
-    (re.compile(r"cow", re.I), 56),
+    # word-ish boundaries: bare "hat" pinned "THAT overflows" to a hi-hat and
+    # bare "open" pinned "opening pad" to an open hat (battery-caught 2026-07-24)
+    (re.compile(r"\bkicks?\b|\bbd\b|boom", re.I), 36),
+    (re.compile(r"\bsnares?\b|\bsn\b|\bsnr\b", re.I), 38),
+    (re.compile(r"\bclaps?\b", re.I), 39),
+    (re.compile(r"open.?hat|\boh\b", re.I), 46),
+    (re.compile(r"\bhats?\b|\bhh\b|hi.?hat", re.I), 42),
+    (re.compile(r"\bcrash", re.I), 49),
+    (re.compile(r"\bride\b", re.I), 51),
+    (re.compile(r"\btoms?\b", re.I), 45),
+    (re.compile(r"shaker|\bshk\b", re.I), 70),
+    (re.compile(r"\bperc|\brim\b|\bsnap\b", re.I), 37),
+    (re.compile(r"\bcow", re.I), 56),
 ]
-DRUM_RE = re.compile(r"kick|snare|clap|hat|crash|ride|tom|perc|shaker|rim|cymbal|drum|808", re.I)
+DRUM_RE = re.compile(r"\bkicks?\b|\bsnares?\b|\bclaps?\b|\bhats?\b|\bhh\b|hi.?hat|\bcrash"
+                     r"|\bride\b|\btoms?\b|\bperc|shaker|\brim\b|cymbal|drum|808", re.I)
 
 def gm_key_for(name):
     for rx, key in GM_KEY:
@@ -36,6 +39,9 @@ def gm_key_for(name):
 
 def import_flp(flp_path, song_path):
     import pyflp
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import pyflp_compat
+    pyflp_compat.ensure()      # py3.12 killed EVERY pyflp.parse (see pyflp_compat)
     project = pyflp.parse(flp_path)
     bpm = float(getattr(project, "tempo", 120.0) or 120.0)
     ppq = int(getattr(project, "ppq", 96) or 96)
@@ -64,7 +70,17 @@ def import_flp(flp_path, song_path):
                 iid = getattr(n, "rack_channel", None)
                 if iid is None:
                     iid = getattr(getattr(n, "channel", None), "iid", 0)
-                key = int(getattr(n, "key", 60) or 60)
+                try:
+                    key = int(n["key"])          # raw struct int (pyflp 2.x .key renders "C5" text)
+                except Exception:
+                    kv = getattr(n, "key", 60)
+                    if isinstance(kv, str):
+                        names = {"C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5,
+                                 "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11}
+                        m = re.match(r"([A-G]#?)(-?\d+)", kv)
+                        key = names[m.group(1)] + 12 * int(m.group(2)) if m else 60
+                    else:
+                        key = int(kv or 60)
                 vel = getattr(n, "velocity", None)
                 vel = float(vel) / 128.0 if isinstance(vel, (int, float)) else 0.78
                 out.append((iid, float(n.position or 0), float(n.length or ppq // 4),
@@ -89,8 +105,11 @@ def import_flp(flp_path, song_path):
         if arr is not None:
             for tr in arr.tracks:
                 for item in tr:
-                    if bool(getattr(item, "muted", False)):
-                        continue
+                    try:
+                        if bool(item.muted):
+                            continue
+                    except Exception:
+                        pass   # pyflp 2.2.1: 'muted' absent from the item STRUCT (upstream gap)
                     pat = getattr(item, "pattern", None)
                     if pat is None:
                         continue
@@ -109,7 +128,8 @@ def import_flp(flp_path, song_path):
                              "pitch": key, "vel": round(vel, 3)})
                         placed += 1
     except Exception as e:
-        print(f"[flp] playlist scan degraded: {e!r}", file=sys.stderr)
+        if type(e).__name__ != "NoModelsFound":   # zero arrangements = a legit sketch flp
+            print(f"[flp] playlist scan degraded: {e!r}", file=sys.stderr)
 
     if placed == 0:
         # fallback: tile patterns one after another so nothing is lost

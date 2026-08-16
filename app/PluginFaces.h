@@ -477,7 +477,7 @@ public:
             juce::Rectangle<float> chip (head.getRight() - cw - 14.0f, head.getCentreY() - 9.0f, cw, 18.0f);
             g.setColour (skin.hot.withAlpha (0.16f));
             g.fillRoundedRectangle (chip, 9.0f);
-            g.setColour (skin.hot.withAlpha (0.6f));
+            g.setColour (skin.hot.withAlpha (0.33f));
             g.drawRoundedRectangle (chip.reduced (0.5f), 9.0f, 1.0f);
             g.setColour (skin.hot.brighter (0.2f));
             g.setFont (f);

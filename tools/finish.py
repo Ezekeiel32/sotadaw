@@ -149,6 +149,19 @@ def main():
     a = ap.parse_args()
     name = songname.resolve(a.song)
     song = json.load(open(os.path.join(ROOT, "songs", f"{name}.json")))
+    # THE HUSK GATE (2026-08-07, untitled_73): FINISH on a fresh +NEW project
+    # arranged 124 bars of NOTHING, decorated it with transition furniture
+    # (crash/subdrop/riser/impact), and served a take its own arc court had
+    # failed ("4 gaps" = the 4 empty seed tracks). "Finish what is already
+    # here" needs a HERE — an empty project refuses honestly, mutates nothing.
+    if not any(t.get("notes") or t.get("audioClips") for t in song.get("tracks", [])):
+        print(f"[finish] nothing to finish - every track in {name} is empty. "
+              "MAKE a track first (one click, free, instant), or hum one, or "
+              "tell the producer what to build - then FINISH arranges, mixes "
+              "and masters what lands.")
+        print("FINISH_JSON " + json.dumps({"out": None, "steps": [],
+              "error": "empty_project", "hint": "make_track first"}))
+        return
     steps = finish(song, genre=a.genre)
     out = re.sub(r"[^a-z0-9_]", "", a.out.lower()) if a.out else name
     json.dump(song, open(os.path.join(ROOT, "songs", f"{out}.json"), "w"), indent=1)

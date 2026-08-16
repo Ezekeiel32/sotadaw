@@ -9,6 +9,9 @@ must be followed by a `clip_wall(` call within the next 6 lines
     the caller ALWAYS walls after; its own last lift re-walls when pushed)
   - the call INSIDE _worldclass_floor (the wall's FLOOR leg, 2026-07-11:
     deterministic heal + one re-render; only ever called from clip_wall)
+  - the call INSIDE _lowend_ears_pass (wave 16: the sub-mono heal's one
+    re-render; rides loudness_recovery's entry, so the caller ALWAYS
+    walls after — the chain form is render->ears->recovery->wall)
   - the "merged" label (post-ACCEPT cherry re-render: user-approved material,
     already committed — the wall never mutates an accepted base)
 
@@ -26,7 +29,8 @@ def main():
     bad = []
     inside_wall = False
     for i, l in enumerate(lines):
-        if re.match(r"^def (clip_wall|_worldclass_floor|loudness_recovery)\b", l):
+        if re.match(r"^def (clip_wall|_worldclass_floor|loudness_recovery|"
+                    r"_lowend_ears_pass)\b", l):
             inside_wall = True
         elif re.match(r"^def \w+", l):
             inside_wall = False

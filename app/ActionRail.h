@@ -513,7 +513,7 @@ private:
             g.setGradientFill ({ skin.hot.withAlpha (0.16f), face.getTopLeft(),
                                  skin.cool.withAlpha (0.05f), face.getBottomRight(), false });
             g.fillRect (face);
-            g.setColour (skin.hot.withAlpha (0.45f));
+            g.setColour (skin.hot.withAlpha (0.248f));
             g.drawRoundedRectangle (face.reduced (0.5f), 5.0f, 1.0f);
             g.setColour (theme::text.withAlpha (0.94f));
             g.setFont (theme::ui (10.5f, juce::Font::bold));

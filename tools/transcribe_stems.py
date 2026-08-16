@@ -472,9 +472,28 @@ def other_notes(path, bpm, key=None, max_notes=None):
             notes = midi_polish.polish(notes + add, role="melodic", bpm=bpm,
                                        key=key, max_notes=max_notes,
                                        grid=0.125, tol=0.05)
-    rec = {"engine": "basic-pitch(tuned+salvage)", "notes": len(notes),
+    engine = "basic-pitch(tuned+salvage)"
+    cov = _coverage(notes, db, bpm)
+    if cov < 0.45:
+        # THE DEEP LISTEN (2026-07-15, the goldenbrown piano part): a quiet
+        # or washy part under-triggers the tuned thresholds globally, not
+        # just in the salvage holes (43%-active 6s piano: coverage 0.32).
+        # One full second listen at lower thresholds, merged through the
+        # same polish, kept only when coverage genuinely rises (fidelity
+        # verified on the source lane: 58.8 -> 62.9% spectral, env_corr
+        # 0.63 -> 0.70). Dust stays controlled by polish caps + the court.
+        _, _, ev3 = predict(path, onset_threshold=0.28, frame_threshold=0.22,
+                            minimum_note_length=60, minimum_frequency=55.0)
+        deep = midi_polish.polish(notes + events_to_notes(ev3, min_amp=0.08),
+                                  role="melodic", bpm=bpm, key=key,
+                                  max_notes=max_notes, grid=0.125, tol=0.05)
+        cov2 = _coverage(deep, db, bpm)
+        if cov2 >= cov + 0.08:
+            notes, cov = deep, cov2
+            engine += "+deep"
+    rec = {"engine": engine, "notes": len(notes),
            "salvaged": salvaged,
-           "coverage": round(_coverage(notes, db, bpm), 3)}
+           "coverage": round(cov, 3)}
     return notes, rec
 
 def tatum_wants_double(drums_wav, bpm, min_events=64, occupancy=0.22):

@@ -169,6 +169,60 @@ def main():
     check("(studio) MAKE: psytrance" in ch.conversation_block(S8, now=NOW),
           "event rows render as (studio) lines")
 
+    # -------- search(): whole-history recall across conversations
+    S9 = "searchable"
+    ch.append(S9, "user", "make the bass darker and rounder", t=T0)
+    ch.append(S9, "agent", "lowered the bass filter to 400Hz", t=T0 + 10)
+    ch.append(S9, "user", "the hats are too loud", t=T0 + 20)
+    with open(os.path.join(ch.chat_dir(), f"{S9}.conv"), "w") as f:
+        f.write("v2")                      # a side conversation exists too
+    ch.append(S9, "user", "actually make the bass a sub sine", t=T0 + 30)
+    hits = ch.search(S9, "bass")
+    check(len(hits) == 3 and all("bass" in h for h in hits),
+          "search sweeps ALL conversations of the song")
+    check(any("[conv v2]" in h for h in hits),
+          "side-conversation hits carry their conv id")
+    check(ch.search(S9, "bass")[0].count("bass") >= 1
+          and not ch.search(S9, "theremin"), "no-match = empty, never an error")
+    check(not ch.search(S9, "") and not ch.search(S9, "a"),
+          "empty/1-char queries return nothing (no accidental full dumps)")
+    two = ch.search(S9, "bass bass darker")
+    check(two and "darker" in two[0],
+          "term frequency ranks the densest row first")
+    check(not ch.search("no_such_song_xyz", "bass"),
+          "unknown song = empty, never raises")
+
+    # THE PASTE SURVIVES (2026-08-02, untitled_65): a user paste carrying
+    # DATA (tab/chart/grid) stores structure-preserved past the 700 cap —
+    # the flat cap + one-line fence once destroyed a banjo chart, and after
+    # a Stop the user's transcription was unrecoverable by search.
+    S10 = "_ch_paste"
+    staff = ("  Eb|--0--------2p0----------------|--4--4--|\n"
+             "  C |--0-----0----------0--2h3-----|--0--0--|\n"
+             "  G |--1--1----------1----------1--|--2--2--|\n")
+    chart = ("here is the whole chart, land it exactly\n\n"
+             "  bars 3-4  -  main vamp\n" + staff) * 12
+    r = ch.append(S10, "user", chart, t=T0)
+    check(r and len(r["text"]) > 2000 and "\n" in r["text"]
+          and "Eb|--0--------2p0" in r["text"],
+          "artifact paste stores structure-preserved past the flat cap")
+    r2 = ch.append(S10, "user", "warmer and rounder please " * 60, t=T0 + 1)
+    check(r2 and len(r2["text"]) == 700 and "\n" not in r2["text"],
+          "plain long asks still cap at 700 one-line (the diet holds)")
+    evil = "my chart​‮ sneak\n" + staff
+    r3 = ch.append(S10, "user", evil, t=T0 + 2)
+    check(r3 and "​" not in r3["text"] and "‮" not in r3["text"]
+          and "Eb|" in r3["text"],
+          "invisibles die inside a preserved paste (fence law intact)")
+    got = ch.search(S10, "vamp chart")
+    check(got and "user pasted:" in got[0] and "Eb|--0--------2p0" in got[0]
+          and len(got[0]) > 1500,
+          "search returns the paste with its lines (recall = recovery)")
+    blk = ch.conversation_block(S10)
+    check(len(blk) <= ch.BLOCK_CAP + 200
+          and all(len(ln) < 400 for ln in blk.splitlines()),
+          "the prompt block stays flattened + dieted despite stored structure")
+
     n = len(FAILS)
     print(f"\n== CHRONICLE BATTERY: {'ALL GREEN' if n == 0 else f'{n} FAILURE(S)'} ==")
     for f in FAILS:

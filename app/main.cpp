@@ -20,6 +20,7 @@
 #include "SongLoader.h"
 #include "EditDelta.h"     // hidden delta-null verb: THE ENGINE DELTA's proof organ
 #include "PluginFaces.h"   // m1 faces: paint every plugin face offscreen (agent eyes)
+#include "ScoreEngrave.h"  // score-probe: engraving census for tools/score_battery.py (SCORE)
 
 const char* FaustInstrumentPlugin::xmlTypeName = "faustInstrument";
 const char* SpectralVoicePlugin::xmlTypeName = "spectralVoice";
@@ -743,6 +744,15 @@ int main (int argc, char** argv)
                        std::cout << "[m1] resave ok -> " << out.getFullPathName() << "\n";
                        return 0;
                    }) (juce::File (argv[2]), juce::File (argv[3]))
+                 : cmd == "score-probe" && argc >= 3 ? ([] (const juce::File& in)
+                   {   // SCORE: engrave the song and print the machine census (battery food)
+                       sotadaw::Song song;
+                       if (! sotadaw::parseSong (in, song)) return 1;
+                       score::Options opt;
+                       auto mo = score::buildModel (song, opt);
+                       std::cout << "SCORE_JSON " << juce::JSON::toString (score::census (mo), true) << "\n";
+                       return 0;
+                   }) (juce::File (argv[2]))
                  : cmd == "render" && argc >= 4 ? renderSong (juce::File (argv[2]), juce::File (argv[3]))
                  : cmd == "delta-null" && argc >= 6 ? deltaNull (juce::File (argv[2]), juce::File (argv[3]),
                                                                 juce::File (argv[4]), juce::File (argv[5]))

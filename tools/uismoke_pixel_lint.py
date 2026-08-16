@@ -87,6 +87,21 @@ def check_glass(path):
     ok(rb > 0.62, f"composing glass edge is VIOLET: R/B {rb:.3f} > 0.62 (accentB ~0.671; frame-0 blue ~0.565)")
 
 
+def check_hear_retarget(full_path, retarget_path):
+    """THE RETARGET LAW (2026-07-17, 'the previous project's bar'): after
+    HearStrip::clear(new_identity) the OLD tensor's heat must be GONE from the
+    pixels (dormant well ~ near-dark) while the full tensor before it reads hot.
+    Same luminance detector as the badges; thresholds calibrated on the real
+    rig frames (full ~ >8%, retarget dormant ~ <1.5%)."""
+    ff, fsz = badge_lit_fraction(full_path)
+    rf, rsz = badge_lit_fraction(retarget_path)
+    ok(fsz == (900, 46) and rsz == (900, 46),
+       f"hear strip pngs are 900x46 (got {fsz} / {rsz} — rig scene changed, recalibrate)")
+    ok(ff > 0.05, f"full tensor reads HOT: {ff:.4%} lit (the strip painted its subject)")
+    ok(rf < 0.015, f"retargeted strip DROPPED the old tensor: {rf:.4%} lit < 1.5% (stale-bar bug reads ~full-hot)")
+    ok(rf > 0.0001, f"retargeted strip still wears an identity chip: {rf:.4%} lit > 0 (not a black void)")
+
+
 # ---------------------------------------------------------------- selftest
 def selftest():
     from PIL import Image
@@ -122,6 +137,26 @@ def selftest():
         ok(nb > 500 and rbb < 0.62, f"selftest: blue edge caught (R/B {rbb:.3f}, n={nb})")
         ok(nv > 500 and rbv > 0.62, f"selftest: violet edge passes (R/B {rbv:.3f}, n={nv})")
 
+        # hear-retarget signatures: a STALE bar (old tensor still hot) vs a
+        # dormant well wearing only the identity chip
+        stale = Image.new("RGB", (900, 46), (8, 9, 16))
+        for y in range(14, 40):
+            for x in range(10, 890):
+                if (x // 6) % 2 == 0:
+                    stale.putpixel((x, y), (138, 77, 255))
+        sp = os.path.join(td, "stale.png")
+        stale.save(sp)
+        dorm = Image.new("RGB", (900, 46), (8, 9, 16))
+        for y in range(8, 11):                        # the dim chip: real rig frame
+            for x in range(8, 64):                    # measures 0.454% lit (2026-07-17)
+                dorm.putpixel((x, y), (52, 46, 84))
+        dp = os.path.join(td, "dorm.png")
+        dorm.save(dp)
+        fs, _ = badge_lit_fraction(sp)
+        fd, _ = badge_lit_fraction(dp)
+        ok(fs > 0.015, f"selftest: stale bar signature reads HOT ({fs:.4%} — the detector would catch it)")
+        ok(0.0001 < fd < 0.015, f"selftest: dormant+chip signature reads quiet-but-present ({fd:.4%})")
+
 
 # ---------------------------------------------------------------- main
 def main():
@@ -137,6 +172,8 @@ def main():
                 if not FAILS:
                     check_badges(os.path.join(out, "surgical_badges.png"))
                     check_glass(os.path.join(out, "phantom_glass.png"))
+                    check_hear_retarget(os.path.join(out, "hear_full.png"),
+                                        os.path.join(out, "hear_retarget.png"))
     n = len(FAILS)
     print(f"pixel lint: {'GREEN' if n == 0 else 'RED'} ({CHECKS[0] - n}/{CHECKS[0]} checks)")
     return 1 if FAILS else 0

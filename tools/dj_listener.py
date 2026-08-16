@@ -114,6 +114,123 @@ def listen(feats, hop):
     return verdicts
 
 
+def deck_energy(x, sr):
+    """W50 (item 164): a real 1-10 ENERGY score, decoupled from BPM —
+    a 128 melodic-house deck and a 128 peak-techno deck must rank
+    differently. Composite of level, onset density, low-end weight and
+    brightness on CALIBRATED ABSOLUTE ranges (scores compare across
+    decks; per-deck normalization would erase exactly the differences
+    the planner needs). Pure numpy, offline-cheap."""
+    if x is None or len(x) < sr:
+        return None
+    # 50ms sub-frame rms ladder — onsets + activity live here
+    n = max(int(sr * 0.05), 1)
+    m = len(x) // n
+    if m < 8:
+        return None
+    sub = x[:m * n].reshape(m, n)
+    r = np.sqrt(np.mean(sub ** 2, axis=1))
+    rdb = 20 * np.log10(np.maximum(r, 1e-9))
+    active = rdb > -45
+    if not active.any():
+        return None
+    rms_active = float(np.median(rdb[active]))
+    # onset density: a rise >4dB over the local 100ms floor, audible
+    rises = 0
+    for i in range(2, m):
+        floor = min(rdb[i - 2], rdb[i - 1])
+        if rdb[i] > -35 and rdb[i] - floor > 4.0:
+            rises += 1
+    dens = rises / (m * 0.05)
+    # spectrum: up to 8 spaced 1s chunks (whole-deck FFTs cost too much)
+    picks = np.linspace(0, max(len(x) - sr, 0), num=min(8, max(m // 20, 1)),
+                        dtype=int)
+    specs = []
+    for p in picks:
+        seg = x[p:p + sr]
+        if len(seg) < sr // 2 or float(np.sqrt(np.mean(seg ** 2))) < 1e-4:
+            continue
+        specs.append(np.abs(np.fft.rfft(seg * np.hanning(len(seg)))))
+    if specs:
+        spec = np.mean([s[:min(len(q) for q in specs)] for s in specs],
+                       axis=0)
+        freqs = np.fft.rfftfreq((min(len(q) for q in specs) - 1) * 2,
+                                1.0 / sr)[:len(spec)]
+        centroid = float((spec * freqs).sum() / max(spec.sum(), 1e-9))
+        lowfrac = float(spec[freqs < 150].sum() / max(spec.sum(), 1e-9))
+    else:
+        centroid, lowfrac = 800.0, 0.2
+    clamp = lambda v: max(0.0, min(1.0, v))
+    score = (0.35 * clamp((rms_active + 30.0) / 22.0)
+             + 0.30 * clamp(dens / 3.0)
+             + 0.15 * clamp(lowfrac / 0.5)
+             + 0.20 * clamp((centroid - 500.0) / 3000.0))
+    return int(max(1, min(10, round(1 + 9 * score))))
+
+
+def parse_mik_energy(comment):
+    """Mixed In Key writes 'Energy 7' into the Comments tag — when the
+    pro tool already judged the deck, its number is AUTHORITATIVE
+    (r-27: skip computation)."""
+    import re
+    m = re.search(r"[Ee]nergy\s*(\d{1,2})", str(comment or ""))
+    if not m:
+        return None
+    return max(1, min(10, int(m.group(1))))
+
+
+def arc_verdicts(feats, hop=8.0, arc="peak"):
+    """W85 (r-27 item 249): GLOBAL arc verdicts on the composite-energy
+    timeline (the local kernel keeps plateau/cliff/dead-air):
+      PEAK_MISPLACED  main peak lands outside 0.5-0.85 of the set
+      MONOTONE_CLIMB  no valley before the peak (crowd fatigue)
+      NO_RELEASE      the set ENDS at its peak (journey/closer arcs
+                      resolve; 'peak' arc is exempt — ending hot is
+                      its design)
+    Emits the target arc so the heal (reorder/insert valley) is
+    deterministic."""
+    if len(feats) < 8:
+        return []
+    rms = [f["rms"] for f in feats]
+    n = len(rms)
+    # smooth to set-scale moves
+    k = max(n // 16, 1)
+    sm = [sum(rms[max(0, i - k):i + k + 1]) /
+          len(rms[max(0, i - k):i + k + 1]) for i in range(n)]
+    pk = max(range(n), key=lambda i: sm[i])
+    pos = pk / max(n - 1, 1)
+    out = []
+    if not (0.5 <= pos <= 0.9):
+        out.append(dict(kind="PEAK_MISPLACED", pos=round(pos, 2),
+                        target_arc=arc,
+                        fix="the main peak wants the last third "
+                            "(golden-section ~0.62-0.85); reorder decks "
+                            "or move the biggest record later"))
+    pre = sm[:pk + 1]
+    if len(pre) >= 4:
+        rise = max(pre) - min(pre)
+        # a valley = a dip of >=25% of the total rise before the peak
+        run_max = pre[0]
+        deepest = 0.0
+        for v in pre:
+            run_max = max(run_max, v)
+            deepest = max(deepest, run_max - v)
+        if rise > 3.0 and deepest < 0.25 * rise:
+            out.append(dict(kind="MONOTONE_CLIMB",
+                            target_arc=arc,
+                            fix="no valley before the peak — crowds "
+                                "fatigue; breathe once (a deeper cut "
+                                "2/3 in) before the final lift"))
+    if arc in ("journey", "closer", "wave") and n >= 8:
+        tail = sm[int(n * 0.9):]
+        if tail and max(tail) >= sm[pk] - 1.0:
+            out.append(dict(kind="NO_RELEASE", target_arc=arc,
+                            fix=f"a '{arc}' set must RESOLVE after the "
+                                "peak — land one cooler record before "
+                                "the end"))
+    return out
+
+
 def frames_to_feats(frames, hop=8.0):
     """THE EARS BUS LIVE LANE (E3 R3): fold the 10 Hz ears.jsonl feature frames
     into the kernel's hop windows — the SAME verdicts (PLATEAU/CLIFF/FATIGUE/

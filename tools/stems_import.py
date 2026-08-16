@@ -159,12 +159,46 @@ def _estimate_bpm_autocorr(wav_path, lo=60.0, hi=200.0):
     while bpm < 65:   bpm *= 2
     return round(float(bpm), 1), float(ac[best] / (ac[0] + 1e-12))
 
+def _remote_notes_for(wav_path, bpm, role, key):
+    """THE FORGE SEAM's pure kernel: (notes, engine) from a pre-computed
+    remote_notes sidecar, or None. Strict match law — the forge derived
+    bpm/key with the same shipped code, so any drift means the local rails
+    must listen for themselves (fail-open, battery-proven)."""
+    rn = os.path.join(os.path.dirname(os.path.abspath(wav_path)),
+                      "remote_notes", os.path.basename(wav_path) + ".json")
+    if not os.path.exists(rn):
+        return None
+    try:
+        j = json.load(open(rn))
+        if (j.get("role") == role
+                and abs(float(j.get("bpm", -1)) - float(bpm)) < 0.05
+                and (role != "melodic" or j.get("key") == key)
+                and isinstance(j.get("notes"), list)):
+            return j["notes"], j.get("engine", "remote")
+        print("[stems] remote notes stale (role/bpm/key drift) -> local rails",
+              flush=True)
+    except Exception as rex:
+        print(f"[stems] remote notes unreadable ({rex}) -> local rails",
+              flush=True)
+    return None
+
+
 def transcribe_v2(wav_path, bpm, role="melodic", key=None):
     """SPECIALIST rails first (measured on real stems — see transcribe_stems.py
     header), old basic-pitch path as the no-torch fallback. Returns
     (notes, engine_tag); the tag gates the downstream grammar priors — an fcpe
     line at 84% independent RPA doesn't want its chromatic 808 slides
     'corrected', but basic-pitch guesswork still does."""
+    # THE FORGE SEAM (tools/modal_stems.py): a remote import pre-computes these
+    # notes on cloud GPU through the SAME rails, with bpm/key derived by the
+    # shipped local code. Consume only on an exact (role, bpm, key) match —
+    # any drift falls open to the local rails below.
+    remote = _remote_notes_for(wav_path, bpm, role, key)
+    if remote is not None:
+        print(f"[stems] {role} rail: REMOTE {remote[1]} "
+              f"({len(remote[0])} notes — the forge already listened)",
+              flush=True)
+        return remote
     try:
         import transcribe_stems as ts
         if role == "bass":
@@ -172,7 +206,26 @@ def transcribe_v2(wav_path, bpm, role="melodic", key=None):
         elif role == "vocal":
             notes, rec = ts.vocal_notes(wav_path, bpm)
         else:
-            notes, rec = ts.other_notes(wav_path, bpm, key=key)
+            src = wav_path
+            # DRY TRUTH (#51) — VERIFIED NEGATIVE for this role (2026-07-15,
+            # the goldenbrown autopsy): anvuew's dereverb is a VOCAL-target
+            # cleaner; on the instrumental 'other' stem it returned ~silence
+            # (-81dB) and three imports transcribed 72 notes / 8.6% coverage
+            # out of a wall-to-wall harpsichord bed (wet stem: 999 / 66.4%).
+            # The melodic rail transcribes the WET stem. Opt back in with
+            # SOTADAW_DRYCLEAN_OTHER=1 — mel_clean's dry-twin health gate
+            # (retention in active spans) now refuses a nuked twin either way.
+            if os.environ.get("SOTADAW_DRYCLEAN_OTHER") == "1":
+                try:
+                    import mel_clean
+                    dry = mel_clean.clean_cached(wav_path, "dereverb")
+                    if dry:
+                        src = dry
+                except Exception as ce:
+                    print(f"[stems] dry-clean skipped ({ce})", flush=True)
+            notes, rec = ts.other_notes(src, bpm, key=key)
+            if src != wav_path:
+                rec["engine"] = str(rec.get("engine", "")) + "+dry"
         print(f"[stems] {role} rail: {rec}", flush=True)
         return notes, rec["engine"]
     except Exception as e:
@@ -246,6 +299,24 @@ class GpuWindow:
         import subprocess as _sp
         if _sp.run(["pgrep", "-f", "train_base_daemo[n]"],
                    stdout=_sp.DEVNULL).returncode != 0:
+            # NAME THE SQUATTER (aranyanyara_4, 2026-07-17): an orphaned bench
+            # held 4.9G, the strip just said "on cpu", and the user had to ask
+            # why the import crawled — a fallback nobody can attribute reads
+            # as "the import is broken". No pause lever for foreign jobs;
+            # naming them is the honest floor.
+            try:
+                o = _sp.run(["nvidia-smi",
+                             "--query-compute-apps=pid,name,used_memory",
+                             "--format=csv,noheader"], stdout=_sp.PIPE,
+                            text=True, timeout=10).stdout.strip()
+                if o:
+                    top = max(o.splitlines(), key=lambda l: int(
+                        l.split(",")[-1].strip().split()[0]))
+                    print(f"[stems] GPU held by a foreign job ({top.strip()})"
+                          f" — no pause lever for it, CPU path "
+                          f"({free}MB free, need {self.need}MB)", flush=True)
+            except Exception:
+                pass
             return False                       # VRAM is full but not by the daemon
         open(DAEMON_PAUSE, "w").close()
         self.owned = True
@@ -281,6 +352,26 @@ def _stem_audible(path, peak_floor_db=-40.0, rms_floor_db=-55.0):
     peak = float(np.max(np.abs(x)) + 1e-12)
     rms = float(np.sqrt((x ** 2).mean()) + 1e-12)
     return 20 * math.log10(peak) > peak_floor_db and 20 * math.log10(rms) > rms_floor_db
+
+def _assist_ok(device):
+    """THE MICROSCOPE IS THE DEFAULT (2026-07-15, Chezy: other = 'many
+    instruments... more than one lead' and the MIDI must represent them):
+    htdemucs_6s runs on every CUDA import — one extra ~30-60s GPU pass buys
+    dedicated guitar/piano lanes. It was quality==max-only before, so the
+    default product never decomposed 'other' at all. CPU boxes still skip
+    (a second demucs pass on the slow rung doubles a 20-40min import);
+    SOTADAW_6S=1 forces, SOTADAW_NO_6S=1 kills."""
+    if os.environ.get("SOTADAW_NO_6S") == "1":
+        return False
+    return device == "cuda" or os.environ.get("SOTADAW_6S") == "1"
+
+
+def _other_family(nm):
+    """Lane names born from the harmonic bucket ('other' + 6s parts + their
+    stream splits) — the chord prior and the level law both need the family."""
+    return (nm.split("_")[0] in ("other", "guitar", "piano", "keys")
+            and nm.endswith(("_sketch", "_lead", "_pad", "_chords")))
+
 
 def six_stem_assist(stems, stems_dir):
     """THE HARMONIC MICROSCOPE: htdemucs_6s re-listens to the (re-summed) mix
@@ -515,10 +606,11 @@ def refine_vocals_roformer(stems, audio_path, name, device):
         print(f"[stems] roformer: refining vocals on {len(x)/sr:.0f}s "
               f"(demucs collapses on layered vocals; roformer holds ~13dB)…",
               flush=True)
-        voc, _inst = mr.separate_vocals(x, sr, num_overlap=2,
-                                        progress=lambda i, n: print(
-                                            f"\r[stems] roformer {i}/{n}", end="",
-                                            flush=True))
+        def _prog(i, n):
+            _hb("refining vocals (roformer)", 0.41 + 0.03 * i / max(1, n),
+                f"chunk {i}/{n}")
+            print(f"\r[stems] roformer {i}/{n}", end="", flush=True)
+        voc, _inst = mr.separate_vocals(x, sr, num_overlap=2, progress=_prog)
         print(flush=True)
         sf.write(voc_path, voc, sr, subtype="FLOAT")    # overwrite demucs vocals
                                                         # (float: tails survive)
@@ -569,10 +661,11 @@ def roformer_vocals_first(audio_path, stems_dir, work):
                 return voc_path, inst_path
         print(f"[stems] clean split: roformer vocals FIRST on {len(x)/sr:.0f}s "
               f"(demucs will only ever hear the instrumental)…", flush=True)
-        voc, _inst = mr.separate_vocals(x, sr, num_overlap=2,
-                                        progress=lambda i, n: print(
-                                            f"\r[stems] roformer {i}/{n}", end="",
-                                            flush=True))
+        def _prog(i, n):
+            _hb("isolating vocals (roformer)", 0.05 + 0.15 * i / max(1, n),
+                f"chunk {i}/{n} — the clean split's first pass")
+            print(f"\r[stems] roformer {i}/{n}", end="", flush=True)
+        voc, _inst = mr.separate_vocals(x, sr, num_overlap=2, progress=_prog)
         print(flush=True)
         sf.write(voc_path, voc, sr, subtype="FLOAT")
         sf.write(inst_path, x - voc, sr, subtype="FLOAT")   # exact complement
@@ -590,6 +683,7 @@ def import_song(audio_path, name, quality="fast", with_midi=True, bpm_override=N
     audio_path = os.path.abspath(audio_path)
     if not os.path.exists(audio_path):
         raise SystemExit(f"no such file: {audio_path}")
+    _hb("reading audio", 0.02, os.path.basename(audio_path))
     # SEPARATION MODEL LAW: htdemucs_ft beats plain htdemucs by ~0.4-0.6dB
     # SDR on every stem (published + our ground-truth) at 4x the compute —
     # nothing on a CUDA box (~1min), real on a Pi. So the DEFAULT is
@@ -604,6 +698,85 @@ def import_song(audio_path, name, quality="fast", with_midi=True, bpm_override=N
     stems_dir = os.path.join(SONGS, f"{name}_stems")
     work = os.path.join(stems_dir, "_demucs")
     os.makedirs(stems_dir, exist_ok=True)
+
+    # THE STEM FORGE (Chezy 2026-08-02 "fully serverless GPU pipeline for the
+    # audio to stem conversion, extreme speed"): SOTADAW_STEMS_REMOTE=1 runs
+    # every heavy stage on cloud H100s first (tools/modal_stems.py) and
+    # pre-fills the EXACT caches the stages below already check — the local
+    # run becomes assembly + courts. Fail-open: any forge error (no token, no
+    # net, cloud hiccup) keeps the local rails untouched.
+    # THE DEFAULT IS THE FORGE (Chezy 2026-08-03, watching a UI-door import
+    # crawl "htdemucs_ft on cpu... CPU?!"): the UI spawns stems_import.py
+    # DIRECTLY (ui_main), bypassing the daw_mcp door — so the gate lives
+    # HERE, under every door there is. Token present = ride the H100s;
+    # SOTADAW_STEMS_REMOTE=0 or SOTADAW_NO_FORGE=1 opts out; =1 forces.
+    _remote_env = os.environ.get("SOTADAW_STEMS_REMOTE", "")
+    _forge_on = (_remote_env == "1"
+                 or (_remote_env != "0"
+                     and os.environ.get("SOTADAW_NO_FORGE") != "1"
+                     and os.path.exists(os.path.expanduser("~/.modal.toml"))))
+    if _forge_on and all(os.path.exists(os.path.join(stems_dir, f"{s}.wav"))
+                         for s in ("drums", "bass", "other", "vocals")):
+        # ALREADY FORGED (Chezy's double-click, 2026-08-03): the stems are on
+        # disk — the reuse law below consumes them; re-forging would pay the
+        # cloud twice for the same bytes.
+        print("[stems] forge skip: 4 stems already local -> reuse law",
+              flush=True)
+        _forge_on = False
+    # THE DISK COURT (2026-08-08, root hit 100% mid-import: zero-byte
+    # forge_status, unplaced note seams, and last week a truncated drums.wav
+    # crashed a whole run): imports write GBs — say so BEFORE the damage.
+    try:
+        _free_gb = shutil.disk_usage(stems_dir).free / 2 ** 30
+        if _free_gb < 5.0:
+            print(f"[stems] DISK NEARLY FULL: {_free_gb:.1f}GB free — an "
+                  f"import writes GBs; truncated writes corrupt stems. "
+                  f"Free space.", flush=True)
+            _hb("DISK NEARLY FULL", 0.02,
+                f"{_free_gb:.1f}GB free — imports write GBs; free space")
+    except Exception:
+        _free_gb = 999.0
+    if _forge_on and _free_gb < 2.0:
+        print(f"[stems] forge refused: {_free_gb:.1f}GB free cannot hold the "
+              f"stem downloads (would truncate) -> local rails", flush=True)
+        _forge_on = False
+    if _forge_on:
+        _fstat = os.path.join(stems_dir, "forge_status.json")
+        try:
+            import modal_stems
+            _hb("forging stems (cloud GPU)", 0.03, "serverless H100 rail")
+            m = modal_stems.prewarm(audio_path, stems_dir, hb=_hb)
+            if m:
+                try:
+                    # stamp failures (ENOSPC) must never re-read as a forge
+                    # failure — the placement above already succeeded
+                    json.dump({"state": "forged", "cloud_wall_s":
+                               m["timings"]["total"], "gpu": m.get("gpu"),
+                               "t": time.time()}, open(_fstat, "w"))
+                except Exception as se:
+                    print(f"[stems] forge status stamp failed ({se}) — "
+                          f"the forge itself SUCCEEDED (disk full?)",
+                          flush=True)
+                if all(os.path.exists(os.path.join(stems_dir, "6s", f"{s}.wav"))
+                       for s in ("guitar", "piano", "other")):
+                    os.environ["SOTADAW_6S"] = "1"   # consume the pre-filled
+                    # microscope cache even on the CPU device path
+        except Exception as fe:
+            # NAME THE FAILURE (the squatter law, cloud edition): a silent
+            # fallback reads as "the import is broken" 40 minutes later.
+            # The dock banner, the log and the status file all carry the WHY
+            # and the honest local expectation.
+            why = f"{type(fe).__name__}: {str(fe)[:140]}"
+            print(f"[stems] FORGE DOWN ({why}) -> local rails "
+                  f"(the slow rung: expect minutes on GPU, tens of minutes "
+                  f"on a busy CPU)", flush=True)
+            _hb("FORGE DOWN -> local rails", 0.04,
+                f"{why} — continuing locally, the slow rung")
+            try:
+                json.dump({"state": "fallback", "why": why,
+                           "t": time.time()}, open(_fstat, "w"))
+            except Exception:
+                pass
 
     # REUSE LAW (speed): demucs separation is the expensive GPU pass (the whole
     # point of the retry path in ghost_e2e crashes) — a re-import of the SAME
@@ -624,8 +797,7 @@ def import_song(audio_path, name, quality="fast", with_midi=True, bpm_override=N
             cached = refine_vocals_roformer(cached, audio_path, name, device)
             return build_session(cached, audio_path, name, with_midi, bpm_override,
                                  0.0, t0, device,
-                                 assist_ok=(quality == "max" and (device == "cuda"
-                                            or os.environ.get("SOTADAW_6S") == "1")),
+                                 assist_ok=_assist_ok(device),
                                  spectral_mode=spectral_mode,
                                  instruments=instruments)
         finally:
@@ -677,8 +849,48 @@ def import_song(audio_path, name, quality="fast", with_midi=True, bpm_override=N
         env = dict(os.environ)
         if lowmem:
             env["PYTORCH_NO_CUDA_MEMORY_CACHING"] = "1"   # 2GB-class boxes (demucs docs)
-        p = _sp.run(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT, text=True, env=env)
-        return p.returncode, p.stdout or ""
+        # STREAMED, NOT CAPTURED (Chezy 2026-07-16 "progress says STARTING till
+        # the end"): demucs prints tqdm bars (one per model in its bag) — relay
+        # their percent into the separation heartbeat window so the dock's bar
+        # rides the actual GPU work. \r-updates never form lines: read raw
+        # chunks and split on \r AND \n. Binary read1 never blocks waiting to
+        # fill a buffer on a trickling pipe.
+        import re as _re
+        bag = 4 if (mdl or model) == "htdemucs_ft" else 1
+        p = _sp.Popen(cmd, stdout=_sp.PIPE, stderr=_sp.STDOUT, env=env)
+        lines, buf = [], b""
+        done_bars, last_pc = 0, 0
+        while True:
+            ch = p.stdout.read1(4096)
+            if not ch:
+                break
+            buf += ch
+            while True:
+                cr, nl = buf.find(b"\r"), buf.find(b"\n")
+                cut = min(x for x in (cr, nl) if x >= 0) if (cr >= 0 or nl >= 0) else -1
+                if cut < 0:
+                    break
+                seg, buf = buf[:cut], buf[cut + 1:]
+                text = seg.decode("utf-8", "replace")
+                if text.strip():
+                    lines.append(text)
+                    if len(lines) > 400:       # the retry court reads a TAIL, not a saga
+                        del lines[:200]
+                pcs = _re.findall(r"(\d{1,3})%\|", text)
+                if pcs:
+                    pc = min(100, int(pcs[-1]))
+                    if pc < last_pc - 30:      # the bag's next model restarted its bar
+                        done_bars = min(bag - 1, done_bars + 1)
+                    last_pc = pc
+                    frac = (done_bars + pc / 100.0) / bag
+                    _hb("separating stems", 0.20 + 0.20 * frac,
+                        f"{mdl or model} on {dev}"
+                        + (" (low-mem retry)" if lowmem else ""))
+        p.wait()
+        tail = buf.decode("utf-8", "replace").strip()
+        if tail:
+            lines.append(tail)
+        return p.returncode, "\n".join(lines)
     def _why(rc, out):
         if rc < 0 or rc == 137:
             return "OOM-killed by the system (box under load)"
@@ -724,12 +936,159 @@ def import_song(audio_path, name, quality="fast", with_midi=True, bpm_override=N
         t_sep = time.time() - t0
         return build_session(stems, audio_path, name, with_midi, bpm_override,
                              t_sep, t0, device,
-                             assist_ok=(quality == "max" and (device == "cuda"
-                                        or os.environ.get("SOTADAW_6S") == "1")),
+                             assist_ok=_assist_ok(device),
                              spectral_mode=spectral_mode,
                              instruments=instruments)
     finally:
         gw.release()                           # the daemon resumes no matter what
+
+
+def melodic_lanes(part, wav_in, notes, fallback_src, name, bpm):
+    """THE STREAM SPLIT landing (F2, docs/IMPORT_FINALE.md) — true lengths
+    FIRST, then voices. Pass 1 builds a kit for the WHOLE part: its
+    calibration measures the TRUE ring lengths (the sustain law, F1
+    poly-bounded). THE SPLIT judges on those true lengths — raw
+    transcription lens read everything as fast surface and nothing ever
+    split (the goldenbrown re-heal receipt). A decisive split re-kits each
+    stream from ITS OWN notes (a pad lane rings sustains, a lead lane
+    plucks attacks); an indecisive part lands pass 1's kit as one lane.
+    Returns finished track dicts; shared by build_session and
+    other_decompose so the paths cannot drift."""
+    base_src, base_notes = fallback_src, notes
+    try:
+        import source_kit
+        pk, pn = source_kit.build_pitched_kit(
+            wav_in, notes, f"{name}_{part}", bpm=bpm, role="melodic")
+        if pk:
+            base_src = {"kind": "sample", "kit": pk}
+            base_notes = pn
+            print(f"[stems] pitched kit: kits/{pk} ({len(pn)} real-pitch "
+                  f"notes, the record's own timbre)", flush=True)
+    except Exception as pe:
+        print(f"[stems] pitched kit skipped for {part} ({pe}) "
+              f"-> generic voice", flush=True)
+    try:
+        import note_streams
+        streams = note_streams.split_streams(base_notes)
+    except Exception:
+        streams = [("all", base_notes)]
+    if len(streams) <= 1:
+        return [{"name": f"{part}_sketch", "source": base_src,
+                 "gainDb": -1.5, "muted": False, "notes": base_notes}]
+    print(f"[stems] stream split: {part} {len(base_notes)} notes -> "
+          + " + ".join(f"{nm} {len(ns)}" for nm, ns in streams), flush=True)
+    lanes = []
+    for nm, ns in streams:
+        lane = f"{part}_{nm}"
+        use_src, use_notes = base_src, ns      # pass-1 kit covers the range
+        try:
+            import source_kit
+            pk2, pn2 = source_kit.build_pitched_kit(
+                wav_in, ns, f"{name}_{lane}", bpm=bpm, role="melodic")
+            if pk2:
+                use_src = {"kind": "sample", "kit": pk2}
+                use_notes = pn2
+                print(f"[stems] pitched kit: kits/{pk2} ({len(pn2)} notes)",
+                      flush=True)
+        except Exception as pe:
+            print(f"[stems] stream kit skipped for {lane} ({pe}) "
+                  f"-> the part kit", flush=True)
+        lanes.append({"name": lane, "source": use_src, "gainDb": -1.5,
+                      "muted": False, "notes": use_notes})
+    return lanes
+
+
+def land_drum_lanes(drums_wav, name, bpm):
+    """The drum rail, one kernel for BOTH homes (F4, docs/IMPORT_FINALE.md):
+    transcribe (physical pieces when drumsep may run / is cached, band lanes
+    otherwise) -> runs court -> source kit -> exemplar assignment -> named
+    AWARE lanes. Returns (drum_tracks, docket). build_session calls it at
+    import; tools/import_finisher.py calls it again with pieces cached to
+    upgrade the landed lanes — same code, the paths cannot drift."""
+    docket = []
+    dn = None
+    try:
+        import transcribe_stems as ts
+        dn, drec = ts.drum_notes(drums_wav, bpm)
+        print(f"[stems] drums rail: {drec}", flush=True)
+    except Exception as de:
+        print(f"[stems] drums v2 failed ({type(de).__name__}: {de}) "
+              f"-> 3-band fallback", flush=True)
+        import midi_polish
+        dn = midi_polish.drum_sketch(drums_wav, bpm)
+    if dn and os.environ.get("SOTADAW_NO_COURT") != "1":
+        # PLAUSIBILITY COURT, runs judge (Chezy live 2026-07-11: "no way
+        # it'll be 32 beats of a bass drum unless it's a double bass — 100%
+        # confident"): dense same-family runs must PROVE their family on the
+        # stem's own slices. Runs BEFORE the source kit builds, so the kit
+        # is built from true labels (a mislabeled hat roll would otherwise
+        # donate its slices to the KICK voice).
+        try:
+            import import_court
+            n0 = len(dn)
+            dn, crr = import_court.court_runs(dn, drums_wav, bpm)
+            docket += crr
+            for r_ in crr:
+                print(f"[court] {import_court.fmt(r_)}", flush=True)
+            if len(dn) != n0:
+                print(f"[court] drums {n0} -> {len(dn)} hits "
+                      f"(bleed doubles dropped)", flush=True)
+        except Exception as ce_:
+            print(f"[stems] runs court skipped ({ce_})", flush=True)
+    drum_tracks = []
+    if dn and len(dn) >= 16:
+        # SOURCE KIT (Chezy's identity law): the sketch triggers the
+        # record's OWN hits — per-lane exemplars sliced out of the
+        # stem — never a stock GM kit. gm_drums stays the fallback
+        # only when the stem yields too few clean lanes.
+        drum_kit = "gm_drums"
+        try:
+            import source_kit
+            sk = source_kit.build_source_kit(drums_wav, dn,
+                                             f"{name}_drums", bpm=bpm)
+            if sk:
+                drum_kit = sk
+                print(f"[stems] source kit: kits/{sk} "
+                      f"(the record's own hits)", flush=True)
+                try:                   # wave 2: each hit plays the
+                    mv = source_kit.assign_exemplars(   # exemplar
+                        drums_wav, dn, sk, bpm=bpm)     # that IS
+                    if mv:                              # its moment
+                        print(f"[stems] exemplar assignment: {mv} "
+                              f"hits -> alt voices", flush=True)
+                except Exception as ae:
+                    print(f"[stems] exemplar assign skipped ({ae})",
+                          flush=True)
+        except Exception as ke:
+            print(f"[stems] source kit skipped ({ke}) -> gm_drums",
+                  flush=True)
+        # DRUM AWARENESS (Chezy live, 2026-07-09: "the drums arent
+        # aware of what sound is hi-hat, bass, etc"): every voice
+        # gets its OWN NAMED track — Kick/Snare/Hats/Perc/Cymbals —
+        # all triggering the record's own kit, so repositioning a
+        # hat never means hunting pitches inside a wall of hits.
+        lane_of = lambda p: ("Kick" if p in (33, 35, 36) else
+                             "Snare" if p in (34, 37, 38, 40) else
+                             "Hats" if p in (26, 41, 42, 44, 46) else
+                             "Cymbals" if p in (49, 51, 52, 55, 57, 59)
+                             else "Perc")
+        # families include source_kit.ALT_GM alt voices (wave 2):
+        # 33/35 kick, 34/40 snare, 41/44 closed-hat, 26 open-hat
+        lanes = {}
+        for n_ in dn:
+            lanes.setdefault(lane_of(int(n_["pitch"])), []).append(n_)
+        counts = []
+        for lname in ("Kick", "Snare", "Hats", "Perc", "Cymbals"):
+            if lanes.get(lname):
+                drum_tracks.append({"name": lname,
+                                    "source": {"kind": "sample",
+                                               "kit": drum_kit},
+                                    "gainDb": -1.5, "muted": False,
+                                    "notes": lanes[lname]})
+                counts.append(f"{lname} {len(lanes[lname])}")
+        print(f"[stems] drums AWARE: {' / '.join(counts)} "
+              f"({len(dn)} hits on kits/{drum_kit})", flush=True)
+    return drum_tracks, docket
 
 
 def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
@@ -737,7 +1096,21 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
                   spectral_mode=None, instruments="original"):
     t0 = t0 or time.time()
     court_docket = []                  # PLAUSIBILITY COURT receipts (both sites)
+    # STAGE RECEIPTS (F4.1, docs/IMPORT_FINALE.md): "45 minutes" must never
+    # be a mystery again — every stage records its wall seconds, the whole
+    # ledger lands in <stems>/import_stages.json with the device decision.
+    stage_secs = {"separation": round(t_sep, 1)}
+    _t_last = [time.time()]
+
+    def _ckpt(stage):
+        now = time.time()
+        stage_secs[stage] = round(stage_secs.get(stage, 0.0)
+                                  + (now - _t_last[0]), 1)
+        _t_last[0] = now
+        print(f"[stage] {stage}: {stage_secs[stage]}s", flush=True)
+
     a2 = load_analyze2()
+    _hb("tempo + key", 0.44, "")
     if bpm_override:
         bpm, conf = float(bpm_override), 1.0
     else:
@@ -827,33 +1200,65 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
 
     sketches = 0
     engines = {}
+    defer_pieces = False               # F4: drum microscope -> finisher?
     if with_midi:
         # THE HARMONIC MICROSCOPE: when htdemucs_6s can hear real guitar/piano
         # inside 'other', transcribe THOSE on dedicated lanes and give the
         # other_sketch the cleaner residual. Audio lanes stay 4-stem truth.
+        # THE DECOMPOSITION LAW (2026-07-15): when the parts take EVERYTHING
+        # (residual inaudible — goldenbrown: guitar -26dB + piano -36dB left
+        # a -68dB residual), other_sketch must NOT be born from the full wet
+        # stem — it would duplicate the parts as a third blurred lane.
         assist_lanes = []
         other_src = stems.get("other")
+        skip_other = False
         try:
             if not assist_ok:
-                raise RuntimeError("gpu-starved box: 6s assist skipped (SOTADAW_6S=1 forces)")
+                raise RuntimeError(
+                    "no CUDA for the 6s pass (SOTADAW_6S=1 forces, "
+                    "SOTADAW_NO_6S=1 kills)")
+            _hb("harmonic microscope (6-stem)", 0.44,
+                "listening for real guitar/piano inside 'other'")
             assist = six_stem_assist(stems, os.path.dirname(next(iter(stems.values()))))
             for s in ("guitar", "piano"):
                 if s in assist and _stem_audible(assist[s]):
                     assist_lanes.append((s, assist[s]))
-            if assist_lanes and assist.get("other") and _stem_audible(assist["other"]):
-                other_src = assist["other"]
-                print(f"[stems] 6s assist: {'+'.join(s for s, _ in assist_lanes)} "
-                      f"heard -> dedicated lanes + residual other", flush=True)
+            if assist_lanes:
+                if assist.get("other") and _stem_audible(assist["other"]):
+                    other_src = assist["other"]
+                    print(f"[stems] 6s microscope: "
+                          f"{'+'.join(s for s, _ in assist_lanes)} heard -> "
+                          f"dedicated lanes + residual other", flush=True)
+                else:
+                    skip_other = True
+                    print(f"[stems] 6s microscope: "
+                          f"{'+'.join(s for s, _ in assist_lanes)} heard, "
+                          f"residual ~empty -> 'other' fully decomposed",
+                          flush=True)
         except Exception as ae:
             print(f"[stems] 6s assist skipped ({type(ae).__name__}: {ae})", flush=True)
+        _ckpt("6s_microscope")
+
+        def land_melodic(part, wav_in, notes, fallback_src, engine_tag):
+            """Delegates to melodic_lanes (module kernel, F2): TRUE lengths
+            first (pass-1 kit measures the ring), split on them, per-stream
+            kits. Registers engines for the chord-prior gate."""
+            nonlocal sketches
+            for tr in melodic_lanes(part, wav_in, notes, fallback_src,
+                                    name, bpm):
+                tracks.append(tr)
+                engines[tr["name"]] = engine_tag
+                sketches += 1
 
         sketch_src = {"bass": ({"kind": "faust", "id": "sub_clean"}, "bass"),
                       "other": ({"kind": "sample", "kit": "piano"}, "melodic"),
                       "vocals": ({"kind": "sample", "kit": "choir"}, "vocal")}
-        for stem, (src, role) in sketch_src.items():
+        for _si, (stem, (src, role)) in enumerate(sketch_src.items()):
             if stem not in stems:
                 continue
-            _hb(f"transcribing {stem}", 0.45,
+            if stem == "other" and skip_other:
+                continue                       # THE DECOMPOSITION LAW (above)
+            _hb(f"transcribing {stem}", 0.45 + 0.05 * _si,
                 "CPU rung" if device == "cpu" else "")
             print(f"[stems] transcribing {stem}…", flush=True)
             wav_in = other_src if stem == "other" else stems[stem]
@@ -869,6 +1274,27 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
                 notes = midi_polish.editable(notes, bpm=bpm)
                 print(f"[stems] editable pass: other {n0} -> {len(notes)} notes",
                       flush=True)
+                land_melodic("other", wav_in, notes, src,
+                             engines.get("other_sketch", "basic-pitch"))
+                if os.environ.get("SOTADAW_ID_LANES") == "1":
+                    try:
+                        import source_kit
+                        ik, inotes = source_kit.build_phrase_kit(
+                            wav_in, notes, f"{name}_other_id", bpm=bpm)
+                        if ik and len(inotes) >= 3:
+                            tracks.append({"name": "other_identity",
+                                           "source": {"kind": "sample",
+                                                      "kit": ik},
+                                           "gainDb": -1.5, "muted": True,
+                                           "notes": inotes})
+                            sketches += 1
+                            print(f"[stems] identity lane: kits/{ik} "
+                                  f"({len(inotes)} phrases replay the record)",
+                                  flush=True)
+                    except Exception as ie:
+                        print(f"[stems] identity lane skipped for other "
+                              f"({ie})", flush=True)
+                continue                       # streams landed the lanes
             if len(notes) >= 4:
                 # REAL-NOTES IDENTITY LAW (Chezy 2026-07-08): the roll must
                 # show THE MUSIC — real transcribed pitches — and every pitch
@@ -934,10 +1360,12 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
                               flush=True)
                 except Exception:
                     pass
+        _ckpt("transcribe_sketches")
         for s, p in assist_lanes:
             _hb(f"transcribing {s}", 0.6, "")
             print(f"[stems] transcribing {s} (6s)…", flush=True)
-            notes, engines[f"{s}_sketch"] = transcribe_v2(p, bpm, role="melodic", key=key)
+            notes, eng6 = transcribe_v2(p, bpm, role="melodic", key=key)
+            engines[f"{s}_sketch"] = eng6
             if len(notes) >= 8:
                 import midi_polish
                 n0 = len(notes)
@@ -946,95 +1374,44 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
                       flush=True)
                 src = ({"kind": "sample", "kit": "piano"} if s == "piano"
                        else {"kind": "faust", "id": "pluck"})
-                tracks.append({"name": f"{s}_sketch", "source": src, "gainDb": -1.5,
-                               "muted": False, "notes": notes})
-                sketches += 1
+                land_melodic(s, p, notes, src, eng6)
+        _ckpt("transcribe_parts")
         if "drums" in stems:
-            try:                               # band-lane drum rail (v2) with the
-                dn = None                      # old 3-band sketch as fallback
-                try:
-                    import transcribe_stems as ts
-                    dn, drec = ts.drum_notes(stems["drums"], bpm)
-                    print(f"[stems] drums rail: {drec}", flush=True)
-                except Exception as de:
-                    print(f"[stems] drums v2 failed ({type(de).__name__}: {de}) "
-                          f"-> 3-band fallback", flush=True)
-                    import midi_polish
-                    dn = midi_polish.drum_sketch(stems["drums"], bpm)
-                if dn and os.environ.get("SOTADAW_NO_COURT") != "1":
-                    # PLAUSIBILITY COURT, runs judge (Chezy live 2026-07-11:
-                    # "no way it'll be 32 beats of a bass drum unless it's a
-                    # double bass — 100% confident"): dense same-family runs
-                    # must PROVE their family on the stem's own slices. Runs
-                    # BEFORE the source kit builds, so the kit is built from
-                    # true labels (a mislabeled hat roll would otherwise
-                    # donate its slices to the KICK voice).
-                    try:
-                        import import_court
-                        n0 = len(dn)
-                        dn, crr = import_court.court_runs(dn, stems["drums"], bpm)
-                        court_docket += crr
-                        for r_ in crr:
-                            print(f"[court] {import_court.fmt(r_)}", flush=True)
-                        if len(dn) != n0:
-                            print(f"[court] drums {n0} -> {len(dn)} hits "
-                                  f"(bleed doubles dropped)", flush=True)
-                    except Exception as ce_:
-                        print(f"[stems] runs court skipped ({ce_})", flush=True)
-                if dn and len(dn) >= 16:
-                    # SOURCE KIT (Chezy's identity law): the sketch triggers the
-                    # record's OWN hits — per-lane exemplars sliced out of the
-                    # stem — never a stock GM kit. gm_drums stays the fallback
-                    # only when the stem yields too few clean lanes.
-                    drum_kit = "gm_drums"
-                    try:
-                        import source_kit
-                        sk = source_kit.build_source_kit(stems["drums"], dn,
-                                                         f"{name}_drums", bpm=bpm)
-                        if sk:
-                            drum_kit = sk
-                            print(f"[stems] source kit: kits/{sk} "
-                                  f"(the record's own hits)", flush=True)
-                            try:               # wave 2: each hit plays the
-                                mv = source_kit.assign_exemplars(   # exemplar
-                                    stems["drums"], dn, sk, bpm=bpm)  # that IS
-                                if mv:                                # its moment
-                                    print(f"[stems] exemplar assignment: {mv} "
-                                          f"hits -> alt voices", flush=True)
-                            except Exception as ae:
-                                print(f"[stems] exemplar assign skipped ({ae})",
-                                      flush=True)
-                    except Exception as ke:
-                        print(f"[stems] source kit skipped ({ke}) -> gm_drums",
-                              flush=True)
-                    # DRUM AWARENESS (Chezy live, 2026-07-09: "the drums arent
-                    # aware of what sound is hi-hat, bass, etc"): every voice
-                    # gets its OWN NAMED track — Kick/Snare/Hats/Perc/Cymbals —
-                    # all triggering the record's own kit, so repositioning a
-                    # hat never means hunting pitches inside a wall of hits.
-                    lane_of = lambda p: ("Kick" if p in (33, 35, 36) else
-                                         "Snare" if p in (34, 37, 38, 40) else
-                                         "Hats" if p in (26, 41, 42, 44, 46) else
-                                         "Cymbals" if p in (49, 51, 52, 55, 57, 59)
-                                         else "Perc")
-                    # families include source_kit.ALT_GM alt voices (wave 2):
-                    # 33/35 kick, 34/40 snare, 41/44 closed-hat, 26 open-hat
-                    lanes = {}
-                    for n_ in dn:
-                        lanes.setdefault(lane_of(int(n_["pitch"])), []).append(n_)
-                    counts = []
-                    for lname in ("Kick", "Snare", "Hats", "Perc", "Cymbals"):
-                        if lanes.get(lname):
-                            tracks.append({"name": lname,
-                                           "source": {"kind": "sample", "kit": drum_kit},
-                                           "gainDb": -1.5, "muted": False,
-                                           "notes": lanes[lname]})
-                            sketches += 1
-                            counts.append(f"{lname} {len(lanes[lname])}")
-                    print(f"[stems] drums AWARE: {' / '.join(counts)} "
-                          f"({len(dn)} hits on kits/{drum_kit})", flush=True)
+            # THE LANDING DEADLINE (F4, docs/IMPORT_FINALE.md — "45 minutes
+            # is unacceptable"): the drum-piece microscope (mdx23c, CPU
+            # BY DESIGN) costs 4-6x realtime — ~15-20 min of a 3-4 min
+            # song's import, ALL of it blocking the landing. Unless the
+            # pieces are already cached (re-import) the inline pass lands
+            # the byte-proven BAND rail now and the detached finisher
+            # (tools/import_finisher.py) re-lands the SAME kernel with
+            # pieces later — identical final state, minutes-earlier landing
+            # (THE QUALITY INVARIANT: same models, same thresholds, every
+            # stage still runs). SOTADAW_IMPORT_INLINE=1 keeps everything
+            # inline (batteries, determinism rigs).
+            pieces_cached = os.path.exists(os.path.join(
+                os.path.dirname(stems["drums"]), "drum_pieces", "kick.wav"))
+            defer_pieces = (not pieces_cached
+                            and os.environ.get("SOTADAW_IMPORT_INLINE") != "1"
+                            and os.environ.get("SOTADAW_NO_DRUMSEP") != "1")
+            if defer_pieces:
+                os.environ["SOTADAW_NO_DRUMSEP"] = "1"
+                print("[stage] drum microscope DEFERRED to the finisher "
+                      "(band lanes land now; physical pieces upgrade in "
+                      "background)", flush=True)
+            _hb("drum lanes", 0.66,
+                "band rail now" + (", physical pieces upgrade in background"
+                                   if defer_pieces else ""))
+            try:
+                dtracks, ddocket = land_drum_lanes(stems["drums"], name, bpm)
+                court_docket += ddocket
+                tracks += dtracks
+                sketches += len(dtracks)
             except Exception as de:
                 print(f"[stems] drum sketch skipped: {de}", flush=True)
+            finally:
+                if defer_pieces:
+                    os.environ.pop("SOTADAW_NO_DRUMSEP", None)
+            _ckpt("drums_rail")
 
     if "drums" in stems:                       # W11: the import FEEDS THE FACTORY —
         try:                                   # the record's timing DNA becomes a
@@ -1120,6 +1497,7 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
         except Exception as ee:
             print(f"[stems] ear picking skipped ({type(ee).__name__}: {ee}) — "
                   f"original instruments kept", flush=True)
+    _hb("structure", 0.80, "section boundaries")
     try:                                       # EARS v4b: real section boundaries
         import segment as seg                  # (Foote novelty; precision-tuned —
         witness = audio_path if audio_path.lower().endswith(".wav") \
@@ -1137,6 +1515,7 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
                       f"{[int(s['startBar']) + 1 for s in secs]}", flush=True)
     except Exception as se:
         print(f"[stems] segmentation skipped: {se}", flush=True)
+    _hb("chords + priors", 0.82, "bar-wise vote over the sketches")
     try:                                       # THE CHORD LANE on every import:
         import chordvote                       # bar-wise vote over the sketches
         ch = chordvote.chord_map(song, audio_wav=stems.get("other"), audio_bpm=bpm)
@@ -1159,8 +1538,7 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
             import midi_polish
             for t in song["tracks"]:
                 eng = engines.get(t.get("name"), "basic-pitch")
-                if t.get("name") in ("other_sketch", "piano_sketch", "guitar_sketch") \
-                        and t.get("notes"):
+                if _other_family(t.get("name", "")) and t.get("notes"):
                     n0 = len(t["notes"])
                     c0 = midi_polish.chord_consistency(t["notes"], ch, key=song.get("key"))
                     t["notes"] = midi_polish.chord_snap(t["notes"], ch, key=song.get("key"))
@@ -1179,6 +1557,7 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
     except Exception as ce:
         print(f"[stems] chord vote skipped: {ce}", flush=True)
     if os.environ.get("SOTADAW_NO_COURT") != "1":
+        _hb("plausibility court", 0.84, "key/snap/echo verdicts")
         # PLAUSIBILITY COURT, melodic judges (same live directive: "no way
         # by accident there'll be two notes off key ... no non snap to note
         # ... no echoey weird sounding music"): isolated off-key accidents
@@ -1186,7 +1565,8 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
         # die, consensus lanes lose their jitter. Every verdict receipted.
         try:
             import import_court
-            crr = import_court.hold_court(song, courts=("key", "snap", "echo"))
+            crr = import_court.hold_court(song, courts=("key", "snap", "echo",
+                                                        "length"))
             court_docket += crr
             for r_ in crr:
                 print(f"[court] {import_court.fmt(r_)}", flush=True)
@@ -1200,6 +1580,7 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
                           open(os.path.join(sdir, "court.json"), "w"), indent=1)
         except Exception:
             pass
+    _ckpt("chords_court")
     out = os.path.join(SONGS, f"{name}.json")
     json.dump(song, open(out, "w"), indent=1)
     # THE REFERENCE CIRCLE (R2): the DNA this import just computed — bpm/key
@@ -1284,6 +1665,43 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
         except Exception as ce:
             print(f"[stems] final correction skipped "
                   f"({type(ce).__name__}: {ce})", flush=True)
+        _ckpt("final_correction")
+
+    # THE GRADIENT COURT (F7, docs/IMPORT_FINALE.md — "it needs perfect loss
+    # and gradient descent for all audio", Chezy 2026-07-17): every stage
+    # above is per-lane; this one owns the SUM a human hears. Multi-res
+    # log-mel loss vs the stem-sum record, analytic descent on the lane-gain
+    # vector (the pre-master mix is linear in lane amps), real-render
+    # verify-or-revert. Balance lands BEFORE the master match owns the tone.
+    if with_midi and os.environ.get("SOTADAW_NO_MIXCOURT") != "1":
+        try:
+            _hb("mix balance", 0.92, "gradient descent on the full experience")
+            import mix_court as mxc
+            mrep = mxc.court(out)
+            if mrep and mrep.get("applied"):
+                print(f"[stems] balance: {mrep['verdict']}", flush=True)
+            song = json.load(open(out))
+        except Exception as xe:
+            print(f"[stems] mix court skipped "
+                  f"({type(xe).__name__}: {xe})", flush=True)
+        _ckpt("mix_court")
+
+    # THE MASTER MATCH (F3, docs/IMPORT_FINALE.md — "no final mastering...
+    # it needs to sound very much like the original song"): the full render
+    # is FINISHED against the record's own measured DNA — tonal tilt (M/S
+    # shelves), level (trim), true peak (the wall), width reported. Closed
+    # loop, zero tokens, receipts -> <stems>/master_match.json.
+    if with_midi and os.environ.get("SOTADAW_NO_MASTERMATCH") != "1":
+        try:
+            _hb("master match", 0.94, "the finale: tone/level/peak vs the record")
+            import master_match as mm
+            budget = float(os.environ.get("SOTADAW_IMPORT_BUDGET_S", "420"))
+            mm.match(out, iters=(3 if time.time() - t0 > budget else 4))
+            song = json.load(open(out))
+        except Exception as me:
+            print(f"[stems] master match skipped "
+                  f"({type(me).__name__}: {me})", flush=True)
+        _ckpt("master_match")
 
     # THE VOCAL MIDI RAIL (Chezy live, 2026-07-09: "ACE STUDIO HAS VOCAL MIDI,
     # SO WE CAN DO THE VOCALS WELL TOO"): the melody lane is the edit surface;
@@ -1296,13 +1714,34 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
     # sing gate saw <3GB free, proven live). The child reloads the song fresh
     # at landing and mutes vocals_sketch itself. Opt-out: SOTADAW_NO_SING=1.
     sing_bg = False
+    finisher_steps = []                # ONE detached child: landings never race
+    drum_step = None                   # CPU-patient: runs LAST (vocals first)
+    import shlex
+    py_q = shlex.quote(sys.executable)
+    if defer_pieces:
+        # F4 THE DRUM FINISHER: stamp what landed so the upgrade can refuse
+        # a stomped song, then queue the microscope pass (drumsep -> the
+        # SAME land_drum_lanes kernel -> re-correct -> master refresh).
+        try:
+            import hashlib as _dh
+            song = json.load(open(out))
+            stamp = {t["name"]: _dh.sha256(json.dumps(
+                t.get("notes", []), sort_keys=True).encode()).hexdigest()
+                for t in song["tracks"]
+                if t.get("name") in ("Kick", "Snare", "Hats", "Perc",
+                                     "Cymbals")}
+            sdir = os.path.dirname(stems["drums"])
+            json.dump(stamp, open(os.path.join(sdir, "drum_land.json"), "w"))
+            drum_step = (
+                f"{py_q} {shlex.quote(os.path.join(ROOT, 'tools', 'import_finisher.py'))} "
+                f"{shlex.quote(name)} --drums")
+        except Exception as dfe:
+            print(f"[stems] drum finisher not queued ({dfe})", flush=True)
     if with_midi and os.environ.get("SOTADAW_NO_SING") != "1":
         vt = next((t for t in song["tracks"]
                    if t.get("name") == "vocals_sketch"), None)
         if vt and len(vt.get("notes", [])) >= 4:
             try:
-                import shlex
-                import subprocess as _sp
                 song = json.load(open(out))    # spectral may have rewritten it
                 if not any(t.get("name") == "vocals_sung"
                            for t in song["tracks"]):
@@ -1313,40 +1752,44 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
                          "comment": "synth alt voice (lands in background; "
                                     "the record's own vocal_true outranks it)"})
                     json.dump(song, open(out, "w"), indent=1)
-                slog = os.path.join(ROOT, "agent", "ipc", f"sing_{name}.log")
-                os.makedirs(os.path.dirname(slog), exist_ok=True)
                 # THE FINISHER CHAIN (A2M byte-par, one detached child so the
-                # two landings never write-race): 1) vocals_true — the record's
+                # landings never write-race): 1) vocals_true — the record's
                 # OWN vocal re-synthesized from spectral capture (the default
                 # sound, "exactly the human"); 2) vocals_sung — the DiffSinger
                 # synth take, landing MUTED as the editable alternative.
-                env = dict(os.environ, SOTADAW_SING_WAIT_S="900",
-                           SOTADAW_SING_MUTED="1", SOTADAW_VTRUTH_WAIT_S="900")
-                py = shlex.quote(sys.executable)
-                # BORN MEL-TRUE (wave 3): the deck recipe proven on the
-                # byte-par campaign — 10s windows, ultra tier (128-band
-                # noise = the fidelity ruler's own resolution). A bare run
-                # would land a 32-band deck that needs a retrofit
-                # transplant on day one.
-                vt = shlex.quote(os.path.join(ROOT, 'tools', 'vocal_truth.py'))
-                # #10 VOCAL TRUTH by DEFAULT: after the windows land, fuse
-                # them into ONE sidecar (spectral lanes sound symbolically;
-                # merge is atomic tmp+replace — a failed merge leaves the
-                # landed wav untouched and sing still runs: ';' by design).
-                chain = (f"{py} {vt} {shlex.quote(name)} --win 10 --quality ultra; "
-                         f"{py} {vt} {shlex.quote(name)} --merge; "
-                         f"{py} {shlex.quote(os.path.join(ROOT, 'tools', 'sing.py'))} "
-                         f"hum {shlex.quote(name)} vocals_sketch ooh")
-                _sp.Popen(["bash", "-c", chain], stdout=open(slog, "a"),
-                          stderr=_sp.STDOUT, env=env, start_new_session=True)
+                # BORN MEL-TRUE (wave 3): 10s windows, ultra tier (128-band
+                # noise = the fidelity ruler's own resolution). A failed
+                # merge leaves the landed wav untouched and sing still runs
+                # (';' by design).
+                vtq = shlex.quote(os.path.join(ROOT, 'tools', 'vocal_truth.py'))
+                finisher_steps += [
+                    f"{py_q} {vtq} {shlex.quote(name)} --win 10 --quality ultra",
+                    f"{py_q} {vtq} {shlex.quote(name)} --merge",
+                    f"{py_q} {shlex.quote(os.path.join(ROOT, 'tools', 'sing.py'))} "
+                    f"hum {shlex.quote(name)} vocals_sketch ooh"]
                 sing_bg = True
-                print(f"[stems] vocal finishers IN BACKGROUND: vocals_true "
-                      f"(the record's own voice, spectral resynthesis) then "
-                      f"vocals_sung (synth alt, muted); "
-                      f"log {os.path.relpath(slog, ROOT)}", flush=True)
             except Exception as sge:
-                print(f"[stems] finisher spawn skipped "
+                print(f"[stems] vocal finisher not queued "
                       f"({type(sge).__name__}: {sge})", flush=True)
+    if drum_step:
+        finisher_steps.append(drum_step)
+    if finisher_steps:
+        try:
+            import subprocess as _sp
+            slog = os.path.join(ROOT, "agent", "ipc", f"sing_{name}.log")
+            os.makedirs(os.path.dirname(slog), exist_ok=True)
+            env = dict(os.environ, SOTADAW_SING_WAIT_S="900",
+                       SOTADAW_SING_MUTED="1", SOTADAW_VTRUTH_WAIT_S="900")
+            _sp.Popen(["bash", "-c", "; ".join(finisher_steps)],
+                      stdout=open(slog, "a"), stderr=_sp.STDOUT, env=env,
+                      start_new_session=True)
+            print(f"[stems] finishers IN BACKGROUND ({len(finisher_steps)} "
+                  f"steps{': vocals_true + vocals_sung' if sing_bg else ''}"
+                  f"{', then the drum microscope upgrade' if drum_step else ''}); "
+                  f"log {os.path.relpath(slog, ROOT)}", flush=True)
+        except Exception as fse:
+            print(f"[stems] finisher spawn skipped "
+                  f"({type(fse).__name__}: {fse})", flush=True)
     # MUSICFLOWS on_import (BEST_DAW_30 #25): every enabled on_import flow runs
     # against the landed session, detached (import_qc ships: preview render ->
     # clip gate -> ears -> finish audit; journal in flows/.runs). SOTADAW_FLOWS=0
@@ -1363,11 +1806,26 @@ def build_session(stems, audio_path, name, with_midi=True, bpm_override=None,
     except Exception as _fe:
         print(f"[stems] on_import flows skipped ({type(_fe).__name__}: {_fe})",
               flush=True)
+    try:                               # F4.1 the stage ledger lands with the stems
+        stage_secs["total"] = round(time.time() - t0, 1)
+        sdir = os.path.dirname(next(iter(stems.values()), ""))
+        if sdir and os.path.isdir(sdir):
+            json.dump({"device": device, "deferred_drum_pieces": defer_pieces,
+                       "stages": stage_secs},
+                      open(os.path.join(sdir, "import_stages.json"), "w"),
+                      indent=1)
+        top = sorted(((k, v) for k, v in stage_secs.items() if k != "total"),
+                     key=lambda kv: -kv[1])[:4]
+        print(f"[stage] ledger: total {stage_secs['total']}s on {device} | "
+              + " ".join(f"{k}={v}s" for k, v in top), flush=True)
+    except Exception:
+        pass
     msg = (f"imported '{os.path.basename(audio_path)}' -> songs/{name}.json: "
            f"{sketches} EDITABLE MIDI tracks sounding + {len(stems)} muted stem refs"
            + (", vocal melody singing in background -> vocals_sung" if sing_bg else "")
            + f", bpm {bpm} (conf {conf:.2f}), key {key or '?'} ({key_conf}), {length_bars} bars | "
            f"separation {t_sep:.0f}s, total {time.time()-t0:.0f}s on {device}")
+    _hb("done", 1.0, msg[:160])
     print(msg)
     return msg
 
@@ -1387,7 +1845,13 @@ if __name__ == "__main__":
                          "stem and picks the measured twin (receipted)")
     ap.add_argument("--retrofit", action="store_true",
                     help="rebuild the session from already-separated stems (no demucs/GPU)")
+    ap.add_argument("--remote", action="store_true",
+                    help="THE STEM FORGE: separation + microscope + drum pieces "
+                         "+ transcription on serverless cloud GPU "
+                         "(tools/modal_stems.py; fail-open to local rails)")
     a = ap.parse_args()
+    if a.remote:
+        os.environ["SOTADAW_STEMS_REMOTE"] = "1"
     if a.retrofit:
         d = os.path.abspath(a.audio)
         stems = {s: os.path.join(d, f"{s}.wav") for s in ("drums", "bass", "other", "vocals")

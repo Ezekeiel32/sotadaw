@@ -12,4 +12,4 @@ env   = en.adsr(bellows, 0.1, 0.85, 0.12, gate);
 reed(f) = os.pulsetrain(f, 0.45) - 0.45;
 bank  = reed(freq * 0.9965) + reed(freq * 1.0035) + reed(freq * 2.0 * 1.002) * 0.4
       + reed(freq * 0.5) * 0.3;
-process = bank / 2.1 * env * gain : fi.lowpass(2, tone) : fi.highpass(1, 110) : *(0.548) <: _,_;  // headroom law: cert-calibrated, 0 clipped @ vel 1.0
+process = bank / 2.1 * env * gain : fi.lowpass(2, tone) : fi.highpass(1, 110) : *(0.46) <: _,_;  // headroom law: A1 reed-bank sum clipped 8 (register court 2026-07-31)

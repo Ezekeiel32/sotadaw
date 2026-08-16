@@ -35,10 +35,32 @@ static void savePng (juce::Component& c, int w, int h, const juce::File& out)
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;      // message manager, no window
+    SotaLookAndFeel smokeLnf;                      // DEFAULT LnF: fonts resolve to the
+    juce::LookAndFeel::setDefaultLookAndFeel (&smokeLnf);   // embedded Inter/JB Mono —
+    struct LnfDown { ~LnfDown() { juce::LookAndFeel::setDefaultLookAndFeel (nullptr); } } lnfDown;
     const juce::File dir = juce::File::getCurrentWorkingDirectory()
                                .getChildFile (argc > 1 ? argv[1] : "ui_smoke");
     dir.createDirectory();
     const auto root = juce::File (SOTADAW_ROOT);
+
+    // OPT-IN RENDER-LANE PROOF (2026-07-17, "not fixed!"): drive the REAL
+    // loadRender path end-to-end — render_cache render -> hear.py -> tensor —
+    // against a real song.json, headless. Polls up to the timeout; the png is
+    // the machine-checkable outcome (lit fraction). Never part of the default
+    // sweep (it spawns renders): uismoke --hear-render <song.json> <out.png> [s]
+    if (argc >= 4 && juce::String (argv[1]) == "--hear-render")
+    {
+        sotadaw::HearStrip hs;
+        const juce::File songJson { juce::String (argv[2]) };
+        hs.clear (songJson.getFileNameWithoutExtension());
+        hs.loadRender (songJson, 0.0, songJson.getFileNameWithoutExtension(), root);
+        const int patience = argc > 4 ? juce::String (argv[4]).getIntValue() : 120;
+        for (int i = 0; i < patience * 4 && ! hs.hasTensor(); ++i)
+            juce::Thread::sleep (250);
+        savePng (hs, 900, 46, juce::File (juce::String (argv[3])));
+        std::cout << "[uismoke] hear-render tensor=" << (hs.hasTensor() ? "YES" : "NO") << "\n";
+        return hs.hasTensor() ? 0 : 1;
+    }
 
     // 0) THE CHAT — every message kind as one real conversation, busy + dead states.
     // This is the panel Chezy called "Windows 98"; it gets styled by pixels now.
@@ -196,6 +218,15 @@ int main (int argc, char** argv)
         pb.loadLibrary (root.getChildFile ("library.json"));
         savePng (pb, 230, 520, dir.getChildFile ("preset_browser.png"));
     }
+    // 1c) the seven-segment BPM LCD (instrument furniture) — ghost segments +
+    // phosphor digits + engraved unit, exactly as the transport wears it
+    {
+        juce::Label seg;
+        seg.setComponentID ("sevenseg");
+        seg.setName ("BPM");
+        seg.setText ("171.4", juce::dontSendNotification);
+        savePng (seg, 128, 42, dir.getChildFile ("sevenseg.png"));
+    }
     // 2) hear strip — empty state AND a synthetic tensor (bar grid + playhead beam)
     {
         sotadaw::HearStrip hs;
@@ -207,9 +238,19 @@ int main (int argc, char** argv)
                     (7 - r) + ((c % 8) == 0 ? 2 : 0) - ((c / 8) % 2) * 2);
         std::vector<int> ons (64, 0);
         for (int c = 0; c < 64; c += 4) ons[(size_t) c] = 8;
-        hs.setTensor (std::move (tg), std::move (ons), 32.0, 120.0, "PROPOSAL - demo");
+        hs.setTensor (std::move (tg), std::move (ons), 32.0, 120.0, "TAKE - demo");
         hs.setPlayheadNorm (0.4);
         savePng (hs, 900, 46, dir.getChildFile ("hear_full.png"));
+        // THE ONE VERTICAL: with the world zoomed to 25%..65% of the song, the
+        // beam (playhead 40%) leaves its whole-song x and rides the WORLD's
+        // line — (0.40-0.25)/0.40 = 37.5% of the strip. Tensor unchanged.
+        hs.setViewSpan (0.25, 0.65);
+        savePng (hs, 900, 46, dir.getChildFile ("hear_view.png"));
+        // THE RETARGET LAW (2026-07-17, "the previous project's bar"): switching
+        // subjects clears the tensor NOW — the dormant well returns wearing the
+        // NEW identity chip; the old project's heat must be GONE from the pixels
+        hs.clear ("jam_next_project");
+        savePng (hs, 900, 46, dir.getChildFile ("hear_retarget.png"));
     }
     // 3) pad grid — empty AND populated
     {

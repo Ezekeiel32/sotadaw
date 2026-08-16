@@ -36,12 +36,16 @@ pollute live memory). Kill switch: SOTADAW_CHRONICLE=0 (no writes, no block).
 Deps: stdlib only. Battery: tools/chronicle_battery.py (pure).
 E2E: tools/chronicle_e2e.py (mock sidecar through the real protocol seam).
 """
-import json, os, re, time
+import json, os, re, sys, time
+
+import prompt_fence   # the fence law: chronicle lines ride prompts — keep them inert
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROLES = ("user", "agent", "note", "verdict", "event")
 WRITE_CAPS = {"user": 700, "agent": 2000, "note": 500, "verdict": 300, "event": 300}
 LINE_CAPS = {"user": 240, "agent": 360, "note": 240, "verdict": 200, "event": 160}
+PASTE_KEEP = 6000         # a user paste carrying DATA (tab/chart/grid/blob) keeps this much
+SEARCH_USER_CAP = 4000    # search() returns user rows near-whole (recall of a paste)
 TRIM_BYTES = 512 * 1024   # file past this -> trim to newest TRIM_BYTES//2 (hysteresis: no thrash)
 BLOCK_CAP = 2400          # hard char budget for the prompt block (prompt-diet law)
 BLOCK_NOTES = 3           # max trailing in-flight notes carried into the block
@@ -84,7 +88,23 @@ def _path(song, conv=None):
 
 
 def _clean(text):
-    return re.sub(r"\s+", " ", str(text)).strip()
+    """one inert line via THE PROMPT FENCE: chronicled rows ride EVERY prompt
+    verbatim, so zero-width/bidi/control chars must die here too — the old
+    \\s+ collapse could not see them (U+200B is Cf, not whitespace)."""
+    return prompt_fence.fence(text, cap=None)
+
+
+def _paste_kinds(raw):
+    """ask_fence's verdict on the RAW ask (before any flattening): does this
+    user message carry pasted DATA (tab/chart/step-grid/blob)? [] = plain."""
+    try:
+        tp = os.path.join(ROOT, "tools")
+        if tp not in sys.path:
+            sys.path.insert(0, tp)
+        import ask_fence
+        return ask_fence.split(raw)["kinds"]
+    except Exception:
+        return []
 
 
 def append(song, role, text, t=None, **extra):
@@ -93,7 +113,18 @@ def append(song, role, text, t=None, **extra):
     try:
         if not enabled() or role not in ROLES:
             return None
-        text = _clean(text)[:WRITE_CAPS[role]]
+        raw = str(text or "")
+        if role == "user" and _paste_kinds(raw):
+            # THE PASTE SURVIVES (2026-08-02, untitled_65): a chart is
+            # STRUCTURE — the one-line fence turned the tab to soup and the
+            # 700 cap cut it mid-legend, so after a Stop killed the run the
+            # one thing the user actually supplied could never be recalled.
+            # Artifact pastes keep their lines (invisibles still die per
+            # line) and PASTE_KEEP chars; the prompt block still flattens
+            # + line-caps at read time (_line), so its diet is untouched.
+            text = prompt_fence.fence_multiline(raw, cap=PASTE_KEEP)
+        else:
+            text = _clean(raw)[:WRITE_CAPS[role]]
         if not text and role != "verdict":    # accepts legitimately carry no note
             return None
         json.dumps(extra)                     # extras must be plain data
@@ -145,6 +176,64 @@ def read(song, limit=None):
     return out[-int(limit):] if limit else out
 
 
+def search(song, query, limit=8):
+    """Term-scored RECALL across ALL of this project's conversations (the
+    2.4K memory block only carries the tail; 'what did we decide about the
+    bass?' needs the whole history). Sweeps <song>.jsonl + every
+    <song>~<cid>.jsonl sibling, scores rows by casefolded term hits,
+    breaks ties newest-first. Returns formatted lines (same voice as the
+    memory block, conv id suffixed for side conversations). Pure + safe:
+    bad files/rows skipped, never raises."""
+    terms = [w for w in str(query or "").casefold().split() if len(w) >= 2]
+    if not terms:
+        return []
+    base = _safe(song)
+    hits = []
+    try:
+        names = sorted(os.listdir(chat_dir()))
+    except OSError:
+        return []
+    for fn in names:
+        if not fn.endswith(".jsonl"):
+            continue
+        stem = fn[:-6]
+        if stem != base and not stem.startswith(base + "~"):
+            continue
+        conv = stem[len(base) + 1:] if stem != base else ""
+        try:
+            with open(os.path.join(chat_dir(), fn)) as f:
+                for line in f:
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not (isinstance(row, dict) and row.get("role") in ROLES):
+                        continue
+                    fold = str(row.get("text", "")).casefold()
+                    score = sum(fold.count(t) for t in terms)
+                    if score > 0:
+                        hits.append((score, float(row.get("t", 0)), conv, row))
+        except OSError:
+            continue
+    hits.sort(key=lambda h: (-h[0], -h[1]))
+    now = time.time()
+    # user rows return near-whole: recall exists to bring a lost paste BACK,
+    # and the 240-char line cap re-lost the chart on the way out of search.
+    # Multiline pastes (stored structure-preserved) return with their lines —
+    # this is a tool result, not a prompt block; SONG TEXT IS DATA covers it.
+    out = []
+    for _, _, conv, row in hits[:max(1, int(limit))]:
+        txt = str(row.get("text", ""))
+        if row.get("role") == "user" and "\n" in txt:
+            age = _age(now - float(row.get("t", now)))
+            line = f'[{age}] user pasted:\n{txt[:SEARCH_USER_CAP]}'
+        else:
+            line = _line(row, now,
+                         cap=SEARCH_USER_CAP if row.get("role") == "user" else None)
+        out.append(line + (f"  [conv {conv}]" if conv else ""))
+    return out
+
+
 def _age(secs):
     secs = max(0.0, float(secs))
     if secs < 60:
@@ -156,9 +245,9 @@ def _age(secs):
     return f"{int(secs // 86400)}d ago"
 
 
-def _line(row, now):
+def _line(row, now, cap=None):
     age = _age(now - float(row.get("t", now)))
-    text = _clean(row.get("text", ""))[:LINE_CAPS[row["role"]]]
+    text = _clean(row.get("text", ""))[:cap or LINE_CAPS[row["role"]]]
     if row["role"] == "user":
         return f'[{age}] user: "{text}"'
     if row["role"] == "agent":

@@ -118,10 +118,29 @@ def check_song(name, genre):
             # Rotation context gates at the true disaster floor.
             _floor = 0.10 if os.environ.get("SOTADAW_EVAL_RAW") == "1" else 0.25
             checks["genre_sim_ok"] = _gs >= _floor
+    # PRODUCER MIND P19 (2026-07-14): the MUSIC checks join the gauntlet —
+    # engineering floors said "not broken"; these say "not mid". All
+    # deterministic from song.json + the analysis (docs/SPEC_PRODUCER_MIND.md).
+    _music = {}
+    try:
+        import music_court as _mc
+        import arc_court as _ac
+        _kv = _mc.court_key(song, genre)
+        if not _kv.get("skipped"):
+            checks["key_court_ok"] = bool(_kv.get("ok"))
+            _music["in_key_pct"] = _kv.get("in_key_pct")
+        checks["pocket_ok"] = bool(_mc.court_pocket(song, genre).get("ok"))
+        _av = _ac.court_arc(song, genre, a)
+        if not _av.get("skipped"):
+            checks["arc_ok"] = bool(_av.get("ok"))
+            _music["arc_flags"] = [f.get("kind") for f in _av.get("flags", [])]
+    except Exception:
+        pass
     score = sum(checks.values()) / len(checks)
     return {"song": name, "genre": genre, "score": round(score, 3), "checks": checks,
             "metrics": {"bpm": song.get("bpm"), "key": song.get("key"),
-                        "clap_genre_sim": _gs,
+                        "clap_genre_sim": _gs, **_music,
+                        "lra": a.get("lra"),
                         "lufs": a["lufs_integrated"], "peak": a["peak_dbfs"],
                         "dbtp": a["true_peak_dbtp"], "clipped": a["clipped_samples"],
                         "bands": a["band_energy_pct"]}}
@@ -403,11 +422,85 @@ def clap_genre_sims(wavs, genre):
     except Exception:
         return [None] * len(wavs)
 
+# W75 (r-19 item 140): the six-dimension SYMBOLIC rubric — grounded in
+# the human-validated SongEval/MusicEval/MAD axes; chain-of-thought
+# BEFORE scores; strict JSON.
+RUBRIC_DIMENSIONS = (
+    ("structure", "Structural coherence: sections, transitions, arc"),
+    ("hook", "Memorability: motif repetition WITH variation"),
+    ("harmony_melody", "Harmonic-melodic musicality: key adherence, "
+                       "voice-leading, tension/release from chords[]"),
+    ("groove", "Groove/pocket: timing, swing, stability"),
+    ("production", "Production/mix: band balance, LUFS window, PSR/LRA "
+                   "(from the measured digest, never guessed)"),
+    ("genre_fit", "Genre adherence vs the KG target + idiom"),
+)
+
+
+def _rubric_prompt(song_a, song_b, da, db, genre, sim_note=""):
+    dims = "\n".join(f"  {k}: {d}" for k, d in RUBRIC_DIMENSIONS)
+    return f"""You are a {genre} production judge. Two arrangements below as structural digests
+(track list, densities, fx, automation, sends) + measured audio metrics + MUSIC COURT facts
+(in_key_pct = melodic key conformance measured from the notes; pocket_ok = cross-track timing
+coherence; arc_flags = narrative failures).{sim_note}
+Score BOTH songs on the six dimensions (1-5 each):
+{dims}
+First reason step by step about each dimension (chain of thought), THEN output the scores.
+SONG A ({song_a}): {json.dumps(da)}
+SONG B ({song_b}): {json.dumps(db)}
+End with STRICT JSON only on the final line:
+{{"winner": "A"|"B", "margin": 1-5, "scores": {{"A": {{"structure": n, "hook": n, "harmony_melody": n, "groove": n, "production": n, "genre_fit": n}}, "B": {{...}}}}, "reasons": ["...", "...", "..."]}}"""
+
+
+def judge_consistent(song_a, song_b, genre, _judge=None):
+    """W75 position-bias guard: run BOTH orders; keep the verdict only
+    when the winners AGREE (a judge that flips with order has no
+    verdict). Returns {consistent, winner|None, rows}."""
+    j = _judge or judge
+    r1 = j(song_a, song_b, genre)
+    r2 = j(song_b, song_a, genre)
+    v1 = (r1.get("verdict") or {}).get("winner")
+    v2 = (r2.get("verdict") or {}).get("winner")
+    # r2's A is song_b — map back
+    w1 = {"A": song_a, "B": song_b}.get(v1)
+    w2 = {"A": song_b, "B": song_a}.get(v2)
+    consistent = w1 is not None and w1 == w2
+    return {"consistent": consistent,
+            "winner": w1 if consistent else None,
+            "rows": [r1, r2],
+            "why": ("both orders agree" if consistent else
+                    f"order flip ({w1} vs {w2}) — no verdict; a "
+                    "position-biased pick is not a pick")}
+
+
+def gold_exemplar_path(genre):
+    """The genre's library/gold exemplar (parent-chain fallback rides
+    the bank's own naming)."""
+    g = str(genre or "").lower().replace("-", "_").replace(" ", "_")
+    p = os.path.join(ROOT, "library", "gold", f"{g}.json")
+    return p if os.path.exists(p) else None
+
+
 def judge(song_a, song_b, genre):
     """LLM judge over structure+metrics (NOT raw audio — an ears-adjacent structural
     critic; clap_genre_sim is its one true-audio signal). Cheap (haiku). Appends
     verdict to history."""
     da, db = song_digest(song_a), song_digest(song_b)
+    # P19 v2: the courts' MEASURED music facts ride the digests — a judge
+    # with deterministic key/pocket/arc evidence beats one guessing from
+    # track names (docs/SPEC_PRODUCER_MIND.md).
+    try:
+        import music_court as _mc
+        import arc_court as _ac
+        for nm, d in ((song_a, da), (song_b, db)):
+            sng = json.load(open(os.path.join(SONGS, f"{nm}.json")))
+            kv = _mc.court_key(sng, genre)
+            d["measured"]["in_key_pct"] = kv.get("in_key_pct")
+            d["measured"]["pocket_ok"] = _mc.court_pocket(sng, genre).get("ok")
+            d["measured"]["arc_flags"] = [
+                f.get("kind") for f in _ac.court_arc(sng, genre).get("flags", [])]
+    except Exception:
+        pass
     sim_a, sim_b = clap_genre_sims([os.path.join(SONGS, f"{n}.wav")
                                     for n in (song_a, song_b)], genre)
     if sim_a is not None:
@@ -418,13 +511,7 @@ def judge(song_a, song_b, genre):
                 f"the text '{genre.replace('_', ' ')} music' (higher = sounds more like the "
                 "genre; the only field measured from the audio itself)."
                 if sim_a is not None or sim_b is not None else "")
-    prompt = f"""You are a {genre} production judge. Two arrangements below as structural digests
-(track list, densities, fx, automation, sends) + measured audio metrics. Judge PRODUCTION QUALITY
-for the genre: groove architecture, arrangement depth (layers/motion/space), mix health
-(clipping/true peak/LUFS window/band balance), genre idiom fit.{sim_note}
-SONG A ({song_a}): {json.dumps(da)}
-SONG B ({song_b}): {json.dumps(db)}
-Reply with STRICT JSON only: {{"winner": "A"|"B", "margin": 1-5, "reasons": ["...", "...", "..."]}}"""
+    prompt = _rubric_prompt(song_a, song_b, da, db, genre, sim_note)
     p = subprocess.run(["claude", "-p", prompt, "--model", "claude-haiku-4-5-20251001",
                         "--output-format", "json"],
                        capture_output=True, text=True, timeout=180, cwd=ROOT)
@@ -453,6 +540,10 @@ if __name__ == "__main__":
                                     "the song name, eval_<genre> -> <genre>; errors if underivable "
                                     "- the old silent default of 'trap' judged songs against the "
                                     "wrong law)", default=None)
+    ap.add_argument("--judge-consistent", nargs=2,
+                    metavar=("SONG_A", "SONG_B"),
+                    help="W75: pairwise judge BOTH orders; verdict only "
+                         "on agreement (position-bias guard)")
     ap.add_argument("--judge", nargs=2, metavar=("SONG_A", "SONG_B"),
                     help="LLM-judge two songs (structure+metrics)")
     ap.add_argument("--ab", help="R3 ruler: song name or wav path scored vs the "
@@ -480,6 +571,14 @@ if __name__ == "__main__":
     elif a.judge:
         if not a.genre:
             raise SystemExit("--judge requires --genre (no silent default)")
+    if getattr(args, "judge_consistent", None):
+        if not args.genre:
+            raise SystemExit("--judge-consistent requires --genre")
+        out = judge_consistent(args.judge_consistent[0],
+                               args.judge_consistent[1], args.genre)
+        print(json.dumps({k: out[k] for k in
+                          ("consistent", "winner", "why")}, indent=1))
+        raise SystemExit(0)
         print(json.dumps(judge(a.judge[0], a.judge[1], a.genre), indent=1))
     elif a.ab:
         g = a.genre

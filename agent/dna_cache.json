@@ -166,6 +166,127 @@
 "style": "triad"
 }
 },
+"afro_drill": {
+"archetype": "trap_drums",
+"bpm_hi": 130,
+"bpm_lo": 110,
+"grid": {
+"bars": 2,
+"bass_style": "sliding",
+"chords": [
+[
+0,
+1
+],
+[
+2,
+6
+]
+],
+"fill": {
+"hat": [
+0,
+2,
+4,
+6
+],
+"kick": [
+0,
+8
+],
+"snare": [
+4,
+8,
+10,
+12,
+13,
+14,
+15
+],
+"vel": {
+"snare": {
+"10": 0.6,
+"12": 0.75,
+"13": 0.8,
+"14": 0.9,
+"15": 1.0,
+"8": 0.5
+}
+}
+},
+"ghost": [
+15,
+30
+],
+"hat": [
+0,
+2,
+4,
+6,
+8,
+10,
+12,
+14,
+16,
+18,
+20,
+22,
+24,
+26,
+28,
+30,
+11,
+27
+],
+"kick": [
+0,
+7,
+10,
+16,
+21,
+26
+],
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+1,
+2
+],
+[
+6,
+3,
+1
+],
+[
+8,
+1,
+2
+],
+[
+14,
+4,
+1
+]
+],
+"voice": "fmbell"
+},
+"snare": [
+8,
+24
+],
+"swing": 0.5,
+"vel": {
+"hat": {
+"11": 0.4,
+"27": 0.4
+}
+}
+},
+"groove": "trap_grid",
+"key": null
+},
 "afro_house": {
 "archetype": "afrohouse_organic",
 "band_order": "low>lowmid>mid",
@@ -872,9 +993,9 @@
 "form_family": "song",
 "grid": {
 "bars": 1,
-"bass_gain_db": -8.0,
+"bass_gain_db": -14.0,
 "bass_style": "sustained",
-"bass_voice": "bass_warm",
+"bass_voice": "upright_bass",
 "chords": [
 [
 0,
@@ -892,13 +1013,15 @@
 10,
 14
 ],
-"hat_gain_db": -9.0,
+"hat_gain_db": 6.0,
+"hat_voice": "darbuka",
+"intro_style": "taksim",
 "kick": [
 0,
 6,
 8
 ],
-"kick_gain_db": -4.0,
+"kick_gain_db": -16.0,
 "kick_voice": "kick_punch",
 "lead": {
 "octave": 4,
@@ -929,13 +1052,14 @@
 3
 ]
 ],
-"voice": "strings_stacc"
+"voice": "saz"
 },
-"lead_gain_db": -5.0,
+"lead_gain_db": 6.0,
 "snare": [
 4,
 12
 ],
+"snare_gain_db": -10.0,
 "swing": 0.54,
 "vel": {
 "snare": {
@@ -1121,11 +1245,13 @@
 12,
 14
 ],
+"hat_gain_db": -9.0,
+"hat_voice": "guira",
 "kick": [
 0,
 8
 ],
-"kick_gain_db": -5.0,
+"kick_gain_db": -8.0,
 "kick_voice": "kick_punch",
 "lead": {
 "octave": 5,
@@ -1166,8 +1292,9 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "clean_chime_guitar"
 },
+"lead_gain_db": -5.0,
 "snare": [
 4,
 12,
@@ -1361,13 +1488,16 @@
 "form_family": "song",
 "grid": {
 "bars": 1,
+"bass_gain_db": -9.0,
 "bass_style": "roots",
+"bass_voice": "tuba",
 "chords": [
 [
 0,
 1
 ]
 ],
+"color_gain_db": -5.0,
 "groups": [
 2,
 2,
@@ -1378,12 +1508,14 @@
 6,
 10
 ],
+"intro_style": "fanfare",
 "kick": [
 0,
 8
 ],
+"kick_gain_db": -9.0,
 "lead": {
-"octave": 4,
+"octave": 5,
 "steps": [
 [
 0,
@@ -1426,12 +1558,14 @@
 2
 ]
 ],
-"voice": "brass_stab"
+"voice": "trumpet_lead"
 },
+"lead_gain_db": -3.0,
 "snare": [
 4,
 12
 ],
+"snare_gain_db": -7.0,
 "swing": 0.5,
 "vel": {
 "kick": {
@@ -2032,13 +2166,14 @@
 12,
 14
 ],
+"intro_style": "fanfare",
 "kick": [
 0,
 3,
 8,
 11
 ],
-"kick_gain_db": -5.0,
+"kick_gain_db": -6.0,
 "kick_voice": "kick_punch",
 "lead": {
 "octave": 5,
@@ -2084,8 +2219,9 @@
 1
 ]
 ],
-"voice": "pluck"
+"voice": "tumbi"
 },
+"lead_gain_db": -5.5,
 "snare": [
 2,
 6,
@@ -2384,10 +2520,12 @@
 12,
 14
 ],
+"intro_style": "kickoff",
 "kick": [
 0,
 8
 ],
+"kick_gain_db": -9.0,
 "lead": {
 "octave": 4,
 "steps": [
@@ -2474,6 +2612,7 @@
 ],
 "voice": "fiddle"
 },
+"lead_gain_db": -6.0,
 "lead_voice": "fiddle",
 "snare": [
 4,
@@ -2493,7 +2632,7 @@
 "lufs_hi": -12,
 "lufs_lo": -16,
 "psr_floor": 8.5,
-"voice": "pluck",
+"voice": "banjo",
 "voicing": {
 "hi": 88,
 "lo": 40,
@@ -3231,6 +3370,97 @@
 "lo": 50,
 "style": "triad"
 }
+},
+"brazilian_phonk": {
+"archetype": "memphis_knock",
+"bpm_hi": 110,
+"bpm_lo": 90,
+"grid": {
+"bars": 1,
+"bass_gain_db": -8.0,
+"bass_style": "sliding",
+"chords": [
+[
+0,
+1
+],
+[
+2,
+4
+]
+],
+"color_gain_db": -12.0,
+"color_voice": "keys_dark",
+"hat": [
+0,
+2,
+4,
+6,
+8,
+10,
+12,
+14
+],
+"kick": [
+0,
+3,
+8,
+11
+],
+"lead": {
+"bars": 2,
+"octave": 4,
+"steps": [
+[
+0,
+1,
+3
+],
+[
+8,
+2,
+2
+],
+[
+12,
+1,
+2
+],
+[
+16,
+4,
+3
+],
+[
+24,
+2,
+2
+],
+[
+28,
+1,
+2
+]
+],
+"voice": "keys_dark"
+},
+"lead_gain_db": -7.0,
+"snare": [
+4,
+12
+],
+"swing": 0.52,
+"vel": {
+"hat": {
+"10": 0.35,
+"14": 0.35,
+"2": 0.35,
+"6": 0.35
+}
+}
+},
+"groove": "halftime_drag",
+"key": null
 },
 "breakbeat_hardcore": {
 "archetype": "hardcore_breaks",
@@ -4112,6 +4342,128 @@
 "style": "pico_loop"
 }
 },
+"chicago_drill": {
+"archetype": "trap_drums",
+"bpm_hi": 70,
+"bpm_lo": 60,
+"form_family": "rap",
+"grid": {
+"bars": 2,
+"bass_style": "sliding",
+"chords": [
+[
+0,
+1
+],
+[
+2,
+6
+]
+],
+"fill": {
+"hat": [
+0,
+2,
+4,
+6
+],
+"kick": [
+0,
+8
+],
+"snare": [
+4,
+8,
+10,
+12,
+13,
+14,
+15
+],
+"vel": {
+"snare": {
+"10": 0.6,
+"12": 0.75,
+"13": 0.8,
+"14": 0.9,
+"15": 1.0,
+"8": 0.5
+}
+}
+},
+"ghost": [
+15,
+30
+],
+"hat": [
+0,
+2,
+4,
+6,
+8,
+10,
+12,
+14,
+16,
+18,
+20,
+22,
+24,
+26,
+28,
+30,
+11,
+27
+],
+"kick": [
+0,
+7,
+10,
+16,
+21,
+26
+],
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+1,
+2
+],
+[
+6,
+3,
+1
+],
+[
+8,
+1,
+2
+],
+[
+14,
+4,
+1
+]
+],
+"voice": "fmbell"
+},
+"snare": [
+8,
+24
+],
+"swing": 0.5,
+"vel": {
+"hat": {
+"11": 0.4,
+"27": 0.4
+}
+}
+},
+"groove": "trap_grid",
+"key": null
+},
 "chicago_house": {
 "archetype": "chicago_jack",
 "band_order": "low>lowmid>mid",
@@ -4283,6 +4635,7 @@
 0,
 8
 ],
+"kick_gain_db": -8.0,
 "lead": {
 "octave": 4,
 "steps": [
@@ -4327,8 +4680,9 @@
 1
 ]
 ],
-"voice": "kalimba"
+"voice": "mbira"
 },
+"lead_gain_db": -5.0,
 "snare": [
 6,
 14
@@ -4849,8 +5203,8 @@
 "crunk": {
 "archetype": "crunk_menace",
 "band_order": "low>lowmid>mid",
-"bpm_hi": 85,
-"bpm_lo": 72,
+"bpm_hi": 80,
+"bpm_lo": 70,
 "form_family": "rap",
 "grid": {
 "bars": 1,
@@ -6744,8 +7098,8 @@
 "downtempo": {
 "archetype": "down_drag",
 "band_order": "low>lowmid>mid",
-"bpm_hi": 100,
-"bpm_lo": 85,
+"bpm_hi": 110,
+"bpm_lo": 60,
 "form_family": "loop",
 "grid": {
 "bars": 1,
@@ -6796,9 +7150,9 @@
 }
 },
 "driftphonk": {
-"archetype": "drift_pocket",
+"archetype": "memphis_knock",
 "band_order": "low>lowmid>mid",
-"bpm_hi": 142,
+"bpm_hi": 160,
 "bpm_lo": 130,
 "form_family": "rap",
 "grid": {
@@ -6815,102 +7169,9 @@
 4
 ]
 ],
-"color_gain_db": -11.0,
+"color_gain_db": -12.0,
 "color_voice": "keys_dark",
-"kick": [
-0,
-7,
-10
-],
-"lead": {
-"bars": 2,
-"octave": 5,
-"steps": [
-[
-0,
-1,
-1
-],
-[
-2,
-3,
-1
-],
-[
-4,
-5,
-1
-],
-[
-6,
-4,
-1
-],
-[
-8,
-3,
-1
-],
-[
-10,
-1,
-1
-],
-[
-12,
-4,
-1
-],
-[
-14,
-3,
-1
-],
-[
-16,
-1,
-1
-],
-[
-18,
-3,
-1
-],
-[
-20,
-5,
-1
-],
-[
-22,
-6,
-1
-],
-[
-24,
-5,
-1
-],
-[
-26,
-4,
-1
-],
-[
-28,
-3,
-1
-],
-[
-30,
-2,
-1
-]
-],
-"voice": "fmbell"
-},
-"lead_gain_db": -6.0,
-"ride": [
+"hat": [
 0,
 2,
 4,
@@ -6920,10 +7181,63 @@
 12,
 14
 ],
-"snare": [
-8
+"kick": [
+0,
+3,
+8,
+11
 ],
-"swing": 0.5
+"lead": {
+"bars": 2,
+"octave": 4,
+"steps": [
+[
+0,
+1,
+3
+],
+[
+8,
+2,
+2
+],
+[
+12,
+1,
+2
+],
+[
+16,
+4,
+3
+],
+[
+24,
+2,
+2
+],
+[
+28,
+1,
+2
+]
+],
+"voice": "keys_dark"
+},
+"lead_gain_db": -7.0,
+"snare": [
+4,
+12
+],
+"swing": 0.52,
+"vel": {
+"hat": {
+"10": 0.35,
+"14": 0.35,
+"2": 0.35,
+"6": 0.35
+}
+}
 },
 "groove": "halftime_drag",
 "key": "C# minor",
@@ -7163,7 +7477,7 @@
 "archetype": "dubtech_pulse",
 "band_order": "low>lowmid>mid",
 "bpm_hi": 125,
-"bpm_lo": 115,
+"bpm_lo": 110,
 "form_family": "club",
 "grid": {
 "bars": 1,
@@ -9872,7 +10186,7 @@
 "goa": {
 "archetype": "goa_layers",
 "band_order": "low>lowmid>mid",
-"bpm_hi": 145,
+"bpm_hi": 150,
 "bpm_lo": 135,
 "form_family": "club",
 "grid": {
@@ -11372,7 +11686,7 @@
 "groove": "boombap_56",
 "key": "C minor",
 "lufs_hi": -8,
-"lufs_lo": -12,
+"lufs_lo": -11,
 "psr_floor": 6.0,
 "voicing": {
 "hi": 64,
@@ -11499,8 +11813,8 @@
 "groove": "house_shuffle",
 "key": "A minor",
 "lra_floor": 3.2,
-"lufs_hi": -8,
-"lufs_lo": -14,
+"lufs_hi": -6,
+"lufs_lo": -10,
 "psr_floor": 6.0,
 "voice": "vst3:TAL-NoiseMaker",
 "voicing": {
@@ -11508,6 +11822,97 @@
 "lo": 48,
 "style": "smooth"
 }
+},
+"house_phonk": {
+"archetype": "memphis_knock",
+"bpm_hi": 130,
+"bpm_lo": 125,
+"grid": {
+"bars": 1,
+"bass_gain_db": -8.0,
+"bass_style": "sliding",
+"chords": [
+[
+0,
+1
+],
+[
+2,
+4
+]
+],
+"color_gain_db": -12.0,
+"color_voice": "keys_dark",
+"hat": [
+0,
+2,
+4,
+6,
+8,
+10,
+12,
+14
+],
+"kick": [
+0,
+3,
+8,
+11
+],
+"lead": {
+"bars": 2,
+"octave": 4,
+"steps": [
+[
+0,
+1,
+3
+],
+[
+8,
+2,
+2
+],
+[
+12,
+1,
+2
+],
+[
+16,
+4,
+3
+],
+[
+24,
+2,
+2
+],
+[
+28,
+1,
+2
+]
+],
+"voice": "keys_dark"
+},
+"lead_gain_db": -7.0,
+"snare": [
+4,
+12
+],
+"swing": 0.52,
+"vel": {
+"hat": {
+"10": 0.35,
+"14": 0.35,
+"2": 0.35,
+"6": 0.35
+}
+}
+},
+"groove": "halftime_drag",
+"key": null
 },
 "hyperpop": {
 "archetype": "hyper_burst",
@@ -12186,7 +12591,7 @@
 "groove": "jazz_swing",
 "key": "Bb major",
 "lra_floor": 6.0,
-"lufs_hi": -12,
+"lufs_hi": -14,
 "lufs_lo": -18,
 "psr_floor": 9.0,
 "voice": "sax_section",
@@ -12350,7 +12755,7 @@
 "jersey_drill": {
 "archetype": "squeak_drill",
 "band_order": "low>lowmid>mid",
-"bpm_hi": 150,
+"bpm_hi": 142,
 "bpm_lo": 130,
 "form_family": "rap",
 "grid": {
@@ -12433,7 +12838,7 @@
 "archetype": "jersey_kicks",
 "band_order": "low>lowmid>mid",
 "bpm_hi": 142,
-"bpm_lo": 132,
+"bpm_lo": 130,
 "form_family": "club",
 "grid": {
 "bars": 1,
@@ -14479,11 +14884,103 @@
 "style": "open"
 }
 },
+"memphis_phonk": {
+"archetype": "memphis_knock",
+"bpm_hi": 80,
+"bpm_lo": 60,
+"form_family": "rap",
+"grid": {
+"bars": 1,
+"bass_gain_db": -8.0,
+"bass_style": "sliding",
+"chords": [
+[
+0,
+1
+],
+[
+2,
+4
+]
+],
+"color_gain_db": -12.0,
+"color_voice": "keys_dark",
+"hat": [
+0,
+2,
+4,
+6,
+8,
+10,
+12,
+14
+],
+"kick": [
+0,
+3,
+8,
+11
+],
+"lead": {
+"bars": 2,
+"octave": 4,
+"steps": [
+[
+0,
+1,
+3
+],
+[
+8,
+2,
+2
+],
+[
+12,
+1,
+2
+],
+[
+16,
+4,
+3
+],
+[
+24,
+2,
+2
+],
+[
+28,
+1,
+2
+]
+],
+"voice": "keys_dark"
+},
+"lead_gain_db": -7.0,
+"snare": [
+4,
+12
+],
+"swing": 0.52,
+"vel": {
+"hat": {
+"10": 0.35,
+"14": 0.35,
+"2": 0.35,
+"6": 0.35
+}
+}
+},
+"groove": "halftime_drag",
+"key": null
+},
 "memphis_rap": {
 "archetype": "memphis_knock",
 "band_order": "low>lowmid>mid",
 "bpm_hi": 80,
-"bpm_lo": 66,
+"bpm_lo": 60,
 "form_family": "rap",
 "grid": {
 "bars": 1,
@@ -14820,8 +15317,8 @@
 },
 "groove": "rock_drive",
 "key": "E minor",
-"lufs_hi": -7,
-"lufs_lo": -10,
+"lufs_hi": -9,
+"lufs_lo": -12,
 "psr_floor": 6.0,
 "voice": "guitar_grit",
 "voicing": {
@@ -16189,6 +16686,127 @@
 "style": "triad"
 }
 },
+"ny_drill": {
+"archetype": "trap_drums",
+"bpm_hi": 145,
+"bpm_lo": 138,
+"grid": {
+"bars": 2,
+"bass_style": "sliding",
+"chords": [
+[
+0,
+1
+],
+[
+2,
+6
+]
+],
+"fill": {
+"hat": [
+0,
+2,
+4,
+6
+],
+"kick": [
+0,
+8
+],
+"snare": [
+4,
+8,
+10,
+12,
+13,
+14,
+15
+],
+"vel": {
+"snare": {
+"10": 0.6,
+"12": 0.75,
+"13": 0.8,
+"14": 0.9,
+"15": 1.0,
+"8": 0.5
+}
+}
+},
+"ghost": [
+15,
+30
+],
+"hat": [
+0,
+2,
+4,
+6,
+8,
+10,
+12,
+14,
+16,
+18,
+20,
+22,
+24,
+26,
+28,
+30,
+11,
+27
+],
+"kick": [
+0,
+7,
+10,
+16,
+21,
+26
+],
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+1,
+2
+],
+[
+6,
+3,
+1
+],
+[
+8,
+1,
+2
+],
+[
+14,
+4,
+1
+]
+],
+"voice": "fmbell"
+},
+"snare": [
+8,
+24
+],
+"swing": 0.5,
+"vel": {
+"hat": {
+"11": 0.4,
+"27": 0.4
+}
+}
+},
+"groove": "trap_grid",
+"key": null
+},
 "orchestral_cinematic": {
 "archetype": "cinematic_pulse",
 "band_order": "lowmid>low>mid",
@@ -16377,8 +16995,8 @@
 "plugg": {
 "archetype": "plugg_float",
 "band_order": "low>lowmid>mid",
-"bpm_hi": 165,
-"bpm_lo": 125,
+"bpm_hi": 78,
+"bpm_lo": 65,
 "form_family": "rap",
 "grid": {
 "bars": 1,
@@ -16474,8 +17092,8 @@
 "pluggnb": {
 "archetype": "pluggnb_loop",
 "band_order": "low>lowmid>mid",
-"bpm_hi": 155,
-"bpm_lo": 125,
+"bpm_hi": 78,
+"bpm_lo": 65,
 "form_family": "rap",
 "grid": {
 "bars": 1,
@@ -16674,8 +17292,8 @@
 "swing": 0.5
 },
 "key": "C major",
-"lufs_hi": -6,
-"lufs_lo": -9,
+"lufs_hi": -9,
+"lufs_lo": -12,
 "psr_floor": 6.0,
 "voicing": {
 "hi": 79,
@@ -17090,8 +17708,8 @@
 "psybient": {
 "archetype": "psybient_journey",
 "band_order": "low>lowmid>mid",
-"bpm_hi": 105,
-"bpm_lo": 90,
+"bpm_hi": 120,
+"bpm_lo": 70,
 "form_family": "club",
 "grid": {
 "bars": 2,
@@ -17617,7 +18235,7 @@
 "archetype": "rage_grid",
 "band_order": "low>lowmid>mid",
 "bpm_hi": 170,
-"bpm_lo": 130,
+"bpm_lo": 150,
 "form_family": "rap",
 "grid": {
 "bars": 1,
@@ -18390,7 +19008,7 @@
 "groove": "rock_drive",
 "key": "E minor",
 "lra_floor": 4.0,
-"lufs_hi": -8,
+"lufs_hi": -9,
 "lufs_lo": -12,
 "psr_floor": 7.0,
 "voice": "guitar_grit",
@@ -18838,6 +19456,127 @@
 "style": "triad"
 }
 },
+"sample_drill": {
+"archetype": "trap_drums",
+"bpm_hi": 145,
+"bpm_lo": 138,
+"grid": {
+"bars": 2,
+"bass_style": "sliding",
+"chords": [
+[
+0,
+1
+],
+[
+2,
+6
+]
+],
+"fill": {
+"hat": [
+0,
+2,
+4,
+6
+],
+"kick": [
+0,
+8
+],
+"snare": [
+4,
+8,
+10,
+12,
+13,
+14,
+15
+],
+"vel": {
+"snare": {
+"10": 0.6,
+"12": 0.75,
+"13": 0.8,
+"14": 0.9,
+"15": 1.0,
+"8": 0.5
+}
+}
+},
+"ghost": [
+15,
+30
+],
+"hat": [
+0,
+2,
+4,
+6,
+8,
+10,
+12,
+14,
+16,
+18,
+20,
+22,
+24,
+26,
+28,
+30,
+11,
+27
+],
+"kick": [
+0,
+7,
+10,
+16,
+21,
+26
+],
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+1,
+2
+],
+[
+6,
+3,
+1
+],
+[
+8,
+1,
+2
+],
+[
+14,
+4,
+1
+]
+],
+"voice": "fmbell"
+},
+"snare": [
+8,
+24
+],
+"swing": 0.5,
+"vel": {
+"hat": {
+"11": 0.4,
+"27": 0.4
+}
+}
+},
+"groove": "trap_grid",
+"key": null
+},
 "sega": {
 "archetype": "sega_sway",
 "band_order": "lowmid>mid>low",
@@ -18945,8 +19684,8 @@
 "sexy_drill": {
 "archetype": "sexydrill_bounce",
 "band_order": "low>lowmid>mid",
-"bpm_hi": 145,
-"bpm_lo": 136,
+"bpm_hi": 140,
+"bpm_lo": 130,
 "form_family": "rap",
 "grid": {
 "bars": 2,
@@ -20889,8 +21628,8 @@
 },
 "groove": "techno_drive",
 "key": "A minor",
-"lufs_hi": -7,
-"lufs_lo": -12,
+"lufs_hi": -6,
+"lufs_lo": -10,
 "psr_floor": 5.5,
 "voice": "vst3:Odin2",
 "voicing": {
@@ -21118,8 +21857,8 @@
 "groove": "trap_grid",
 "key": "F minor",
 "lra_floor": 3.6,
-"lufs_hi": -9,
-"lufs_lo": -18,
+"lufs_hi": -8,
+"lufs_lo": -11,
 "psr_floor": 5.0,
 "voice": "flute_lead",
 "voicing": {
@@ -21131,8 +21870,8 @@
 "triphop": {
 "archetype": "trip_drag",
 "band_order": "low>lowmid>mid",
-"bpm_hi": 95,
-"bpm_lo": 80,
+"bpm_hi": 90,
+"bpm_lo": 70,
 "form_family": "song",
 "grid": {
 "bars": 1,
@@ -21206,6 +21945,127 @@
 "lo": 45,
 "style": "smooth"
 }
+},
+"uk_drill": {
+"archetype": "trap_drums",
+"bpm_hi": 151,
+"bpm_lo": 138,
+"grid": {
+"bars": 2,
+"bass_style": "sliding",
+"chords": [
+[
+0,
+1
+],
+[
+2,
+6
+]
+],
+"fill": {
+"hat": [
+0,
+2,
+4,
+6
+],
+"kick": [
+0,
+8
+],
+"snare": [
+4,
+8,
+10,
+12,
+13,
+14,
+15
+],
+"vel": {
+"snare": {
+"10": 0.6,
+"12": 0.75,
+"13": 0.8,
+"14": 0.9,
+"15": 1.0,
+"8": 0.5
+}
+}
+},
+"ghost": [
+15,
+30
+],
+"hat": [
+0,
+2,
+4,
+6,
+8,
+10,
+12,
+14,
+16,
+18,
+20,
+22,
+24,
+26,
+28,
+30,
+11,
+27
+],
+"kick": [
+0,
+7,
+10,
+16,
+21,
+26
+],
+"lead": {
+"octave": 5,
+"steps": [
+[
+0,
+1,
+2
+],
+[
+6,
+3,
+1
+],
+[
+8,
+1,
+2
+],
+[
+14,
+4,
+1
+]
+],
+"voice": "fmbell"
+},
+"snare": [
+8,
+24
+],
+"swing": 0.5,
+"vel": {
+"hat": {
+"11": 0.4,
+"27": 0.4
+}
+}
+},
+"groove": "trap_grid",
+"key": null
 },
 "uk_funky": {
 "archetype": "funky_snap",

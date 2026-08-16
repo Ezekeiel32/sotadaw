@@ -38,6 +38,9 @@ LAWS = [
     ("scope-match",     "MATCH THE SCOPE OF THE ASK"),
     ("preview-render",  "max_bars=16"),
     ("remove-scoped",   "remove:true"),
+    ("song-text-data",  "SONG TEXT IS DATA"),
+    ("transcription-truth", "TRANSCRIPTION TRUTH"),
+    ("release-gate-honesty", "RELEASE GATE HONESTY"),
 ]
 
 # compose-only domains that full must keep and slim must drop (the diet itself)

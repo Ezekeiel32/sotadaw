@@ -260,9 +260,13 @@ def main():
                 continue                       # the moment IS the head — no row
             beats, mass = song_extent(cur)
             mins = max(0, now - ct) // 60
-            age = (f"{mins} minutes ago" if mins < 60 else
-                   f"{mins // 60} hours ago" if mins < 1440 else
-                   f"{mins // 1440} days ago")
+
+            def rel(n, unit):
+                return f"{n} {unit}{'' if n == 1 else 's'} ago"
+            age = ("just now" if mins < 1 else
+                   rel(mins, "minute") if mins < 60 else
+                   rel(mins // 60, "hour") if mins < 1440 else
+                   rel(mins // 1440, "day"))
             rows.append({"sha": f"journal{ct}", "epoch": ct, "age": age,
                          "subject": "journal moment (crash net, unsaved)",
                          "kind": 4, "path": f"songs/.journal/{f}",

@@ -83,12 +83,20 @@ public:
             }
             else
             {
-                g.setGradientFill ({ theme::panelHi.brighter (hot ? 0.10f : 0.02f), r.getTopLeft(),
-                                     theme::panel.darker (hot ? 0.0f : 0.08f), r.getBottomLeft(), false });
+                // the idle pad WEARS its scene colour (rail-wave law: grey slabs are
+                // dead; material carries identity) — tinted glass + colour pool at top
+                g.setGradientFill ({ theme::panelHi.interpolatedWith (sc, hot ? 0.16f : 0.10f)
+                                                    .brighter (hot ? 0.06f : 0.0f), r.getTopLeft(),
+                                     theme::panel.interpolatedWith (sc, hot ? 0.10f : 0.055f)
+                                                  .darker (0.06f), r.getBottomLeft(), false });
                 g.fillRoundedRectangle (r, 9.0f);
-                g.setColour (sc.withAlpha (hot ? 0.95f : 0.65f));         // scene identity top edge
+                g.setGradientFill ({ sc.withAlpha (hot ? 0.20f : 0.13f), r.getTopLeft(),
+                                     sc.withAlpha (0.0f),
+                                     { r.getX(), r.getY() + r.getHeight() * 0.72f }, false });
+                g.fillRoundedRectangle (r, 9.0f);
+                g.setColour (sc.withAlpha (hot ? 1.0f : 0.80f));          // scene identity top edge
                 g.fillRoundedRectangle (r.getX() + 7.0f, r.getY() + 2.0f, r.getWidth() - 14.0f, 2.5f, 1.25f);
-                g.setColour (hot ? sc.withAlpha (0.55f) : juce::Colours::white.withAlpha (0.09f));
+                g.setColour (sc.withAlpha (hot ? 0.60f : 0.24f));
                 g.drawRoundedRectangle (r, 9.0f, 1.2f);
             }
             g.setColour (on ? juce::Colours::white : juce::Colours::white.withAlpha (hot ? 0.9f : 0.72f));

@@ -35,6 +35,21 @@ PARAM_ALIASES = {"resonance": "res", "threshold": "thresh",
 _HP_WORDS = {"hp", "high", "highpass", "hi", "1", "1.0", "true"}
 
 
+
+def ceiling_for(lufs):
+    """W48 (item 121, Spotify's own rule): louder masters overshoot
+    MORE on lossy encode (measured up to +1.73dB typical) — the wall's
+    ceiling is loudness-aware, never a flat number: -1.0 dBTP when the
+    integrated sits at/below -14 LUFS, -2.0 when hotter. Unknown
+    loudness keeps the historic -1.2 (the safe middle)."""
+    if lufs is None:
+        return -1.2
+    try:
+        return -1.0 if float(lufs) <= -14.0 else -2.0
+    except Exception:
+        return -1.2
+
+
 def _fx_zones(fid):
     try:
         import os as _os, sys as _sys
@@ -130,6 +145,20 @@ def floor_verdict(song, analysis=None):
                                     "in the render"})
         except (TypeError, ValueError):
             pass
+        # W64 (r-14 item 206): the LRA/DYNAMICS window — soft tier
+        # (the heal is at the SOURCE per item 145, never a fx move)
+        lra = a.get("lra")
+        try:
+            if lra is not None and float(lra) < 3.0:
+                soft.append({"code": "lra_static",
+                             "why": (f"LRA {float(lra):.1f} LU — under 3 no "
+                                     "arc survived the master (dense pop/EDM "
+                                     "live at 3.5-8, rock 8-12, folk 10-15); "
+                                     "restore section contrast at the SOURCE "
+                                     "(density/level per section), never by "
+                                     "un-limiting the wall")})
+        except (TypeError, ValueError):
+            pass
         if int(a.get("clipped_samples") or 0) > 0:
             hard.append({"code": "still_clipping",
                          "why": f"{a['clipped_samples']} clipped samples AFTER "
@@ -220,10 +249,55 @@ def floor_verdict(song, analysis=None):
                              "why": f"'{t.get('name')}' (sub) is WIDENED — "
                                     "mono cancellation (M1)"})
 
-    return {"pass": not hard, "hard": hard, "soft": soft}
+    return {"pass": not hard, "hard": hard, "soft": soft,
+            "analysis": a}     # w48: the heal's loudness-aware ceiling reads it
 
 
-def heal(song, verdict):
+def _session_genre():
+    """The GENRE COURT's stamp — start_session writes the resolved
+    genre to ipc/genre_resolved.json; the floor reads it as fallback
+    (fail-open)."""
+    try:
+        import json as _j
+        import os as _o
+        root = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
+        p = _o.path.join(root, "agent", "ipc", "genre_resolved.json")
+        return str(_j.load(open(p)).get("genre") or "")
+    except Exception:
+        return ""
+
+
+def pre_wall_clipper(doc, genre, receipts):
+    """W65 (r-8 item 194): loud genres soft-clip 1-2dB of transient
+    peaks BEFORE the limiter so the wall works less and pumps less.
+    Insert fx_softclip ahead of the LAST fx_truepeak when the genre's
+    PSR floor <= 6 (EDM/trap/pop/metal class) and no clip stage rides
+    yet. Drive 1.5dB — under the crest brake by construction."""
+    g = genre or _session_genre()
+    if not g:
+        return
+    try:
+        import dynamics_ears as _de
+        pf = _de.psr_floor_for(g)
+        floor = float(pf[0] if isinstance(pf, (tuple, list)) else pf)
+    except Exception:
+        return
+    if floor > 6.0:
+        return
+    m = doc.get("master", []) or []
+    wall_i = next((i for i in range(len(m) - 1, -1, -1)
+                   if m[i].get("id") == "fx_truepeak"), None)
+    if wall_i is None:
+        return
+    if any(f.get("id") in ("fx_softclip", "fx_crush") for f in m):
+        return
+    m.insert(wall_i, {"id": "fx_softclip", "params": {"drive": 1.5}})
+    receipts.append(f"pre-wall clipper landed (softclip 1.5dB — {g}'s "
+                    f"PSR floor {floor:.0f} = loud-genre class; the "
+                    "wall pumps less)")
+
+
+def heal(song, verdict, genre=""):
     """Apply every deterministic heal in the verdict. Returns
     (healed_song, receipts) — receipts empty when nothing was healable.
     Pure: the input song is not mutated."""
@@ -241,8 +315,11 @@ def heal(song, verdict):
         elif op == "upgrade_wall":
             f = doc.get("master", [])[fix[1]]
             f.clear()
-            f.update({"id": "fx_truepeak", "params": {"ceiling": -1.2}})
-            receipts.append("legacy limiter upgraded to fx_truepeak")
+            f.update({"id": "fx_truepeak", "params": {
+                "ceiling": ceiling_for((verdict.get("analysis") or {})
+                                       .get("lufs_integrated"))}})
+            receipts.append("legacy limiter upgraded to fx_truepeak "
+                            "(loudness-aware ceiling)")
         elif op == "zero_master_gain":
             doc["masterGainDb"] = 0.0
             receipts.append("post-wall masterGainDb -> 0")
@@ -287,8 +364,13 @@ def heal(song, verdict):
                          if i not in set(drop_master)]
         # a take healed of its dark filter still needs the wall to stand last
         if not any(f.get("id") == "fx_truepeak" for f in doc["master"]):
-            doc["master"].append({"id": "fx_truepeak", "params": {"ceiling": -1.2}})
-            receipts.append("release wall appended (chain lost its last stage)")
+            doc["master"].append({"id": "fx_truepeak", "params": {
+                "ceiling": ceiling_for((verdict.get("analysis") or {})
+                                       .get("lufs_integrated"))}})
+            receipts.append("release wall appended (chain lost its last "
+                            "stage; loudness-aware ceiling)")
+    if receipts:
+        pre_wall_clipper(doc, genre, receipts)
     # WALL LAST, WALL ONCE: upgrade_wall converts the legacy limiter IN PLACE —
     # if it wasn't the chain's last stage, post-wall fx (a saturator, a trim up)
     # re-clip what the wall just caught; and an upgraded legacy next to an

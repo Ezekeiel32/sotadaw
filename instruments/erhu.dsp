@@ -15,7 +15,7 @@ rel = hslider("release", 0.2, 0.02, 1.5, 0.001);
 vib    = 1 + vibrato*en.asr(0.3, 1, 0.1, gate)*os.osc(vibrate);  // vibrato blooms in
 env    = en.adsr(att, 0.15, 0.9, rel, gate);
 string = os.sawtooth(freq*vib);
-bown   = no.noise*bow*0.3 : fi.bandpass(2, freq*0.5, freq*4);
+bown   = no.noise*bow*0.3 : fi.bandpass(2, max(60.0, freq*0.5), min(8000.0, freq*4));  // unclamped 27.5Hz HP corner at A1 = IIR instability, railed WHOLE sustains (register court 2026-07-31)
 raw    = (string + bown) : fi.lowpass(2, bright);
 body   = (raw : fi.resonbp(formant, 1.8, 1))*0.5 + raw*0.6;
-process = body * env * gain * 0.5 <: _,_;
+process = body * env * gain * 0.45 <: _,_;  // headroom law: 0 clipped @ vel 1.0 all registers (post corner-clamp)

@@ -152,7 +152,17 @@ def build_report(song_path=None, wav=None, genre=None, no_render=False, profile=
               "L/R anti-correlation = mono-collapse risk: pull fx_widen off low elements, "
               "reduce width on the offenders.", hard=False)
     if a.get("psr") is not None:
-        check("dynamics", a["psr"] >= 6.0, a["psr"], ">= 6 dB (PSR)",
+        # W83 (item 233): the ONE resolver — the master court and the
+        # dynamics court must agree (flat 6.0 convicted gabber, pardoned
+        # crushed classical)
+        try:
+            import psr_floors as _pf
+            _fl = _pf.floor_for_genre(genre)
+            _fl = float(_fl[0] if isinstance(_fl, (tuple, list)) else _fl)
+        except Exception:
+            _fl = 6.0
+        check("dynamics", a["psr"] >= _fl, a["psr"],
+              f">= {_fl:g} dB (PSR, genre floor)",
               "over-limited: PSR (true-peak minus loudest 3s loudness) under ~6 dB = crushed "
               "dynamics (research_mastering_sota.md §4, convention). Ease the makeup trim / limiter "
               "drive — streaming normalises loudness DOWN anyway, so you lose punch for nothing.",

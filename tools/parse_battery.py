@@ -258,7 +258,6 @@ ADVERSARIAL = [
     ("add some width to the bass", None),          # mono-below-120 law
     ("quantize the hats", None),                   # already on-grid -> no_op honesty
     ("the 99th kick is late, fix it", None),       # nth out of range
-    ("make everything louder", None),
     ("speed it up", None),
     ("make the verse longer", None),
     ("what did we change in the hook?", None),     # questions never compile
@@ -292,9 +291,9 @@ ADVERSARIAL = [
 def main():
     fails, rows = [], []
 
-    def grade(tag, text, verify, fixture_fn=None, facts=None):
+    def grade(tag, text, verify, fixture_fn=None, facts=None, context=None):
         base = (fixture_fn or base_song)()
-        plan, why = parse_lane.compile_debug(text, base, facts=facts)
+        plan, why = parse_lane.compile_debug(text, base, context, facts=facts)
         if plan is None:
             rows.append((tag, text, "MISS", why))
             return None
@@ -350,6 +349,75 @@ def main():
         else:
             print(f"  [LEAK!] {text!r} -> {plan['summary']}")
             fails.append(f"FALSE POSITIVE: {text!r} compiled to {plan['summary']}")
+
+    # -------- wave 5 (2026-08-08): SELECTION = CONTEXT + the whole-mix fader.
+    # Live evidence: 'make it quieter' x3 / 'make it darker' missed as
+    # track_empty:it while the UI was pointing at a track; 'make everything
+    # louder' (old adversarial) now has DEFINED semantics — one uniform trim on
+    # every track, balance kept. Pronouns without a selection stay honest
+    # misses except pure gain, where 'it' = the mix fader.
+    print("\n== E. selection rung — pronouns point, idioms scope ==")
+    sel_of = lambda *names: {"selections": [{"type": "tracks", "names": list(names)}]}
+    notes_sel = {"selections": [{"type": "notes", "track": "hats", "indices": [0, 1, 2]}]}
+
+    def all_gain(delta):
+        def v(b, p):
+            return (all(abs(float(T(p, t["name"]).get("gainDb", 0))
+                            - (float(T(b, t["name"]).get("gainDb", 0)) + delta)) <= 0.5
+                        for t in b["tracks"])
+                    and all(len(T(p, t["name"]).get("notes", []))
+                            == len(T(b, t["name"]).get("notes", []))
+                            for t in b["tracks"]))
+        return v
+
+    SELECTED = [
+        ("make it quieter", sel_of("hats"),
+         lambda b, p: abs(T(p, "hats")["gainDb"] - (T(b, "hats")["gainDb"] - 3)) <= 0.5
+         and unchanged(b, p, OTHERS("hats"))),
+        ("make it quieter", notes_sel,        # a notes selection names its track
+         lambda b, p: abs(T(p, "hats")["gainDb"] - (T(b, "hats")["gainDb"] - 3)) <= 0.5
+         and unchanged(b, p, OTHERS("hats"))),
+        ("turn it down 2db", sel_of("kick"),
+         lambda b, p: abs(T(p, "kick")["gainDb"] - (T(b, "kick")["gainDb"] - 2)) <= 0.5
+         and unchanged(b, p, OTHERS("kick"))),
+        ("mute it", sel_of("pad"),
+         lambda b, p: T(p, "pad").get("muted") is True
+         and unchanged(b, p, OTHERS("pad"))),
+        ("pan it hard left", sel_of("lead"),
+         lambda b, p: float(T(p, "lead").get("pan", 0)) <= -0.7
+         and unchanged(b, p, OTHERS("lead"))),
+        ("make it darker", sel_of("pad"),     # verb bus, scoped to the selection
+         lambda b, p: p != b and unchanged(b, p, OTHERS("pad"))),
+        ("quantize it", sel_of("lead"), suite_v("quantize the lead tight to the grid")),
+        ("make it quieter", None, all_gain(-3)),   # nothing selected = the mix fader
+        ("make everything louder", None, all_gain(3)),
+        ("make everything quieter by 3db", None, all_gain(-3)),
+        ("mute everything", None,
+         lambda b, p: all(T(p, t["name"]).get("muted") is True for t in b["tracks"])),
+    ]
+    for text, sctx, verify in SELECTED:
+        grade("sel", text, verify, None, None, sctx)
+        st, det = rows[-1][2], rows[-1][3]
+        print(f"  [{st:5s}] {text!r} ctx={'sel' if sctx else 'none'} — {det}")
+        if st == "MISS":
+            fails.append(f"COVERAGE: selection-rung {text!r} missed ({det})")
+    MUST_MISS_SEL = [
+        ("make it quieter", sel_of("hats", "pad"), "pronoun_multi_selection"),
+        ("make it darker", None, "pronoun_no_selection"),   # taste stays cloud
+        ("mute it", None, "pronoun_no_selection"),
+        ("pan it left", None, "pronoun_no_selection"),
+        ("quantize it", None, "pronoun_no_selection"),
+    ]
+    for text, sctx, want in MUST_MISS_SEL:
+        plan, why = parse_lane.compile_debug(text, base_song(), sctx)
+        if plan is not None:
+            print(f"  [LEAK!] {text!r} -> {plan['summary']}")
+            fails.append(f"FALSE POSITIVE (selection rung): {text!r} -> {plan['summary']}")
+        elif want not in why:
+            print(f"  [MISS ] {text!r} ({why}) — WRONG REASON, wanted {want}")
+            fails.append(f"WRONG MISS REASON: {text!r} -> {why} (wanted {want})")
+        else:
+            print(f"  [MISS ] {text!r} ({why})")
 
     print("\n== D. compile speed ==")
     texts = [c[0] for c in CASES] + [p[0] for p in PARAPHRASES]

@@ -52,6 +52,33 @@ def deck_key(path):
     return key, f"{num}{'A' if mode == 'minor' else 'B'}", conf
 
 
+def harmonic_move(ca, cb):
+    """w45 (item 101): the TIERED kernel — tier + ENERGY DIRECTION.
+    Camelot semantics: +1 same letter = energy up; -1 = energy down;
+    minor->major (A->B) = brighten; major->minor = darken; +2 = the
+    risky double-boost; everything else = clash."""
+    if not ca or not cb:
+        return {"tier": "unknown", "energy": "flat",
+                "note": "low key confidence — no harmonic constraint"}
+    na, la, nb, lb = int(ca[:-1]), ca[-1], int(cb[:-1]), cb[-1]
+    dn = (nb - na) % 12
+    if na == nb and la == lb:
+        return {"tier": "clean", "energy": "flat", "note": "same slot"}
+    if na == nb:
+        return {"tier": "clean",
+                "energy": "brighten" if (la, lb) == ("A", "B")
+                else "darken", "note": "relative switch"}
+    if la == lb and dn == 1:
+        return {"tier": "clean", "energy": "up", "note": "+1 on the wheel"}
+    if la == lb and dn == 11:
+        return {"tier": "clean", "energy": "down", "note": "-1 on the wheel"}
+    if la == lb and dn == 2:
+        return {"tier": "gray", "energy": "up",
+                "note": "+2 double-boost — works mid-blend, risky long"}
+    return {"tier": "clash", "energy": "flat",
+            "note": "shorten the blend or filter one deck hard"}
+
+
 def harmonic_verdict(ca, cb):
     """Camelot rule: same number, or same letter one step apart, mixes clean."""
     if not ca or not cb:

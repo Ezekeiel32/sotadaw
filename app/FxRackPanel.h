@@ -35,6 +35,7 @@ public:
         viewport.setViewedComponent (&strip, false);
         viewport.setScrollBarsShown (false, true, false, true);
         viewport.setScrollBarThickness (8);
+        viewport.onScrolled = [this] { repaint(); };       // the NEXT BAY is panel-painted
         addAndMakeVisible (viewport);
         startTimerHz (8);                                  // knobs follow agent/automation edits
     }
@@ -144,7 +145,10 @@ public:
             m->setBounds (x, 2, m->preferredWidth(), mh);
             x += m->preferredWidth() + 8;
         }
-        strip.setSize (juce::jmax (x + 2, r.getWidth()), juce::jmax (1, r.getHeight() - 8));
+        chainEndX = x;
+        // a non-empty chain keeps room to scroll TO its next bay
+        strip.setSize (juce::jmax (modules.isEmpty() ? x + 2 : x + 134, r.getWidth()),
+                       juce::jmax (1, r.getHeight() - 8));
     }
 
     // ---------------------------------------------------------------- painting
@@ -209,12 +213,82 @@ public:
             hits.push_back ({ xr, "close", 0 });
         }
 
+        if (auto* ch = chain(); ch != nullptr && ! ch->empty())
+        {   // THE SIGNAL THREAD + THE NEXT BAY: the chain sits ON a rail (in at the
+            // left, out at the right — modules interrupt it, so it reads through the
+            // seams as one signal path), and one dormant bay always waits after the
+            // last module. Panel-painted under the viewport: cards cover their span,
+            // the thread lives in the gaps. Bay tracks scroll via onScrolled.
+            const auto vb = viewport.getBounds();
+            const float cy = (float) vb.getCentreY() - 4.0f;   // knob-row height, over the h-scrollbar
+            g.setColour (col.withAlpha (0.16f));
+            g.fillRoundedRectangle ((float) vb.getX() + 2.0f, cy - 0.75f,
+                                    (float) vb.getWidth() - 4.0f, 1.5f, 0.75f);
+            const int bx = vb.getX() + chainEndX - viewport.getViewPositionX();
+            juce::Rectangle<float> bay ((float) bx, (float) vb.getY() + 2.0f, 124.0f,
+                                        (float) juce::jmax (58, vb.getHeight() - 12));
+            if (bay.getX() < (float) vb.getRight() - 20.0f)    // at least a sliver visible
+            {
+                g.saveState();
+                g.reduceClipRegion (vb);
+                g.setColour (theme::inset.withAlpha (0.55f));
+                g.fillRoundedRectangle (bay, 8.0f);
+                g.setGradientFill ({ juce::Colours::black.withAlpha (0.30f), bay.getTopLeft(),
+                                     juce::Colours::black.withAlpha (0.0f),
+                                     { bay.getX(), bay.getY() + 7.0f }, false });
+                g.fillRoundedRectangle (bay, 8.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.045f));
+                g.drawRoundedRectangle (bay.reduced (0.5f), 8.0f, 1.0f);
+                g.setColour (theme::textMute.withAlpha (0.5f));            // dead power LED
+                g.fillEllipse (bay.getX() + 8.0f, bay.getY() + 7.5f, 5.0f, 5.0f);
+                g.setColour (theme::textMute.withAlpha (0.7f));
+                g.setFont (theme::mono (8.0f, juce::Font::bold));
+                g.drawText ((ch->size() < 9 ? "0" : "") + juce::String ((int) ch->size() + 1),
+                            (int) bay.getX() + 18, (int) bay.getY() + 4, 22, 12,
+                            juce::Justification::centredLeft);
+                const float px = bay.getCentreX(), py = bay.getCentreY();
+                g.setColour (theme::good.withAlpha (0.45f));
+                g.fillRoundedRectangle (px - 7.0f, py - 1.1f, 14.0f, 2.2f, 1.1f);
+                g.fillRoundedRectangle (px - 1.1f, py - 7.0f, 2.2f, 14.0f, 1.1f);
+                g.restoreState();
+                hits.push_back ({ bay.getIntersection (vb.toFloat()), "add", 0 });
+            }
+        }
         if (chain() != nullptr && chain()->empty())
-        {
-            g.setColour (theme::textDim);
-            g.setFont (theme::ui (11.0f));
-            g.drawText ("empty chain - hit + FX (order = signal flow)",
-                        viewport.getBounds(), juce::Justification::centred);
+        {   // DORMANT RACK (alive wave, material-not-banners): sleeping insert bays
+            // where modules will seat — dead power LEDs, slot pips, a drawn plus in
+            // bay 01 as the door (it IS the +FX verb). No sentence does the UI's job.
+            auto vb = viewport.getBounds();
+            const int sw = juce::jmin (420, vb.getWidth() - 24);
+            int y = vb.getY() + 8;
+            for (int s = 0; s < 3 && y + 44 <= vb.getBottom() && sw > 120; ++s)
+            {
+                juce::Rectangle<float> slot ((float) (vb.getCentreX() - sw / 2), (float) y,
+                                             (float) sw, 40.0f);
+                g.setColour (theme::inset.withAlpha (0.55f));
+                g.fillRoundedRectangle (slot, 8.0f);
+                g.setGradientFill ({ juce::Colours::black.withAlpha (0.30f), slot.getTopLeft(),
+                                     juce::Colours::black.withAlpha (0.0f),
+                                     { slot.getX(), slot.getY() + 7.0f }, false });
+                g.fillRoundedRectangle (slot, 8.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.045f));
+                g.drawRoundedRectangle (slot.reduced (0.5f), 8.0f, 1.0f);
+                g.setColour (theme::textMute.withAlpha (0.5f));            // dead power LED
+                g.fillEllipse (slot.getX() + 12.0f, slot.getCentreY() - 2.0f, 4.0f, 4.0f);
+                g.setColour (theme::textMute.withAlpha (0.7f));
+                g.setFont (theme::mono (8.0f, juce::Font::bold));
+                g.drawText ("0" + juce::String (s + 1), (int) slot.getX() + 24, (int) slot.getY(),
+                            22, (int) slot.getHeight(), juce::Justification::centredLeft);
+                if (s == 0)
+                {   // bay 01 offers the hand a plus — the same door the +FX chip opens
+                    const float cx = slot.getCentreX(), cy = slot.getCentreY();
+                    g.setColour (theme::good.withAlpha (0.55f));
+                    g.fillRoundedRectangle (cx - 7.0f, cy - 1.1f, 14.0f, 2.2f, 1.1f);
+                    g.fillRoundedRectangle (cx - 1.1f, cy - 7.0f, 2.2f, 14.0f, 1.1f);
+                    hits.push_back ({ slot, "add", 0 });
+                }
+                y += 48;
+            }
         }
         if (kind == Kind::master)
             paintVerdict (g, { getWidth() - cardW - 8, headerH + 4, cardW, getHeight() - headerH - 10 });
@@ -591,6 +665,17 @@ private:
     class Module : public juce::Component
     {
     public:
+        static juce::Colour fxTint (const juce::String& t)
+        {   // the type families (matches the sound-word palette, not per-target)
+            if (t.contains ("filter"))                                    return theme::accent;
+            if (t.contains ("eq"))                                        return juce::Colour (0xfff2d97f);
+            if (t.contains ("reverb") || t.contains ("delay"))            return theme::accentB;
+            if (t.contains ("comp") || t.contains ("trim") || t.contains ("truepeak")
+                || t.contains ("brickwall") || t.contains ("limiter"))    return theme::good;
+            if (t.contains ("saturate") || t.contains ("transient"))      return juce::Colour (0xfff8b48a);
+            if (t.contains ("widen") || t.contains ("pump") || t.contains ("retune")) return theme::meterHi;
+            return theme::textMute;
+        }
         Module (FxRackPanel& ownerIn, int indexIn) : owner (ownerIn), index (indexIn)
         {
             auto* ch = owner.chain();
@@ -655,6 +740,14 @@ private:
             const auto base = f.bypass ? theme::panel.darker (0.12f) : theme::panelHi;
             theme::card (g, r, isMouseOver (true) && ! f.bypass ? base.brighter (0.05f) : base,
                          8.0f, f.bypass ? 0.4f : 1.0f);
+            {   // THE RACK'S TYPE LANGUAGE: every module wears its family on the
+                // spine — motion blue, tone gold, space violet, level green —
+                // the chain's shape reads left-to-right like the lane gutter.
+                g.setColour (fxTint (title.toLowerCase())
+                                 .withAlpha (f.bypass ? 0.25f : 0.85f));
+                g.fillRoundedRectangle (r.getX() + 1.5f, r.getY() + 6.0f, 2.5f,
+                                        r.getHeight() - 12.0f, 1.25f);
+            }
             if (owner.dragFrom == index)                   // carried: the module lifts
             {
                 g.setColour (owner.targetColour().withAlpha (0.14f));
@@ -662,7 +755,7 @@ private:
             }
             if (owner.pointedFx == index)                  // the agent is pointed HERE
             {
-                g.setColour (theme::agent.withAlpha (0.9f));
+                g.setColour (theme::agent.withAlpha (0.495f));
                 g.drawRoundedRectangle (r.reduced (0.6f), 8.0f, 1.5f);
             }
             auto head = getLocalBounds().reduced (7, 3).withHeight (14);
@@ -805,7 +898,13 @@ private:
     struct Hit { juce::Rectangle<float> r; juce::String act; int arg; };
     std::vector<Hit> hits;
     juce::Point<float> lastMouse { -1.0f, -1.0f };   // header chips answer the hand
-    juce::Viewport viewport;
+    struct RackViewport : juce::Viewport
+    {   // the panel paints the NEXT BAY in its own coords — scrolls must re-place it
+        std::function<void()> onScrolled;
+        void visibleAreaChanged (const juce::Rectangle<int>&) override { if (onScrolled) onScrolled(); }
+    };
+    RackViewport viewport;
     juce::Component strip;
     juce::OwnedArray<Module> modules;
+    int chainEndX = 2;                               // resized() -> where the NEXT BAY seats
 };

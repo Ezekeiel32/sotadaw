@@ -27,8 +27,18 @@ PLATFORMS = {
     "tidal":     {"lufs": -14.0, "dbtp": -1.0, "gain_only": False, "note": ""},
     "amazon":    {"lufs": -14.0, "dbtp": -2.0, "gain_only": False, "note": "Amazon Music enforces -2 dBTP"},
     "deezer":    {"lufs": -15.0, "dbtp": -1.0, "gain_only": False, "note": ""},
-    "tiktok":    {"lufs": -10.0, "dbtp": -1.0, "gain_only": False, "note": "social; runs hotter -9..-12"},
-    "reels":     {"lufs": -10.0, "dbtp": -1.0, "gain_only": False, "note": "Instagram Reels; -9..-12"},
+    # W89 (r-8 item 256): DELIVERY profiles beyond streaming — format
+    # constraints, not just numbers. CD/vinyl numeric LUFS stay
+    # UNVERIFIED (standing memory); the format constraints below are
+    # the craft-verified part.
+    "club":      {"lufs": -7.0, "dbtp": -0.1, "gain_only": False,
+                  "note": "the SECOND master: -8..-6 LUFS, -0.1 dBTP — club systems, no codec headroom needed"},
+    "cd":        {"lufs": None, "dbtp": -0.3, "gain_only": False,
+                  "note": "16-bit/44.1: SRC BEFORE the limiter, dither LAST (export_master's TPDF stage), -0.3 dBTP; loudness = the genre's own window (numeric CD targets unverified — never invented)"},
+    "vinyl":     {"lufs": -13.0, "dbtp": -1.0, "gain_only": False,
+                  "note": "mono-sum <150-300Hz (fx_ms_eq mono-bass), HF roll from ~15k, EXTRA de-ess, cap ~-14..-12 LUFS — the cutter's physics, not taste"},
+    "tiktok":    {"lufs": -14.0, "dbtp": -1.0, "gain_only": True, "note": "W83 (r-8): no published target; platform normalizes DOWN (~-14) + xHE-AAC adaptive DRC recompresses at playback — master GENRE-TRUE, never push hotter 'for social'"},
+    "reels":     {"lufs": -14.0, "dbtp": -1.0, "gain_only": True, "note": "W83: adaptive DRC at playback — genre-true master wins"},
     # safe cross-platform default: hit -14 so no major service turns you down hard, -1 dBTP.
     "streaming": {"lufs": -14.0, "dbtp": -1.0, "gain_only": False,
                   "note": "generic streaming: -14 LUFS clears all major refs, -1 dBTP"},

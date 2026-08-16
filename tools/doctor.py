@@ -27,38 +27,13 @@ import automix as M
 from expressive import nomml_level
 import songname
 
-# Zone truth per faust fx — extracted from instruments/fx_*.dsp slider
-# declarations (2026-07-12). setZone() is EXACT-name; a param not in this
-# set is a silent no-op. New fx: add its zones here or it fail-opens (no
-# false X2, but no protection either).
-FX_ZONES = {
-    "fx_brickwall": {"ceiling"},
-    "fx_comp": {"thresh", "ratio", "attack", "release", "makeup"},
-    "fx_crush": {"bits", "srate", "mix"},
-    "fx_deess": {"freq", "thresh", "ratio"},
-    "fx_delay": {"time", "feedback", "mix"},
-    "fx_djfilter": {"knob", "res"},
-    "fx_filter": {"cutoff", "res"},
-    "fx_flanger": {"rate", "depth", "feedback", "mix"},
-    "fx_gate": {"thresh", "depth", "rel"},
-    "fx_hipass": {"cutoff", "res"},
-    "fx_ms_eq": {"mid_low", "mid_high", "side_low", "side_high",
-                 "width", "low_freq", "high_freq"},
-    "fx_multiband": {"xlow", "xhigh", "attack", "release",
-                     "low_thresh", "low_ratio", "mid_thresh", "mid_ratio",
-                     "high_thresh", "high_ratio", "makeup"},
-    "fx_pump": {"rate", "depth", "release"},
-    "fx_reverb": {"mix", "size", "damp"},
-    "fx_saturate": {"drive", "tone", "mix"},
-    "fx_softclip": {"drive"},
-    "fx_transient": {"attack", "sustain"},
-    "fx_trim": {"level"},
-    "fx_truepeak": {"ceiling"},
-    "fx_widen": {"width", "rate"},
-}
+# Zone truth per faust fx — ONE table, shared with the write seams
+# (tools/fx_zones.py, 2026-07-24 THE PARAM COURT). setZone() is EXACT-name;
+# a param not in the set is a silent no-op. New fx: add zones THERE.
+from fx_zones import FX_ZONES
 
 
-def diagnose(song):
+def diagnose(song, genre=""):
     issues = []
     tracks = song.get("tracks", [])
     melodic = [t for t in tracks if not is_drum_track(t) and t.get("notes")]
@@ -95,6 +70,28 @@ def diagnose(song):
         if flat and melodic:
             issues.append(("A2", "the arrangement doesn't breathe — every section is the same density",
                            "harmonize sectioned"))
+
+    # X4 (w58, r-23): THE GRIND SCOOP — genre-conditional; only judged
+    # when the caller KNOWS the genre (the daw_mcp verdict seam has no
+    # genre; run_courts + the Doctor CLI do)
+    if genre:
+        try:
+            import metal_heal as _mh
+            for a in _mh.court_metal_mix(song, genre).get("advisories", []):
+                if a["kind"] == "grind_scoop_trap":
+                    issues.append(("X4", a["why"], "metal_heal (clamp -3)"))
+        except Exception:
+            pass
+
+    # X5 (w63, r-32): parallel-perfects / leaping comp / entropy —
+    # genre-aware extremes only
+    if genre:
+        try:
+            import symbolic_invariants as _si
+            for a in _si.invariants(song, genre).get("advisories", []):
+                issues.append(("X5", a["why"][:160], "see the WHY"))
+        except Exception:
+            pass
 
     # M1 off-center subs
     for t in tracks:
@@ -211,6 +208,7 @@ def diagnose(song):
             if zones is not None:
                 bad = [k for k in (f.get("params") or {})
                        if k not in zones
+                       and not k.startswith("_")   # first-party markers (params._am)
                        and not (f.get("id") == "fx_trim" and k == "gain")]
                 if bad:
                     issues.append(("X2", f"{f.get('id')} on '{t.get('name')}' has unknown param(s) {bad} — real zones: {sorted(zones)}; these do NOTHING",
@@ -349,10 +347,12 @@ def band_verdict(analysis, dna=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("song")
+    ap.add_argument("--genre", default="",
+                    help="unlocks genre-conditional checks (X4 grind scoop)")
     a = ap.parse_args()
     name = songname.resolve(a.song)
     song = json.load(open(os.path.join(ROOT, "songs", f"{name}.json")))
-    issues = diagnose(song)
+    issues = diagnose(song, a.genre)
     if not issues:
         print(f"[doctor] {name}: CLEAN — no fixable issues found")
     else:

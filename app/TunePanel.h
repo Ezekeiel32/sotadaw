@@ -124,10 +124,38 @@ public:
         g.setFont (juce::Font (juce::FontOptions (11.0f)));
         if (! report.isObject())
         {
-            g.setColour (theme::textMute);
-            g.drawText (busy ? "listening, segmenting, choosing targets from the arrangement..."
-                             : "tune to see the note-by-note WHY report",
-                        rr, juce::Justification::centred);
+            if (busy)
+            {
+                g.setColour (theme::textMute);
+                g.drawText ("listening, segmenting, choosing targets from the arrangement...",
+                            rr, juce::Justification::centred);
+                return;
+            }
+            // DORMANT REPORT (material, not prose): the WHY rows sleep in their own
+            // geometry — beat stub, sung->target stub, the signed cents spine — so
+            // TUNE wakes them in place. No sentence does the UI's job.
+            auto ghost = rr;
+            ghost.removeFromTop (4);
+            for (int i = 0; i < 3 && ghost.getHeight() >= 15; ++i)
+            {
+                auto line = ghost.removeFromTop (15);
+                const float a = 0.26f - 0.06f * (float) i;             // rows recede to sleep
+                g.setColour (theme::textMute.withAlpha (a));
+                g.fillRoundedRectangle (line.removeFromLeft (44).reduced (4, 5).toFloat(), 2.0f);
+                g.fillRoundedRectangle (line.removeFromLeft (150).reduced (4, 5)
+                                            .withTrimmedRight (34 + 12 * i).toFloat(), 2.0f);
+                auto barR = line.removeFromLeft (110).reduced (0, 5).toFloat();
+                g.setColour (theme::grid.withAlpha (0.9f));            // the spine waits
+                g.fillRect (barR.withWidth (1.0f).withX (barR.getCentreX()));
+                const float w = i == 0 ? 26.0f : i == 1 ? -17.0f : 9.0f;
+                g.setColour (theme::textMute.withAlpha (a + 0.04f));
+                if (w >= 0) g.fillRoundedRectangle ({ barR.getCentreX(), barR.getY(), w, barR.getHeight() }, 2.0f);
+                else        g.fillRoundedRectangle ({ barR.getCentreX() + w, barR.getY(), -w, barR.getHeight() }, 2.0f);
+                g.setColour (theme::textMute.withAlpha (a - 0.04f));
+                g.fillRoundedRectangle (line.removeFromLeft (46).reduced (4, 5).toFloat(), 2.0f);
+                line.removeFromLeft (2);
+                g.fillRoundedRectangle (line.removeFromLeft (58 - 14 * i).reduced (0, 5).toFloat(), 2.0f);
+            }
             return;
         }
         auto stats = report.getProperty ("stats", juce::var());

@@ -25,7 +25,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_BANK = "gahata_meiji"
 _FALLBACK_MANIFEST = {                      # pre-manifest banks stay working
     "name": DEFAULT_BANK, "display": "Gahata Meiji (LUNAI)",
-    "attribution": "Gahata Meiji from LUNAI Project",
+    # R-31 (2026-07-14): the FULL voice-stack credit — the engine + vocoder
+    # notice was legally required and previously missing; Hebrew G2P joins.
+    "attribution": "Gahata Meiji from LUNAI Project · DiffSinger (OpenVPI "
+                   "community, github.com/openvpi/DiffSinger) + community "
+                   "vocoder · Hebrew G2P: Phonikud (CC BY 4.0)",
     "license": {"commercial": False, "attribution_required": True},
     "assets": {"acoustic": "files/acoustic.onnx", "dur": "files/dur.onnx",
                "pitch": "files/pitch.onnx", "variance": "files/variance.onnx",
@@ -387,7 +391,7 @@ def hum(song_name, track_name, syllable="laa", embed="standard"):
     print(f"[hum] {len(song['lyrics'])} '{syllable}' syllables over {track_name}")
     render(song_name, track_name, embed)
 
-def render(song_name, track_name, embed="standard", steps=30):
+def render(song_name, track_name, embed="standard", steps=30, lang=None):
     require_bank()
     """lyrics + melody -> Gahata Meiji sings -> songs/<song>_vocal.wav -> vocals track."""
     _cuda_preload()   # BEFORE the import: the GPU wheel dlopens libcudart at
@@ -406,7 +410,21 @@ def render(song_name, track_name, embed="standard", steps=30):
         return print("need lyrics[] and a melody track")
     wdict = load_word_dict()
     ph_ids = json.load(open(os.path.join(BANK, "files", "phonemes.json")))
-    lang_id = json.load(open(os.path.join(BANK, "files", "languages.json")))["en"]
+    lang_ids = json.load(open(os.path.join(BANK, "files", "languages.json")))
+    lang_id = lang_ids["en"]
+    # THE LANGUAGE RAIL (P9): song language = explicit param > song field >
+    # env > per-word script detection (mixed-language lyrics stay legal).
+    import sing_lang
+    song_lang = (lang or song.get("lyrics_lang")
+                 or os.environ.get("SOTADAW_SING_LANG") or "").strip().lower()
+    if not song_lang:
+        _det = [sing_lang.detect_lang(str(l.get("text", "")), default="en")
+                for l in lyr]
+        _nonen = [d for d in _det if d != "en"]
+        song_lang = max(set(_nonen), key=_nonen.count) if len(_nonen) > len(_det) // 2 else "en"
+    if song_lang != "en":
+        print(f"[sing] language rail: {song_lang} "
+              f"(available: {','.join(sing_lang.langs_available())})", flush=True)
     spb = 60.0 / float(song.get("bpm", 120))
     SR, HOP = 44100, 512
     spf = HOP / SR
@@ -426,7 +444,11 @@ def render(song_name, track_name, embed="standard", steps=30):
         if i is None: continue
         used.add(i)
         w0 = w.strip(".,!?'\"()")
-        phs = w0[1:].split("+") if w0.startswith("@") else wdict.get(w0)   # @l+aa = literal phonemes (hum)
+        if w0.startswith("@"):
+            phs = w0[1:].split("+")                 # @l+aa = literal phonemes (hum)
+        else:
+            _wl = sing_lang.detect_lang(w0, default=song_lang)
+            phs = wdict.get(w0) if _wl == "en" else sing_lang.phonemes_for(w0, _wl)
         if phs is None: misses.append(w); continue
         span_notes = [notes[i]]
         for _ in range(max(0, mel)):       # claim the melisma run
@@ -440,6 +462,13 @@ def render(song_name, track_name, embed="standard", steps=30):
     if not events:
         return print(f"no singable words aligned (missing from dict: {sorted(set(misses))[:8]})")
     events.sort()
+    try:                       # W67 (item 195): coverage BEFORE the vocoder
+        _all_ph = [p for _, _, _, phs, _ in events for p in (phs or [])]
+        _cov = sing_lang.court_phoneme_coverage(_all_ph, song_lang)
+        if not _cov.get("ok", True):
+            print(f"[sing] PHONEME COVERAGE: {_cov['why']}", flush=True)
+    except Exception:
+        pass
 
     # THE CHUNK LAW (2026-07-09): the acoustic model's attention is O(F^2) in
     # frames — a whole imported song in ONE feed is a multi-GB tensor that
@@ -477,11 +506,15 @@ def render(song_name, track_name, embed="standard", steps=30):
         durs.append(max(1, int(round(frames))))
 
     def push_en(p, frames):
-        # The bank splits its inventory: language phonemes live as "en/<p>"
+        # The bank splits its inventory: language phonemes live namespaced
+        # ("en/ay", "ru/lj" — THE LANGUAGE RAIL emits these pre-namespaced)
         # but hh/wh/cl are GLOBAL bare tokens (like AP/SP). cmudict + the
-        # letter fallback emit hh freely, so a blind "en/"+p KeyError'd every
-        # h-word ("heart", "high") and killed the whole take.
-        if "en/" + p in ph_ids:
+        # letter fallback emit bare en phs freely, so a blind "en/"+p
+        # KeyError'd every h-word ("heart") and killed the whole take.
+        if "/" in p and p in ph_ids:               # namespaced (any language)
+            _ns = p.split("/", 1)[0]
+            toks.append(ph_ids[p]); langs.append(lang_ids.get(_ns, lang_id))
+        elif "en/" + p in ph_ids:
             toks.append(ph_ids["en/" + p]); langs.append(lang_id)
         elif p in ph_ids:
             toks.append(ph_ids[p]); langs.append(0)
@@ -550,7 +583,11 @@ def render(song_name, track_name, embed="standard", steps=30):
                     push("AP", 0.35 / spf)
                 else:
                     push("SP", gap / spf)
-            lead = [p for p in phs[:1] if p not in VOWELS]  # leading consonant steals time
+            # vowel test is namespace-aware: "ru/u" is a vowel, "ru/lj" is not
+            def _is_vowel(p):
+                b = p.split("/")[-1]
+                return b in VOWELS or (b[:1] in "aeiouy" and b not in ("y", "j", "w"))
+            lead = [p for p in phs[:1] if not _is_vowel(p)]  # leading consonant steals time
             t_lead = 0.06 if lead and len(phs) > 1 else 0.0
             rest = phs[1:] if t_lead else phs
             t_each = max(0.03, (dur - t_lead) / max(1, len(rest)))
@@ -866,4 +903,9 @@ if __name__ == "__main__":
         hum(sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else "laa")
     elif cmd == "render" and len(sys.argv) >= 4:
         render(sys.argv[2], sys.argv[3],
-               sys.argv[4] if len(sys.argv) > 4 else "standard")
+               sys.argv[4] if len(sys.argv) > 4 else "standard",
+               lang=(sys.argv[5] if len(sys.argv) > 5 else None))
+    elif cmd == "langs":
+        import sing_lang
+        print("singable languages on this box:",
+              ",".join(sing_lang.langs_available()))

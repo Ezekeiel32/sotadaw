@@ -105,6 +105,23 @@ def export(song_name, out=None, require_pass=False, bits=24):
     except Exception as _ce:
         print(f"measured-ceiling pass skipped ({_ce})")
 
+    # W82 (item 046): THE SOFT BINDING — the watermark goes in BEFORE
+    # signing, so the C2PA manifest covers the MARKED audio; provenance
+    # then survives the re-encodes that strip the manifest. Payload =
+    # a 24-bit digest of the song name. Fail-open (short takes skip).
+    try:
+        import hashlib as _hl
+        import watermark as _wm
+        _pl = int.from_bytes(_hl.sha256(
+            song_name.encode()).digest()[:3], "big")
+        _marked = tmp + ".wm.wav"
+        _wm.embed(tmp, _marked, _pl)
+        os.replace(_marked, tmp)
+        print(f"soft binding embedded (payload 0x{_pl:06X} — survives "
+              "mp3 re-encode; detect: tools/watermark.py)")
+    except Exception as _we:
+        print(f"soft binding skipped ({_we})")
+
     sign_src, bit_depth, dithered = tmp, 24, False
 
     # THE PERFECTING STAMP: judge the EXACT audio being signed and carry the verdict
@@ -141,6 +158,21 @@ def export(song_name, out=None, require_pass=False, bits=24):
         except Exception as e:
             print(f"dither failed ({e}) — shipping 24-bit")
 
+    # WAVE 29 THE ATTRIBUTION COURT (R-31 item 006): the voice license is
+    # structural, not a footnote — a take that USES a sung voice cannot
+    # sign without attribution (the heal always lands, so the export
+    # annotates instead of refusing; the impossible state is 'shipped
+    # silently unattributed').
+    try:
+        import attribution_court as _attr
+        _av = _attr.court_attribution(song)
+        if not _av.get("ok", True):
+            _eds = _attr.heal_attribution(song)
+            print("ATTRIBUTION COURT healed: "
+                  + "; ".join(e["kind"] for e in _eds)
+                  + f" — {_attr.bank_attribution()}")
+    except Exception as _ae:
+        print(f"attribution court skipped: {_ae}")
     voices = sorted({t.get("comment") for t in song["tracks"]
                      if str(t.get("comment", "")).startswith("voice:")})
     manifest = {
@@ -167,6 +199,13 @@ def export(song_name, out=None, require_pass=False, bits=24):
                 "statement": "Measured verdict of THIS audio at signing time "
                              "(tools/master_report.py vs the named target lane).",
                 **verdict}})
+    try:
+        import attribution_court as _attr2
+        _la = _attr2.license_assertion(song)
+        if _la:
+            manifest["assertions"].append(_la)
+    except Exception:
+        pass
     key, crt = ensure_cert()
     from c2pa import Builder, C2paSignerInfo, Signer
     signer = Signer.from_info(C2paSignerInfo(

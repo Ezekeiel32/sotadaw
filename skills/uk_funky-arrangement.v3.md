@@ -1,0 +1,29 @@
+---
+name: uk_funky-arrangement
+version: 3
+kind: genre
+tags: [uk_funky, arrangement]
+compiled_from: knowledge-graph (tools/skill_compiler.py; provenance per fact below)
+hard_constraints:
+  - BPM 128-132; set the song key (suggested: F minor).
+  - Mix: clipped_samples == 0, LUFS -10..-7, band order low>lowmid>mid.
+  - TRIBAL KICKS is non-negotiable: uk funky: the drums are MELODIC — syncopated toms answer the kick (soca/broken-beat DNA), skippy snares, NOT four-on-floor; percussion carries the hook
+  - VOCAL CHOPS is non-negotiable: short pitched vocal stabs (choir kit, high keys) placed rhythmically
+  - OFFBEAT BASS is non-negotiable: bass hits on the 8th between kicks
+---
+# Uk_Funky arrangement (graph-compiled)
+
+## The pocket — funky_snap
+uk_funky loop DNA (wave14) Swing 0.55 rides the 16th grid — keep swing.grid matched to where the hats live.  *(source: curated:claude/2026-07-06 (wave38 world/anthem canon; freygish+bigroom-vamp+levels-anthem cited f148; afro_pocket i-VII = canon-prior, cite pending))*
+
+## Techniques (weight order — the top ones DEFINE the genre)
+- **tribal kicks** (w0.95): uk funky: the drums are MELODIC — syncopated toms answer the kick (soca/broken-beat DNA), skippy snares, NOT four-on-floor; percussion carries the hook *(curated:claude/2026-07-03-w8)*
+- **vocal chops** (w0.7): short pitched vocal stabs (choir kit, high keys) placed rhythmically *(curated:claude/2026-07-02)*
+- **offbeat bass** (w0.6): bass hits on the 8th between kicks *(skill:house-arrangement@v1)*
+- **call response melody** (w0.6): 2-bar call, 2-bar answer; melody talks to itself *(curated:claude/2026-07-02)*
+
+## The groove (timing DNA — apply it, don't fake it)
+- PREFER apply_groove(track='drums'-like tracks, name='ukg_shuffle', amount 0.8-1.0) OVER the global swing object: swing{} is a uniform shuffle, the named profile carries this genre's per-slot micro-timing AND ghost-velocity shape. Write on-grid notes first, then apply. *(curated:claude/2026-07-03 (2-step: hard 16th swing, ghosted e/a))*
+
+## Verify (the ears will check)
+After render: analyze_wav must show clipped_samples 0, LUFS in -10..-7, band order low>lowmid>mid. If a filter build was used, centroid_by_quarter must RISE into the drop.

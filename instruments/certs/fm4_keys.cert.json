@@ -2,53 +2,79 @@
  "name": "fm4_keys",
  "kind": "voice",
  "dsp_sha": "945331416bc266f7",
- "m1_md5": "ffee78e6e25243f3",
+ "m1_md5": "caee7f9167c3a7bd",
  "machine": "chezy-LOQ-15IAX9E",
- "date": "2026-07-12",
+ "date": "2026-07-31",
  "law": "E2 (docs/THE_PHYSICS.md)",
- "peak_dbfs": -2.22,
+ "peak_dbfs": -3.9,
  "clipped_samples": 0,
  "attack_ms": 20.0,
- "sustain_rms_db": -11.23,
- "sustain_centroid_hz": 307,
+ "sustain_rms_db": -10.99,
+ "sustain_centroid_hz": 589,
  "harmonics_top": [
   [
-   130.6,
-   -9.4
+   260.6,
+   -13.2
   ],
   [
-   131.2,
-   0.0
+   261.2,
+   -7.0
   ],
   [
-   131.8,
-   -0.7
+   261.8,
+   -2.3
   ],
   [
    262.4,
-   -11.5
+   0.0
   ],
   [
-   391.8,
-   -15.0
+   262.9,
+   -11.7
   ],
   [
-   392.4,
-   -8.6
+   522.9,
+   -13.7
   ],
   [
-   392.9,
-   -8.1
+   523.5,
+   -7.9
   ],
   [
-   393.5,
-   -12.3
+   524.1,
+   -10.4
   ]
  ],
- "decay_to_m60_s": 4.99,
+ "decay_to_m60_s": 2.5,
  "noise_tail_dbfs": -200.0,
+ "headroom": {
+  "registers": {
+   "33": {
+    "peak_dbfs": -3.51,
+    "clipped": 0
+   },
+   "60": {
+    "peak_dbfs": -3.9,
+    "clipped": 0
+   },
+   "81": {
+    "peak_dbfs": -2.91,
+    "clipped": 0
+   }
+  },
+  "overlap": {
+   "peak_dbfs": -3.01,
+   "clipped": 0
+  },
+  "retrigger": {
+   "peak_dbfs": -3.15,
+   "clipped": 0
+  },
+  "clipped_total": 0
+ },
  "verdicts": {
   "headroom_pass_vel1": true,
+  "headroom_pass_registers": true,
   "audible": true
  }
 }

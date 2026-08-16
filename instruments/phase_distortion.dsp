@@ -17,4 +17,4 @@ y1 = 0.5 * p / m;
 y2 = 0.5 + 0.5*(p - m)/(1 - m);
 y  = select2(p < m, y2, y1);                             // warped phase
 env = en.adsr(att, 0.3, 0.6, rel, gate);
-process = cos(2*ma.PI*y) * env * gain <: _,_;
+process = cos(2*ma.PI*y) * env * gain * 0.78 <: _,_;  // headroom law: sat at -0.02dBFS everywhere — register court margin (2026-07-31)

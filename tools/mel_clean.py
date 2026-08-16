@@ -35,16 +35,58 @@ MSS_DIR = os.environ.get("SOTADAW_MSS_DIR",
                          os.path.expanduser("~/.cache/sotadaw/mss"))
 
 MODELS = {
+    # expect_body: the TARGET is supposed to carry the music itself — gate its
+    # health (see dry_twin_health). aspiration's target is the BREATH residue
+    # (tiny by design), so it is exempt.
     "dereverb": {"ckpt": "dereverb_anvuew.ckpt", "bytes": 913107578,
                  "yaml": "dereverb_anvuew.yaml", "target": "dry",
-                 "residual": "reverb"},
+                 "residual": "reverb", "expect_body": True},
     "denoise": {"ckpt": "denoise_aufr33.ckpt", "bytes": 913097300,
                 "yaml": "denoise_aufr33.yaml", "target": "clean",
-                "residual": "noise"},
+                "residual": "noise", "expect_body": True},
     "aspiration": {"ckpt": "aspiration_sucial.ckpt", "bytes": 835983746,
                    "yaml": "aspiration_sucial.yaml", "target": "breath",
-                   "residual": "tone"},
+                   "residual": "tone", "expect_body": False},
 }
+
+# THE DRY-TWIN HEALTH LAW (2026-07-15, the goldenbrown autopsy): anvuew's
+# dereverb is a VOCAL-target cleaner — pointed at an instrumental 'other'
+# stem it sees no target and returns ~silence (measured: vocals window
+# -6.6dB retention = real dereverb; other window -54dB = the music DELETED;
+# three goldenbrown imports carried a -81dB other_dry.wav and the rail
+# transcribed 72 notes / 8.6% coverage out of a wall-to-wall harpsichord
+# bed). A cleaner's output must still CONTAIN the music or it is not used:
+# retention is measured where the WET stem is active, healthy dereverb sits
+# well above -15dB, the vocal-model-on-instruments failure sits below -45dB.
+HEALTH_MIN_RETENTION_DB = -15.0
+HEALTH_FLOOR_DB = -45.0                        # 10ms frame "active" threshold
+
+
+def dry_twin_health(wet, dry, sr):
+    """Retention of the cleaned twin vs the wet original, measured only in
+    the wet's ACTIVE 10ms frames (RMS > HEALTH_FLOOR_DB). Returns
+    (ok, {retention_db, wet_active, dry_active}). Pure numpy — battery-safe."""
+    def _frames_db(x):
+        if x.ndim > 1:
+            x = x.mean(axis=1)
+        hop = max(1, int(sr * 0.01))
+        n = max(1, len(x) // hop)
+        fr = x[:n * hop].reshape(n, hop)
+        return 20 * np.log10(np.sqrt((fr ** 2).mean(axis=1)) + 1e-12)
+    wdb, ddb = _frames_db(np.asarray(wet)), _frames_db(np.asarray(dry))
+    n = min(len(wdb), len(ddb))
+    wdb, ddb = wdb[:n], ddb[:n]
+    act = wdb > HEALTH_FLOOR_DB
+    wet_active = float(act.mean())
+    dry_active = float((ddb > HEALTH_FLOOR_DB).mean())
+    if not act.any():                          # a silent stem judges nothing
+        return True, {"retention_db": 0.0, "wet_active": 0.0,
+                      "dry_active": dry_active}
+    retention = float(np.mean(ddb[act] - wdb[act]))
+    ok = retention >= HEALTH_MIN_RETENTION_DB
+    return ok, {"retention_db": round(retention, 1),
+                "wet_active": round(wet_active, 3),
+                "dry_active": round(dry_active, 3)}
 
 _LOADED = {}                                   # model name -> (module, cfg)
 
@@ -149,13 +191,61 @@ def clean(x, sr, model="dereverb", num_overlap=2, device=None, progress=None,
 def clean_cached(stem_wav, model="dereverb", device=None, say=print):
     """Dry twin for a stem, cached next to it as <stem>_<target>.wav.
     Returns the dry path, or None (unavailable / kill switch / cache miss
-    on a gpu-less box). The wet original is never touched."""
+    on a gpu-less box / UNHEALTHY twin). The wet original is never touched.
+
+    Health verdicts persist as <twin>.verdict.json keyed to the wet stem's
+    mtime — a rejected twin never re-pays the GPU pass on re-import, and a
+    pre-law cache (the goldenbrown -81dB corpses) is judged ONCE on first
+    touch and evicted."""
+    import json
     need_gpu = device != "cpu"
     base = os.path.splitext(os.path.abspath(stem_wav))[0]
     tgt_path = f"{base}_{MODELS[model]['target']}.wav"
-    if os.path.exists(tgt_path) and \
-            os.path.getmtime(tgt_path) >= os.path.getmtime(stem_wav):
-        return tgt_path                                # REUSE LAW
+    verdict_path = tgt_path + ".verdict.json"
+    gate = MODELS[model].get("expect_body", True) \
+        and os.environ.get("SOTADAW_NO_DRYGATE") != "1"
+    try:
+        wet_mt = os.path.getmtime(stem_wav)
+    except OSError:
+        return None                                    # no stem, no twin
+
+    def _verdict(ok, health):
+        try:
+            json.dump({"ok": bool(ok), "wet_mtime": wet_mt, "model": model,
+                       **health}, open(verdict_path, "w"))
+        except Exception:
+            pass
+
+    v = None
+    try:
+        v = json.load(open(verdict_path))
+        if v.get("wet_mtime") != wet_mt or v.get("model") != model:
+            v = None                                   # stem changed: re-judge
+    except Exception:
+        pass
+    if v is not None and not v.get("ok"):
+        return None                                    # standing rejection
+    if os.path.exists(tgt_path) and os.path.getmtime(tgt_path) >= wet_mt:
+        if not gate or (v is not None and v.get("ok")):
+            return tgt_path                            # REUSE LAW
+        try:                                           # pre-law cache: judge once
+            import soundfile as sf
+            wx, wsr = sf.read(stem_wav, always_2d=True)
+            dx, _ = sf.read(tgt_path, always_2d=True)
+            ok, health = dry_twin_health(wx, dx, wsr)
+        except Exception:
+            return tgt_path                            # unreadable? keep old law
+        _verdict(ok, health)
+        if ok:
+            return tgt_path
+        say(f"[mel_clean] {model}: cached twin FAILED health "
+            f"({health['retention_db']}dB retention in active spans) — "
+            f"evicted, wet stem kept", flush=True)
+        try:
+            os.remove(tgt_path)
+        except OSError:
+            pass
+        return None
     if not available(model, need_gpu=need_gpu):
         return None
     import soundfile as sf
@@ -170,6 +260,15 @@ def clean_cached(stem_wav, model="dereverb", device=None, say=print):
         say(f"[mel_clean] {model} skipped ({type(e).__name__}: {e}) "
             f"-> wet stem kept", flush=True)           # training run, etc.
         return None
+    if gate:
+        ok, health = dry_twin_health(x[:, :2], tgt, sr)
+        _verdict(ok, health)
+        if not ok:
+            say(f"[mel_clean] {model} REJECTED: twin lost the music "
+                f"({health['retention_db']}dB retention in active spans — "
+                f"a vocal-target cleaner on instrumental content?) "
+                f"-> wet stem kept", flush=True)
+            return None
     # atomic write — tmp must keep .wav (soundfile infers format from the
     # extension; a bare .tmp suffix broke the FIRST live E2E at the finish)
     tmp = tgt_path[:-4] + ".tmp.wav"
