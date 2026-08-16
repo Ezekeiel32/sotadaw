@@ -423,7 +423,9 @@ inline Model buildModel (const Song& song, const Options& opt)
     double lastEnd = 0;
     for (auto& t : src.tracks) for (auto& n : t.notes) lastEnd = juce::jmax (lastEnd, n.start + n.len);
     int numBars = (int) std::ceil (juce::jmax (song.lengthBars, 1.0));
-    while (src.barStartBeat (numBars) < lastEnd - 1e-6) ++numBars;
+    // bounded: a degenerate meterMap (0-beat bars) saturates barStartBeat and the
+    // unbounded form spins the message thread forever (engraver spin class)
+    while (numBars < 4096 && src.barStartBeat (numBars) < lastEnd - 1e-6) ++numBars;
     numBars = juce::jmin (numBars, 512);
     mo.numMeasures = numBars;
 
@@ -528,6 +530,13 @@ inline Model buildModel (const Song& song, const Options& opt)
                 // otherwise mint 1/12-beat fragments no notation can spell)
                 q.qe = st.isDrums ? q.qs + grid
                                   : juce::jmax (q.qs + grid, snap (n.start + n.len, false, 0));
+                // THE FINAL BARLINE IS A WALL (clean-room spin, 2026-08-16): a raw end
+                // at/inside the world can QUANTIZE past barStartBeat(numBars); the spell
+                // loop's measure clamp then pins segEnd==t forever (demo_track's
+                // exactly-32-beat tail = 100% CPU on first boot). Display truncates.
+                const double worldEnd = src.barStartBeat ((double) numBars);
+                if (q.qs >= worldEnd - 1e-6) continue;
+                q.qe = juce::jmin (q.qe, worldEnd);
                 q.pitch = n.pitch;
                 q.vel = (float) n.vel;
                 q.src = { ti, ni };
@@ -598,6 +607,7 @@ inline Model buildModel (const Song& song, const Options& opt)
                     auto& M = st.measures[(size_t) bi];
                     const double mEnd = M.startBeat + M.beats;
                     const double segEnd = juce::jmin (vn.qe, mEnd);
+                    if (segEnd <= t + 1e-9) break;   // forward-progress law: truncate, never spin
                     detail::MeasureCtx ctx { M.beats, M.num, M.den, {}, nullptr };
                     ctx.bounds.push_back (0);
                     for (double gsz : M.groups) ctx.bounds.push_back (ctx.bounds.back() + gsz);
