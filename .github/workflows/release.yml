@@ -179,9 +179,32 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Error "workspace m1 JIT died"; exit 1 }
           python tools/ci_wav_gate.py "$env:TEMP\ws_jit.wav" 3
 
+      - name: macos Developer ID keychain (no-op until SIGNING.md secrets exist)
+        if: matrix.name == 'macos'
+        shell: bash
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASS: ${{ secrets.MAC_CERT_PASS }}
+        run: |
+          if [ -z "$MAC_CERT_P12" ]; then echo "no signing cert — ad-hoc beta build"; exit 0; fi
+          echo "$MAC_CERT_P12" | base64 -d > /tmp/devid.p12
+          security create-keychain -p ci-tmp sign.keychain
+          security set-keychain-settings -lut 21600 sign.keychain
+          security unlock-keychain -p ci-tmp sign.keychain
+          security import /tmp/devid.p12 -k sign.keychain -P "$MAC_CERT_PASS" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci-tmp sign.keychain
+          security list-keychains -d user -s sign.keychain login.keychain
+          ID=$(security find-identity -v -p codesigning sign.keychain | awk -F'"' '/Developer ID Application/{print $2; exit}')
+          echo "MAC_SIGN_ID=$ID" >> "$GITHUB_ENV"
+          rm -f /tmp/devid.p12
+
       - name: P4 macos — UNIVERSAL check + dmg + attach + run the bundled engine
         if: matrix.name == 'macos'
         shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASS: ${{ secrets.APPLE_APP_PASS }}
         run: |
           lipo -info "app/build/sotadaw_artefacts/Release/SOTA DAW.app/Contents/MacOS/SOTA DAW" || lipo -info "app/build/sotadaw_artefacts/Release/SOTA DAW"
           lipo -info app/build/m1_artefacts/Release/m1

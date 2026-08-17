@@ -63,16 +63,61 @@ exec "$HERE/SOTA DAW" "$@"
 WRAP
 chmod +x "$APP/Contents/MacOS/sotadaw-launch"
 
-# deterministic ad-hoc signature (Apple Silicon requires at least ad-hoc;
-# linker-applied ones don't cover our added launcher/payload)
-codesign -s - --force --deep "$APP" 2>/dev/null || true
+# signature: Developer ID when CI carries the cert (docs/SIGNING.md secrets),
+# else deterministic ad-hoc (Apple Silicon requires at least ad-hoc; linker-
+# applied ones don't cover our added launcher/payload)
+if [ -n "${MAC_SIGN_ID:-}" ]; then
+  codesign -s "$MAC_SIGN_ID" --force --deep --options runtime --timestamp "$APP"
+  codesign --verify --deep --strict "$APP"
+else
+  codesign -s - --force --deep "$APP" 2>/dev/null || true
+fi
+
+# THE DMG IS THE MANUAL (2026-08-17, Chezy's Sequoia hit the "Not Opened" wall):
+# an unsigned beta's first-open lives or dies on the instructions BESIDE the app.
+# Volume = app + /Applications drag target + first-open steps for BOTH Gatekeeper
+# generations (Sequoia killed right-click->Open for unnotarized apps).
+DMGROOT=dist/dmgroot
+rm -rf "$DMGROOT"; mkdir -p "$DMGROOT"
+cp -R "$APP" "$DMGROOT/"
+ln -s /Applications "$DMGROOT/Applications"
+cat > "$DMGROOT/READ ME FIRST.txt" <<'RDME'
+SOTA DAW — first open on macOS (unsigned beta)
+
+1) Drag "SOTA DAW" onto the Applications folder icon beside it.
+
+2) Open it once from Applications. macOS will say it
+   "could not verify SOTA DAW" — click Done (not the bin!).
+
+3) macOS 15 (Sequoia) and newer:
+      System Settings -> Privacy & Security -> scroll down ->
+      next to "SOTA DAW was blocked" click  Open Anyway  -> Open.
+   macOS 13/14 (Ventura/Sonoma):
+      right-click "SOTA DAW" in Applications -> Open -> Open.
+
+   Terminal shortcut (either version), if you prefer:
+      xattr -d com.apple.quarantine "/Applications/SOTA DAW.app"
+
+This is Apple's standard wall for beta apps that are not yet
+notarized ($99/yr Apple Developer ID — on the roadmap). The app
+runs fully offline; every download's SHA-256 is published at
+https://sotadaw.netlify.app so you can verify what you got.
+RDME
 
 # CI runners race deep-codesign vs dmg creation ("Resource busy") — settle + retry
 for i in 1 2 3 4 5; do
-  if hdiutil create -volname "SOTA DAW" -srcfolder "$APP" -ov -format UDZO dist/SOTA_DAW-macOS.dmg; then
+  if hdiutil create -volname "SOTA DAW" -srcfolder "$DMGROOT" -ov -format UDZO dist/SOTA_DAW-macOS.dmg; then
     break
   fi
   [ "$i" = 5 ] && exit 1
   sleep 8
 done
+
+# notarization (no-op until the SIGNING.md secrets exist): submit + staple, so
+# the first run after Chezy buys the Developer ID ships a clean-opening DMG
+if [ -n "${MAC_SIGN_ID:-}" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PASS:-}" ]; then
+  xcrun notarytool submit dist/SOTA_DAW-macOS.dmg \
+    --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASS" --wait
+  xcrun stapler staple dist/SOTA_DAW-macOS.dmg
+fi
 shasum -a 256 dist/SOTA_DAW-macOS.dmg | tee dist/SOTA_DAW-macOS.dmg.sha256
