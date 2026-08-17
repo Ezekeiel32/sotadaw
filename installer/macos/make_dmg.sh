@@ -42,6 +42,12 @@ cat > "$APP/Contents/MacOS/sotadaw-launch" <<'WRAP'
 #!/bin/bash
 HERE=$(cd "$(dirname "$0")" && pwd)
 export SOTADAW_NO_UPLINK=1
+# THE GUI PATH LAW (2026-08-17, Chezy: "the cc login no work on mac, only codex"):
+# Finder/launchd hands an app PATH=/usr/bin:/bin:/usr/sbin:/sbin, and this wrapper
+# is a NON-LOGIN bash — it never reads the user's .zprofile/.zshrc either. Every
+# CLI the producer shells out to (claude, codex, git, node) lives outside that
+# PATH, so a Mac with everything installed still read as "nothing installed".
+export PATH="$HOME/.local/bin:$HOME/.claude/local:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$HOME/.bun/bin:$PATH"
 WS="${SOTADAW_ROOT:-$HOME/Library/Application Support/sotadaw}"
 PAY="$HERE/../Resources/sotadaw-payload"
 if [ ! -d "$WS" ]; then

@@ -9,7 +9,10 @@ NAME="${2:-agent_beat}"
 MODEL="${SOTADAW_MODEL:-claude-opus-4-8}"
 # THE DAW'S OWN ANTHROPIC ACCOUNT: armed by the app's Acct button — this lane rides it too.
 DAW_CLAUDE_HOME="$HOME/.config/sotadaw/claude_home"
-[ -f "$DAW_CLAUDE_HOME/.credentials.json" ] && export CLAUDE_CONFIG_DIR="$DAW_CLAUDE_HOME"
+# armed.marker: macOS keeps the token in the login keychain, so the file test
+# alone misses a mac login that worked (kept in sync with sidecar.daw_claude_env)
+{ [ -f "$DAW_CLAUDE_HOME/.credentials.json" ] || [ -f "$DAW_CLAUDE_HOME/armed.marker" ]; } \
+  && export CLAUDE_CONFIG_DIR="$DAW_CLAUDE_HOME"
 
 PROMPT="You are the producer-agent of an AI DAW. Produce a finished, GREAT-sounding beat for this brief: \"$BRIEF\".
 

@@ -37,12 +37,17 @@ def model_slug(model):
 
 
 def codex_bin():
-    """Resolve Codex even when the desktop app did not inherit ~/.local/bin."""
+    """Resolve Codex even when the desktop app did not inherit ~/.local/bin.
+    mac (2026-08-17): a Finder launch sees none of the real install homes —
+    Homebrew/npm-global land in /opt/homebrew/bin on Apple Silicon."""
     found = shutil.which("codex")
     if found:
         return found
     for candidate in (os.path.expanduser("~/.local/bin/codex"),
-                      "/usr/local/bin/codex", "/usr/bin/codex"):
+                      "/opt/homebrew/bin/codex", "/usr/local/bin/codex",
+                      os.path.expanduser("~/.bun/bin/codex"),
+                      os.path.expanduser("~/.npm-global/bin/codex"),
+                      "/usr/bin/codex"):
         if os.path.exists(candidate):
             return candidate
     return None

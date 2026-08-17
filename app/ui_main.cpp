@@ -20484,7 +20484,12 @@ private:  // (restores the section the HANDS burst was in)
     }
     bool dawAcctArmed() const
     {
-        return dawClaudeHome().getChildFile (".credentials.json").existsAsFile();
+        // macOS keeps Claude Code's OAuth credentials in the login KEYCHAIN, not
+        // in <config>/.credentials.json — a file-only test calls a perfectly good
+        // mac login "not logged in" forever, so a login the CLI reports as
+        // successful also drops a marker beside it.
+        return dawClaudeHome().getChildFile (".credentials.json").existsAsFile()
+            || dawClaudeHome().getChildFile ("armed.marker").existsAsFile();
     }
     void refreshAcctButton()
     {
@@ -20510,6 +20515,7 @@ private:  // (restores the section the HANDS burst was in)
             else if (r == 2)
             {
                 dawClaudeHome().getChildFile (".credentials.json").deleteFile();
+                dawClaudeHome().getChildFile ("armed.marker").deleteFile();
                 refreshAcctButton();
                 setStatus ("DAW account logged out - runs use the machine's Claude Code login");
             }
@@ -20524,9 +20530,23 @@ private:  // (restores the section the HANDS burst was in)
             "echo 'SOTA DAW - its OWN Anthropic login (separate from Claude Code on this machine).'\n"
             "echo 'A browser window will open; log in with the account the DAW should use.'\n"
             "echo\n"
+            // a GUI-launched app hands the script launchd's stunted PATH on mac;
+            // the login window is the user's OWN shell, but the app-side spawn of
+            // this script is not — teach it the same install spots the resolvers use
+            "export PATH=\"$HOME/.local/bin:$HOME/.claude/local:/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$PATH\"\n"
+            "if ! command -v claude >/dev/null 2>&1; then\n"
+            "  echo 'the claude CLI is not installed on this machine. Install it, then click Acct again:'\n"
+            "  echo '    curl -fsSL https://claude.ai/install.sh | bash'\n"
+            "  read -r -n1 -p 'press any key to close'; exit 1\n"
+            "fi\n"
             "claude setup-token\n"
+            "rc=$?\n"
             "echo\n"
-            "if [ -f \"$CLAUDE_CONFIG_DIR/.credentials.json\" ]; then\n"
+            // macOS lands the token in the login KEYCHAIN, so the file test alone
+            // reports failure on a login that actually worked — trust the CLI's own
+            // exit code too, and mark the home so every lane agrees it is armed.
+            "if [ -f \"$CLAUDE_CONFIG_DIR/.credentials.json\" ] || [ \"$rc\" -eq 0 ]; then\n"
+            "  : > \"$CLAUDE_CONFIG_DIR/armed.marker\"\n"
             "  echo 'DAW ACCOUNT ARMED - you can close this window.'\n"
             "else\n"
             "  echo 'no credentials landed - retry, or run claude (then /login) in THIS terminal.'\n"
@@ -20537,9 +20557,18 @@ private:  // (restores the section the HANDS burst was in)
         script.replaceWithText ("#!/bin/bash\n" + sh);
         script.setExecutePermission (true);
         juce::ChildProcess term;   // gnome-terminal forks to its server; dtor is safe
+       #if JUCE_MAC
+        // THE MAC DOOR (2026-08-17, Chezy live: "the cc login no work on mac, only
+        // codex"): this lane asked for gnome-terminal / x-terminal-emulator, which
+        // exist on NO Mac — the button silently did nothing while Codex (which uses
+        // the machine's own saved login, no DAW-side door) worked fine.
+        const bool ok = term.start (juce::StringArray { "/usr/bin/open", "-a", "Terminal",
+                                                        script.getFullPathName() });
+       #else
         const bool ok = juce::File ("/usr/bin/gnome-terminal").existsAsFile()
             ? term.start (juce::StringArray { "gnome-terminal", "--", script.getFullPathName() })
             : term.start (juce::StringArray { "x-terminal-emulator", "-e", script.getFullPathName() });
+       #endif
         setStatus (ok ? "DAW login opened in a terminal - the Acct button re-checks on click"
                       : "no terminal found - run: CLAUDE_CONFIG_DIR=~/.config/sotadaw/claude_home claude setup-token");
     }

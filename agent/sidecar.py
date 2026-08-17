@@ -1384,18 +1384,31 @@ DAW_ALLOW = _daw_allow()
 
 CANCEL_FLAG = os.path.join(IPC, "cancel")
 
-def claude_bin():
-    """Resolve the claude CLI wherever it lives. A desktop-launched app inherits
-    a PATH without ~/.local/bin — Loop Lab then crashed with a bare
-    FileNotFoundError('claude') while terminal launches worked. Resolve once,
-    fall back to the known install spots."""
-    w = shutil.which("claude")
+def cli_bin(name, *extra):
+    """Resolve a CLI wherever it lives. A desktop-launched app inherits a PATH
+    without ~/.local/bin — Loop Lab once crashed with a bare
+    FileNotFoundError('claude') while terminal launches worked.
+    macOS (2026-08-17): Finder/launchd hands an app PATH=/usr/bin:/bin:/usr/sbin:
+    /sbin and a non-login bash never reads the user's zprofile — so BOTH common
+    mac homes (Homebrew /opt/homebrew/bin, the native installer's ~/.claude/local)
+    sit outside `which` and every real mac install read as 'not installed'."""
+    w = shutil.which(name)
     if w:
         return w
-    for c in (os.path.expanduser("~/.local/bin/claude"), "/usr/local/bin/claude", "/usr/bin/claude"):
+    for c in list(extra) + [os.path.expanduser("~/.local/bin/" + name),
+                            "/opt/homebrew/bin/" + name,        # mac: Homebrew + npm -g (Apple Silicon)
+                            "/usr/local/bin/" + name,           # mac Intel + linux
+                            os.path.expanduser("~/.bun/bin/" + name),
+                            os.path.expanduser("~/.npm-global/bin/" + name),
+                            "/usr/bin/" + name]:
         if os.path.exists(c):
             return c
     return None
+
+
+def claude_bin():
+    # ~/.claude/local/claude = what `claude migrate-installer` leaves behind
+    return cli_bin("claude", os.path.expanduser("~/.claude/local/claude"))
 
 
 # THE DAW'S OWN ANTHROPIC ACCOUNT (Chezy 2026-07-10): the Acct button arms a login
@@ -1408,7 +1421,11 @@ DAW_CLAUDE_HOME = os.path.expanduser("~/.config/sotadaw/claude_home")
 
 def daw_claude_env(**extra):
     env = dict(os.environ, **extra)
-    if os.path.exists(os.path.join(DAW_CLAUDE_HOME, ".credentials.json")):
+    # armed.marker: macOS stores the token in the login KEYCHAIN, so a
+    # file-only test never sees a mac login that actually succeeded (the UI's
+    # login script writes the marker on the CLI's own exit code).
+    if (os.path.exists(os.path.join(DAW_CLAUDE_HOME, ".credentials.json"))
+            or os.path.exists(os.path.join(DAW_CLAUDE_HOME, "armed.marker"))):
         env["CLAUDE_CONFIG_DIR"] = DAW_CLAUDE_HOME
     return env
 
