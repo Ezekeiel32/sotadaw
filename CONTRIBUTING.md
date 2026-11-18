@@ -1,5 +1,7 @@
 # Contributing
 
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Branches
 
 - `main` is always buildable and is protected: no force pushes, no deletion, and changes arrive through pull requests with CI passing.
