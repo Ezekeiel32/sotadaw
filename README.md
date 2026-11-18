@@ -67,7 +67,7 @@ Four rules shape the design:
 | `instruments/` | 134 Faust instruments and effects. `instruments/certs/` holds a render report for each verified instrument (peak level, clipping, attack, sustain). |
 | `kits/` | Sampled kits: drums, piano, electric piano, strings, choir and more. |
 | `tools/` | Test batteries, importers and exporters, and release scripts. |
-| `installer/` | Installer sources for Linux, Windows and macOS. |
+| `installer/` | Installer sources for Windows and macOS. The Linux AppImage is built by `tools/make_appimage.sh`. |
 | `.github/workflows/` | `ci.yml` checks every pull request. `release.yml` builds on Linux, Windows and macOS, renders a test song, checks that the app starts, and packages the installers. |
 
 ## Build
